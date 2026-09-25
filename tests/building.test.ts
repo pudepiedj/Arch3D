@@ -51,9 +51,31 @@ describe('levels', () => {
   });
 });
 
+/** A 10 x 8 ground floor with three partitions making four rooms (T-junctions on the outline). */
+function fourRooms() {
+  const b = createBuilding();
+  const g = b.levels[0];
+  const t = { thickness: 0.3, height: g.height };
+  const pts = [
+    [0, 0],
+    [10, 0],
+    [10, 8],
+    [0, 8],
+  ];
+  pts.forEach(([x, y], i) => {
+    const [x2, y2] = pts[(i + 1) % 4];
+    addWall(g, { x, y }, { x: x2, y: y2 }, t);
+  });
+  const p = { thickness: 0.12, height: g.height };
+  addWall(g, { x: 6, y: 0 }, { x: 6, y: 8 }, p);
+  addWall(g, { x: 0, y: 4.2 }, { x: 6, y: 4.2 }, p);
+  addWall(g, { x: 6, y: 5 }, { x: 10, y: 5 }, p);
+  return b;
+}
+
 describe('copying the outline up', () => {
   it('finds only the outside walls', () => {
-    const ground = demoBuilding().levels[0];
+    const ground = fourRooms().levels[0];
     const ids = outlineWallIds(ground);
     // The 10 x 8 outline is split at the four T-junctions into 8 walls.
     expect(ids).toHaveLength(8);
@@ -61,11 +83,7 @@ describe('copying the outline up', () => {
   });
 
   it('copies outside walls as whole, clean walls without the downstairs joints', () => {
-    const b = demoBuilding();
-    const first = b.levels[1];
-    // Demo upstairs: 4 outline walls plus two partitions forming 3 rooms.
-    const rooms = detectRooms(first);
-    expect(rooms).toHaveLength(3);
+    const b = fourRooms();
     const up = addLevelOnTop(b, true);
     // The outline below is split by the partitions' T-junctions; up here it heals into 4 whole walls.
     const lengths = Object.values(up.walls).map((w) => {

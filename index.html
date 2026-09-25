@@ -19,6 +19,7 @@
         <button data-tool="window" title="Place a window (N)">Window</button>
         <button data-tool="split" title="Add a joint to a wall (X)">Split</button>
         <button data-tool="stair" title="Place a stair up to the next floor (S)">Stair</button>
+        <button data-tool="roof" title="Set up roofs: types, gable ends, extra roof sections (R)">Roof</button>
         <button data-tool="paste" id="pasteTool" title="Place exact copies of the copied door/window (Ctrl/⌘+V)" hidden>Paste</button>
       </div>
 
@@ -30,6 +31,10 @@
         <button data-shape="straight" title="Straight flight">Straight</button>
         <button data-shape="L" title="Quarter turn with a landing">L-shape</button>
         <button data-shape="U" title="Half turn with a landing">U-shape</button>
+      </div>
+      <div class="group" id="roofMode" aria-label="Roof tool">
+        <button data-roofmode="edit" title="Select roofs and switch their edges between eave and gable">Edit roofs</button>
+        <button data-roofmode="draw" title="Draw an extra roof, e.g. a gable over a bay">Add section</button>
       </div>
       <button id="ortho" class="toggle" title="Lock wall directions to 45° steps (O)">Ortho</button>
       <button id="finish" hidden>Finish wall</button>

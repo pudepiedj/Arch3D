@@ -231,14 +231,12 @@ describe('copy and paste', () => {
 });
 
 describe('rooms', () => {
-  it('finds the four rooms of the demo house', () => {
+  it('finds the rooms of the demo house, with the bay opening into the living room', () => {
     const rooms = detectRooms(demoPlan());
-    expect(rooms).toHaveLength(4);
+    // Four main rooms plus two single-storey extensions; the bay is part of the living room.
+    expect(rooms).toHaveLength(6);
     const total = rooms.reduce((s, r) => s + r.area, 0);
-    expect(total).toBeCloseTo(80, 6);
-    // Living room: 6 x 4.2 between centre lines, minus half a 30 cm and half a 12 cm wall each way.
-    const living = rooms.find((r) => Math.abs(r.area - 25.2) < 1e-6)!;
-    expect(living.netArea).toBeCloseTo((6 - 0.15 - 0.06) * (4.2 - 0.15 - 0.06), 6);
+    expect(total).toBeCloseTo(80 + 2.4 * 1 + 3 * 3.5 + 3 * 2.5, 6);
   });
 
   it('ignores dangling walls', () => {
@@ -254,6 +252,6 @@ describe('rooms', () => {
   });
 
   it('demo house has all its openings', () => {
-    expect(Object.keys(demoPlan().openings)).toHaveLength(10);
+    expect(Object.keys(demoPlan().openings)).toHaveLength(15);
   });
 });

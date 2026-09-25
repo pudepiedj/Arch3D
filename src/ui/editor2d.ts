@@ -16,7 +16,7 @@ import {
   vec,
 } from '../model/geom';
 import { getLevel, levelBelow } from '../model/building';
-import { effectiveRoof, roofGeometry } from '../model/roof';
+import { DEFAULT_ROOF, type LevelRoof, levelRoofs, roofAreaRings, setAreaRoof, toggleEdge } from '../model/roof';
 import { DEFAULT_GOING, DEFAULT_STAIR_WIDTH, type StairGeometry, addStair, stairAt, stairGeometry } from '../model/stairs';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import {
@@ -43,8 +43,8 @@ import { detectRooms } from '../model/rooms';
 import type { Level, Opening, OpeningKind, Plan, StairShape } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'split' | 'paste' | 'stair';
-export type Selection = { kind: 'wall' | 'node' | 'opening' | 'level' | 'stair'; id: string } | null;
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'split' | 'paste' | 'stair' | 'roof';
+export type Selection = { kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof'; id: string } | null;
 
 type Gesture =
   | { kind: 'pan'; last: Vec2 }
@@ -76,6 +76,10 @@ export class Editor2D {
   stairShape: StairShape = 'straight';
   /** First click of a stair being placed (its bottom step). */
   private stairStart: Vec2 | null = null;
+  /** Roof tool: editing existing roofs, or drawing a new roof section. */
+  roofMode: 'edit' | 'draw' = 'edit';
+  /** Corners of a roof section being drawn. */
+  private sectionPts: Vec2[] = [];
   /** A copied door or window: its exact type and size. */
   clipboard: OpeningTemplate | null = null;
   ortho = false;
@@ -117,6 +121,7 @@ export class Editor2D {
     c.addEventListener('contextmenu', (e) => e.preventDefault());
     c.addEventListener('dblclick', () => {
       if (this.tool === 'wall') this.finishChain();
+      if (this.tool === 'roof' && this.roofMode === 'draw') this.finishSection();
     });
     window.addEventListener('keydown', (e) => this.onKey(e));
     new ResizeObserver(() => this.resize()).observe(container);
@@ -139,6 +144,7 @@ export class Editor2D {
   setTool(t: Tool) {
     if (this.tool === 'wall' && t !== 'wall') this.finishChain();
     this.stairStart = null;
+    this.sectionPts = [];
     this.tool = t;
     this.onToolChange?.();
     this.requestRender();
@@ -542,6 +548,9 @@ export class Editor2D {
         }
         break;
       }
+      case 'roof':
+        this.roofClick(w);
+        break;
       case 'stair': {
         if (!this.stairStart) {
           this.stairStart = this.snap(w).p;
@@ -668,8 +677,14 @@ export class Editor2D {
       }
     }
     switch (e.key) {
+      case 'Enter':
+        if (this.sectionPts.length) this.finishSection();
+        break;
       case 'Escape':
-        if (this.stairStart) {
+        if (this.sectionPts.length) {
+          this.sectionPts = [];
+          this.requestRender();
+        } else if (this.stairStart) {
           this.stairStart = null;
           this.requestRender();
         } else if (this.drawStart) this.finishChain();
@@ -698,6 +713,9 @@ export class Editor2D {
         break;
       case 's':
         this.setTool('stair');
+        break;
+      case 'r':
+        this.setTool('roof');
         break;
       case 'o':
         this.ortho = !this.ortho;
@@ -814,6 +832,102 @@ export class Editor2D {
     ctx.fillText('UP', pts[0].x - 14 * Math.cos(a0), pts[0].y - 14 * Math.sin(a0));
   }
 
+  /** The roofs of the floor being edited (areas with a roof, and drawn sections). */
+  roofs(): LevelRoof[] {
+    return levelRoofs(this.store.building, this.plan);
+  }
+
+  private areaRing(id: string): Vec2[] | null {
+    if (!id.startsWith('area:')) return null;
+    return roofAreaRings(this.store.building, this.plan)[Number(id.slice(5))] ?? null;
+  }
+
+  private roofExists(id: string): boolean {
+    return id.startsWith('section:') ? !!this.plan.roofSections?.[id.slice(8)] : !!this.areaRing(id);
+  }
+
+  /** Roof tool click: switch an edge of the selected roof, select a roof, or add a section corner. */
+  private roofClick(w: Vec2) {
+    const plan = this.plan;
+    if (this.roofMode === 'draw') {
+      const s = this.snap(w, { from: this.sectionPts[this.sectionPts.length - 1] ?? null });
+      const first = this.sectionPts[0];
+      if (first && this.sectionPts.length >= 3 && dist(s.p, first) < 12 / this.view.scale) this.finishSection();
+      else this.sectionPts.push(s.p);
+      this.requestRender();
+      return;
+    }
+    const roofs = this.roofs();
+    const sel = this.selection?.kind === 'roof' ? roofs.find((r) => r.id === this.selection!.id) : undefined;
+    if (sel?.geometry && sel.roof.kind !== 'flat') {
+      const tol = 10 / this.view.scale;
+      const outline = sel.geometry.outline;
+      const edge = outline.findIndex((a, i) => projectOnSegment(w, a, outline[(i + 1) % outline.length]).dist < tol);
+      if (edge >= 0 && sel.roles[edge] !== 'wall') {
+        const edges = toggleEdge(sel, edge);
+        if (sel.id.startsWith('section:')) plan.roofSections![sel.id.slice(8)].roof.edges = edges;
+        else setAreaRoof(plan, sel.ring, { ...sel.roof, edges });
+        this.store.commit();
+        return;
+      }
+    }
+    // Hand-drawn sections sit on top, so they are picked first.
+    const hit =
+      roofs.find((r) => r.id.startsWith('section:') && (pointInPolygon(w, r.ring) || (r.geometry && pointInPolygon(w, r.geometry.outline)))) ??
+      roofs.find((r) => pointInPolygon(w, r.ring) || (r.geometry && pointInPolygon(w, r.geometry.outline)));
+    if (hit) return this.select({ kind: 'roof', id: hit.id });
+    const area = roofAreaRings(this.store.building, plan).findIndex((ring) => pointInPolygon(w, ring));
+    this.select(area >= 0 ? { kind: 'roof', id: `area:${area}` } : null);
+  }
+
+  finishSection() {
+    const pts = this.sectionPts;
+    this.sectionPts = [];
+    if (pts.length < 3) return this.requestRender();
+    const id = `r${this.plan.nextId++}`;
+    this.plan.roofSections ??= {};
+    this.plan.roofSections[id] = { id, points: pts.map((p) => ({ x: p.x, y: p.y })), roof: { ...DEFAULT_ROOF } };
+    this.roofMode = 'edit';
+    this.store.commit();
+    this.onToolChange?.();
+    this.select({ kind: 'roof', id: `section:${id}` });
+  }
+
+  /** Roofs on the plan: eaves dashed, ridges/hips/valleys dotted, gable ends solid. */
+  private drawRoofs(C: Record<string, string>) {
+    const ctx = this.ctx;
+    const active = this.tool === 'roof';
+    for (const r of this.roofs()) {
+      const g = r.geometry;
+      if (!g) continue;
+      const selected = this.selection?.kind === 'roof' && this.selection.id === r.id;
+      const ink = selected ? C.accent : C.text;
+      if (active) {
+        this.path(g.outline);
+        ctx.fillStyle = hexAlpha(C.accent, selected ? 0.16 : 0.05);
+        ctx.fill();
+      }
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = selected ? 1.5 : 1;
+      g.outline.forEach((a, i) => {
+        const b = g.outline[(i + 1) % g.outline.length];
+        if (r.roles[i] === 'wall') return;
+        if (r.roles[i] === 'gable') {
+          ctx.lineWidth = selected ? 3 : 2;
+          ctx.setLineDash([]);
+        } else {
+          ctx.lineWidth = selected ? 1.5 : 1;
+          ctx.setLineDash([8, 5]);
+        }
+        this.line(a, b);
+      });
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 4]);
+      for (const [a, b] of g.lines) this.line(a, b);
+      ctx.setLineDash([]);
+    }
+  }
+
   deleteSelection() {
     const s = this.selection;
     if (!s) return;
@@ -821,6 +935,13 @@ export class Editor2D {
     else if (s.kind === 'node') deleteNode(this.plan, s.id);
     else if (s.kind === 'opening') deleteOpening(this.plan, s.id);
     else if (s.kind === 'stair') delete this.plan.stairs[s.id];
+    else if (s.kind === 'roof') {
+      if (s.id.startsWith('section:')) delete this.plan.roofSections?.[s.id.slice(8)];
+      else {
+        const ring = this.areaRing(s.id);
+        if (ring) setAreaRoof(this.plan, ring, { ...DEFAULT_ROOF, kind: 'none' });
+      }
+    }
     else return;
     this.select(null);
     this.store.commit();
@@ -833,7 +954,8 @@ export class Editor2D {
     const exists =
       (s.kind === 'level' && getLevel(this.store.building, s.id)) ||
       (s.kind === 'wall' && p.walls[s.id]) || (s.kind === 'node' && p.nodes[s.id]) || (s.kind === 'opening' && p.openings[s.id]) ||
-      (s.kind === 'stair' && p.stairs?.[s.id]);
+      (s.kind === 'stair' && p.stairs?.[s.id]) ||
+      (s.kind === 'roof' && this.roofExists(s.id));
     if (!exists) this.select(null);
   }
 
@@ -934,21 +1056,7 @@ export class Editor2D {
       this.drawStair(stairGeometry(st, plan.height), sel, false, C);
     }
 
-    // This floor's roof: eaves dashed, ridges, hips and valleys as thin lines.
-    const roof = effectiveRoof(this.store.building, plan);
-    const rg = roof ? roofGeometry(plan, roof) : null;
-    if (rg) {
-      ctx.strokeStyle = C.text;
-      ctx.lineWidth = 1;
-      ctx.setLineDash([8, 5]);
-      for (const ring of rg.outline) {
-        this.path(ring);
-        ctx.stroke();
-      }
-      ctx.setLineDash([2, 4]);
-      for (const [a, b] of rg.lines) this.line(a, b);
-      ctx.setLineDash([]);
-    }
+    this.drawRoofs(C);
 
     for (const r of rooms) {
       const c = this.toScreen(r.centroid);
@@ -1028,6 +1136,29 @@ export class Editor2D {
           ctx.fillStyle = C.danger;
           ctx.textAlign = 'left';
           ctx.fillText('No room for an exact copy here', s.x + 12, s.y - 12);
+        }
+      }
+    } else if (this.tool === 'roof' && this.roofMode === 'draw') {
+      const pts = [...this.sectionPts];
+      const s = h ? this.snap(h, { from: pts[pts.length - 1] ?? null }) : null;
+      if (s) pts.push(s.p);
+      if (pts.length) {
+        ctx.beginPath();
+        pts.forEach((p, i) => {
+          const q = this.toScreen(p);
+          if (i) ctx.lineTo(q.x, q.y);
+          else ctx.moveTo(q.x, q.y);
+        });
+        if (pts.length > 2) ctx.closePath();
+        ctx.fillStyle = hexAlpha(C.accent, 0.12);
+        ctx.fill();
+        ctx.strokeStyle = C.accent;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        for (const p of this.sectionPts) {
+          const q = this.toScreen(p);
+          ctx.fillStyle = C.accent;
+          ctx.fillRect(q.x - 3, q.y - 3, 6, 6);
         }
       }
     } else if (this.tool === 'stair' && h) {

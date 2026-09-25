@@ -34,13 +34,14 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 - Handrails run up both sides at 90 cm, with balusters where a side is open (just the rail where it runs along a wall). Stairwells get a guard rail on their open edges, leaving the side where the stair arrives clear.
 - In walk mode, walk onto a stair to climb it. You arrive on the next floor, and the plan follows you up and down.
 
-**Roofs:**
-- The top floor gets a gable roof automatically. It sits on the wall tops and follows the outside of the walls, whatever the plan shape: L-shaped houses get valleys and hips where they should.
-- Change it with **Floor & roof…** at the bottom of the floor list: **Gable**, **Hipped**, **Flat** or **None**, with the pitch (35° by default) and overhang (30 cm).
-- Gable walls stand flush with the walls below, and the eaves overhang the other sides.
-- The plan shows the eaves dashed and the ridges, hips and valleys dotted.
-- A lower floor can have its own roof too, e.g. a single-storey part. For now each roof covers its floor's whole outline.
-- In orbit view with **Cutaway** on, the roof of the floor you are editing is lifted off with its ceiling. Turn Cutaway off to see the whole house.
+**Roofs:** every floor is roofed wherever nothing is built above it, so a house can have several roofs:
+- **Defaults:** the top floor gets a gable roof, and single-storey parts of lower floors (extensions) get flat roofs. Change a floor's default with **Floor & roof…**: Gable, Hipped, Flat or None, plus pitch and overhang.
+- **Different roofs for different parts:** choose the **Roof** tool (R) and click a roof area to give it its own type, pitch and overhang. For example, one extension gabled and the others flat.
+- **Gable ends where you want them:** with a roof selected, click any of its edges to switch it between a sloping eave and a vertical gable end. By default a roof is gabled at both ends of its main ridge. A roof against a taller wall runs its ridge into the wall, with its gable at the far end.
+- **Cross gables:** for a window bay or projection that is part of the house, click the bay's front edge of the main roof to make it a gable. The bay gets its own ridge, meeting the main roof in valleys.
+- **Extra roof sections:** Roof tool → **Add section**, then click the corners (they snap to walls). Use it for a porch canopy or a separate roof over part of the house. Sections can overlap other roofs, have their own gable ends, and can start lower (**Eaves height**).
+- **On the plan:** eaves are dashed, gable ends solid, and ridges, hips and valleys dotted.
+- **Seeing it in 3D:** in orbit view with **Cutaway** on, the roofs of the floor you are editing are lifted off with its ceiling. Turn Cutaway off to see the whole house.
 
 **Floors:** the floor list at the top right of the plan switches between storeys (Page Up/Page Down also work).
 - **+ Floor** adds a storey on top, starting with a copy of the outside walls of the floor below.
@@ -88,12 +89,14 @@ Everything visible is *derived* from that data on every change, so there is no s
   - Result: geometry that is watertight at every joint, whatever you do to the plan.
 - **Stairs** (`stairs.ts`) are stored as a start point, direction, width, tread depth and shape. Steps, landing, walking line and stairwell are computed from these and the storey height. Floors and ceilings have the stairwells cut out with a polygon-clipping library, since a stairwell may cross room boundaries.
 - **Walking** (`walk.ts`, no rendering code, unit-tested) treats every floor (minus its stairwells) and every stair tread as a surface. The walker stands on the highest surface that is at most one step above their feet. Climbing a stair is just walking onto it, and walking off the top lands you on the next floor. Walls of the storey you are on, and steps too tall to step onto, block movement.
-- **Roofs** (`roof.ts`) are the straight skeleton of the outline of the outer walls' outside faces. Every eave rises at the same pitch, and the slopes meet along hips, valleys and ridges. This uses the MIT-licensed `straight-skeleton` 1.1.0, pinned; newer versions wrap GPL code. For a gable roof, each triangular hip end is turned into a vertical gable wall by moving its apex out to the wall line, which stretches the ridge to meet it. If the skeleton cannot be built for some outline, that floor simply gets no roof rather than a broken one.
-- **Rooms** (`rooms.ts`) are the enclosed faces of the wall graph. They give the floors and the net floor area labels.
+- **Roofs** (`roof.ts`): each floor's roof areas are its outline minus the outline of the floor above.
+  - Each area, and each hand-drawn section, is roofed separately using the straight skeleton of its outline: every eave rises at the same pitch, and the slopes meet along hips, valleys and ridges. This uses the MIT-licensed `straight-skeleton` 1.1.0, pinned; newer versions wrap GPL code.
+  - A gable end is an edge that doesn't slope. It is pushed far away before the skeleton is computed, so it has no influence. The roof is then trimmed back to the wall line, and the vertical profile left there becomes the gable wall. Edges against a taller wall work the same way, without a gable wall.
+  - That library occasionally leaves part of a slope out, where two lined-up edges merge (the walls either side of a bay). The gap is filled with the slope whose plane matches the heights already known around it. Tests check that every roof covers its whole outline, with no tears.
+- **Rooms** (`rooms.ts`)- **Rooms** (`rooms.ts`) are the enclosed faces of the wall graph. They give the floors and the net floor area labels.
 
 ## Not done yet
 
-- Roofs over only the uncovered part of a lower floor, and choosing gable or hip per roof edge.
 - Dormers and roof windows.
 - Furniture.
 - Textures and materials per room.

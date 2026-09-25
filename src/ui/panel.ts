@@ -2,7 +2,8 @@
 // clean-up (normalize), so e.g. thickening a wall re-mitres its corners and re-fits its openings.
 
 import { addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
-import { DEFAULT_ROOF, effectiveRoof } from '../model/roof';
+import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, roofAreaRings, setAreaRoof } from '../model/roof';
+import { pointInPolygon } from '../model/geom';
 import { stairGeometry } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
@@ -65,6 +66,7 @@ export class Panel {
 
     if (sel.kind === 'level') return this.renderLevel(sel.id);
     if (sel.kind === 'stair') return this.renderStair(sel.id);
+    if (sel.kind === 'roof') return this.renderRoof(sel.id);
 
     if (sel.kind === 'node') {
       const n = plan.nodes[sel.id];
@@ -190,24 +192,13 @@ export class Panel {
     }
     this.note(`Floor level +${levelElevation(b, id).toFixed(2)} m · ceiling height ${ceilingHeight(b, level).toFixed(2)} m`);
 
-    // Roof over this floor (by default only the top floor has one).
-    const roof = effectiveRoof(b, level) ?? { ...DEFAULT_ROOF, kind: 'none' as const };
-    const setRoof = (change: Partial<Roof>) => {
+    // Default roof for the parts of this floor with nothing above them.
+    const roof = defaultRoof(b, level) ?? { ...DEFAULT_ROOF, kind: 'none' as const };
+    this.roofFields('Default roof', roof, (change) => {
       level.roof = { ...roof, ...change };
       this.done();
-    };
-    this.select('Roof', roof.kind, [
-      ['gable', 'Gable'],
-      ['hip', 'Hipped'],
-      ['flat', 'Flat'],
-      ['none', 'None'],
-    ], (v) => setRoof({ kind: v as RoofKind }));
-    if (roof.kind === 'gable' || roof.kind === 'hip') {
-      this.number('Roof pitch', roof.pitch, 1, 5, 70, (v) => setRoof({ pitch: v }), '°');
-    }
-    if (roof.kind !== 'none') {
-      this.number('Overhang', roof.overhang, 0.05, 0, 1.5, (v) => setRoof({ overhang: v }), 'm', 'How far the eaves project past the walls');
-    }
+    }, true);
+    this.note('Applies wherever this floor has nothing built above it. Use the Roof tool to set particular areas or edges differently, or to add roof sections.');
     this.buttons([
       ['Add floor above', () => this.addFloor(true)],
       ['Add empty floor', () => this.addFloor(false)],
@@ -268,6 +259,70 @@ export class Panel {
         this.store.commit();
       }, true],
     ]);
+  }
+
+  private renderRoof(id: string) {
+    const level = this.store.plan;
+    const b = this.store.building;
+    const isSection = id.startsWith('section:');
+    const found = this.editor.roofs().find((r) => r.id === id);
+    const ring = found?.ring ?? roofAreaRings(b, level)[Number(id.slice(5))];
+    if (!ring) return;
+    const roof = found?.roof ?? { ...(defaultRoof(b, level) ?? DEFAULT_ROOF), kind: 'none' as const };
+    this.title(isSection ? 'Roof section' : 'Roof');
+    this.roofFields('Type', roof, (change) => {
+      const next = { ...roof, ...change };
+      if (isSection) level.roofSections![id.slice(8)].roof = next;
+      else setAreaRoof(level, ring, next);
+      this.done();
+    }, !isSection);
+    if (isSection) {
+      const sec = level.roofSections![id.slice(8)];
+      this.number('Eaves height', sec.base ?? level.height, 0.05, 0.5, 20, (v) => {
+        sec.base = v;
+        this.done();
+      }, 'm', 'Height above this floor where the roof starts (e.g. lower for a porch canopy)');
+    }
+    if (found && roof.kind !== 'flat' && roof.kind !== 'none') {
+      const gables = found.roles.filter((r) => r === 'gable').length;
+      const walls = found.roles.filter((r) => r === 'wall').length;
+      this.note(
+        `${gables} gable end${gables === 1 ? '' : 's'}` +
+          (walls ? `, ${walls} edge${walls === 1 ? '' : 's'} against a taller wall` : '') +
+          '. Click an edge of this roof on the plan to switch it between a sloping eave and a gable end.',
+      );
+    }
+    const btns: [string, () => void, boolean?][] = [];
+    if (isSection) {
+      btns.push(['Delete section', () => {
+        delete level.roofSections![id.slice(8)];
+        this.editor.select(null);
+        this.store.commit();
+      }, true]);
+    } else if ((level.roofAreas ?? []).some((s) => pointInPolygon(s, ring))) {
+      btns.push(['Use floor default', () => {
+        clearAreaRoof(level, ring);
+        this.done();
+      }]);
+    }
+    if (btns.length) this.buttons(btns);
+  }
+
+  /** Type, pitch and overhang fields for a roof. */
+  private roofFields(label: string, roof: Roof, set: (change: Partial<Roof>) => void, allowNone: boolean) {
+    const kinds: [string, string][] = [
+      ['gable', 'Gable'],
+      ['hip', 'Hipped'],
+      ['flat', 'Flat'],
+    ];
+    if (allowNone) kinds.push(['none', 'None']);
+    this.select(label, roof.kind, kinds, (v) => set({ kind: v as RoofKind }));
+    if (roof.kind === 'gable' || roof.kind === 'hip') {
+      this.number('Roof pitch', roof.pitch, 1, 5, 70, (v) => set({ pitch: v }), '°');
+    }
+    if (roof.kind !== 'none') {
+      this.number('Overhang', roof.overhang, 0.05, 0, 1.5, (v) => set({ overhang: v }), 'm', 'How far the eaves project past the walls');
+    }
   }
 
   private addFloor(copyOutline: boolean) {

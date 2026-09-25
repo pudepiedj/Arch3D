@@ -62,6 +62,34 @@ export interface Roof {
   pitch: number;
   /** How far the eaves project beyond the outside face of the walls. */
   overhang: number;
+  /**
+   * Edges set by hand to a sloping eave or a vertical gable end, identified by the
+   * midpoint of the edge (so they survive small edits to the walls).
+   */
+  edges?: RoofEdgeSetting[];
+}
+
+export interface RoofEdgeSetting {
+  x: number;
+  y: number;
+  type: 'eave' | 'gable';
+}
+
+/** Settings for one separately roofed area of a floor, found by a point inside it. */
+export interface RoofAreaSetting {
+  x: number;
+  y: number;
+  roof: Roof;
+}
+
+/** An extra roof drawn by hand, e.g. a cross gable over a bay; it may overlap other roofs. */
+export interface RoofSection {
+  id: string;
+  /** Outline, drawn along wall centre lines (edges on walls are taken to their outside face). */
+  points: { x: number; y: number }[];
+  roof: Roof;
+  /** Height the roof starts from (its wall-plate level) above the floor; default the floor's wall top. */
+  base?: number;
 }
 
 /** The drawing of one floor: its wall graph, doors and windows. */
@@ -82,8 +110,15 @@ export interface Level extends Plan {
   slab: number;
   /** Stairs going up from this level. */
   stairs: Record<string, Stair>;
-  /** Roof over this level. Unset means the default: a gable roof if it is the top floor. */
+  /**
+   * Default roof for the parts of this floor with nothing built above them. Unset means a
+   * gable roof on the top floor and flat roofs on lower floors (e.g. single-storey extensions).
+   */
   roof?: Roof;
+  /** Different roofs for particular areas of this floor. */
+  roofAreas?: RoofAreaSetting[];
+  /** Extra hand-drawn roofs. */
+  roofSections?: Record<string, RoofSection>;
 }
 
 /** A building is a stack of levels, listed from the bottom up. */

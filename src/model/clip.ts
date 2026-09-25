@@ -10,7 +10,9 @@ const pc = ((ns as unknown as { default?: typeof ns }).default ?? ns) as typeof 
 /** A polygon with holes: outer ring first. Rings are open (first point not repeated). */
 export type Shape = Vec2[][];
 
-const toRing = (pts: Vec2[]): Ring => pts.map((p) => [p.x, p.y] as [number, number]);
+// Snap to a 0.1 micron grid: the library can fail on points that differ only by rounding noise.
+const snap = (v: number) => Math.round(v * 1e7) / 1e7;
+const toRing = (pts: Vec2[]): Ring => pts.map((p) => [snap(p.x), snap(p.y)] as [number, number]);
 
 function fromMulti(m: MultiPolygon): Shape[] {
   return m.map((poly) =>
@@ -36,4 +38,9 @@ export function subtract(poly: Vec2[], cut: Shape[]): Shape[] {
   if (!cut.length) return [[poly]];
   const clips: Polygon[] = cut.map((s) => s.map(toRing));
   return fromMulti(pc.difference([toRing(poly)], ...clips));
+}
+
+/** Intersection of two simple polygons. */
+export function intersectAll(a: Vec2[], b: Vec2[]): Shape[] {
+  return fromMulti(pc.intersection([toRing(a)], [toRing(b)]));
 }

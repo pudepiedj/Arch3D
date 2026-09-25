@@ -12,7 +12,7 @@ import { openingsOf } from '../model/openings';
 import { detectRooms } from '../model/rooms';
 import { ceilingHeight, levelElevation } from '../model/building';
 import { type Shape, subtract } from '../model/clip';
-import { type Point3, type RoofGeometry, effectiveRoof, roofGeometry } from '../model/roof';
+import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs } from '../model/roof';
 import { type StairGeometry, stairGeometry, stairSurfaceAt, stairwells } from '../model/stairs';
 import { type RailLine, againstWall, buildRails, onSegment } from './rails';
 import type { Building, Opening, Plan } from '../model/types';
@@ -26,6 +26,7 @@ export interface Materials {
   door: THREE.Material;
   ceiling: THREE.Material;
   roof: THREE.Material;
+  flatRoof: THREE.Material;
 }
 
 export function createMaterials(): Materials {
@@ -46,6 +47,7 @@ export function createMaterials(): Materials {
     // One-sided: seen from inside the room, invisible when looking down from above.
     ceiling: new THREE.MeshStandardMaterial({ color: 0xfbfaf8, roughness: 0.95, shadowSide: THREE.DoubleSide }),
     roof: new THREE.MeshStandardMaterial({ color: 0x8f4b3a, roughness: 0.85, side: THREE.DoubleSide }),
+    flatRoof: new THREE.MeshStandardMaterial({ color: 0x5d6066, roughness: 0.95, side: THREE.DoubleSide }),
   };
 }
 
@@ -121,8 +123,8 @@ export interface LevelOptions {
   wellExits?: Vec2[];
   /** Stairs standing on this floor. */
   stairs?: StairGeometry[];
-  /** The roof over this floor, if it has one and it isn't cut away. */
-  roof?: RoofGeometry | null;
+  /** The roofs over this floor (none when it is cut away). */
+  roofs?: RoofGeometry[];
 }
 
 /**
@@ -142,10 +144,7 @@ export function buildBuildingObject(b: Building, mats: Materials, upTo?: string)
       ceilingHoles: stairwells(level),
       slab: level.slab,
       stairs: Object.values(level.stairs ?? {}).map((st) => stairGeometry(st, level.height)),
-      roof: (() => {
-        const r = i === cut ? null : effectiveRoof(b, level);
-        return r ? roofGeometry(level, r) : null;
-      })(),
+      roofs: i === cut ? [] : levelRoofs(b, level).flatMap((r) => (r.geometry ? [r.geometry] : [])),
     });
     obj.position.y = levelElevation(b, level.id);
     obj.name = `level:${level.id}`;
@@ -219,7 +218,7 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
     }
   }
 
-  if (opts.roof) group.add(buildRoofObject(opts.roof, mats));
+  for (const r of opts.roofs ?? []) group.add(buildRoofObject(r, mats));
 
   const wallMesh = new THREE.Mesh(sides.geometry(), mats.wall);
   wallMesh.castShadow = wallMesh.receiveShadow = true;
@@ -289,28 +288,40 @@ function buildRoofObject(r: RoofGeometry, mats: Materials): THREE.Group {
   const g = new THREE.Group();
   g.name = 'roof';
   const covering = new Mesher();
+  const flatTop = new Mesher();
   const gableWalls = new Mesher();
   const trim = new Mesher();
   const v = (p: Point3) => new THREE.Vector3(p.x, p.z, p.y);
   const up = new THREE.Vector3(0, 1, 0);
   for (const f of r.faces) {
     if (f.kind === 'gable') {
-      gableWalls.tri(v(f.pts[0]), v(f.pts[1]), v(f.pts[2]), new THREE.Vector3(0, 0, 0));
+      // A vertical polygon: triangulate it in its own plane (distance along the wall, height).
+      const o = f.pts[0];
+      const far = f.pts.reduce((m, p) => (Math.hypot(p.x - o.x, p.y - o.y) > Math.hypot(m.x - o.x, m.y - o.y) ? p : m), o);
+      const len = Math.hypot(far.x - o.x, far.y - o.y) || 1;
+      const ux = (far.x - o.x) / len;
+      const uy = (far.y - o.y) / len;
+      const flat = f.pts.map((p) => new THREE.Vector2((p.x - o.x) * ux + (p.y - o.y) * uy, p.z));
+      for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(flat, [])) {
+        gableWalls.tri(v(f.pts[i]), v(f.pts[j]), v(f.pts[k]), new THREE.Vector3(0, 0, 0));
+      }
       continue;
     }
     // Slopes and flat tops are never vertical, so they can be triangulated in plan.
     const tris = THREE.ShapeUtils.triangulateShape(f.pts.map((p) => new THREE.Vector2(p.x, p.y)), []);
-    for (const [i, j, k] of tris) covering.tri(v(f.pts[i]), v(f.pts[j]), v(f.pts[k]), up);
+    const m = f.kind === 'flat' ? flatTop : covering;
+    for (const [i, j, k] of tris) m.tri(v(f.pts[i]), v(f.pts[j]), v(f.pts[k]), up);
     if (f.kind === 'flat') {
-      const z0 = f.pts[0].z - 0.25;
-      for (const [i, j, k] of tris) covering.tri(v({ ...f.pts[i], z: z0 }), v({ ...f.pts[j], z: z0 }), v({ ...f.pts[k], z: z0 }), up.clone().negate());
+      const z0 = f.pts[0].z - FLAT_THICKNESS;
+      for (const [i, j, k] of tris) flatTop.tri(v({ ...f.pts[i], z: z0 }), v({ ...f.pts[j], z: z0 }), v({ ...f.pts[k], z: z0 }), up.clone().negate());
     }
   }
   // Fascia: a board below each eave (the full slab edge for a flat roof).
   const flat = r.faces.some((f) => f.kind === 'flat');
-  for (const [a, b] of r.eaves) trim.vface(a, b, a.z - (flat ? 0.25 : 0.18), a.z, new THREE.Vector3(0, 0, 0));
+  for (const [a, b] of r.eaves) trim.vface(a, b, a.z - (flat ? FLAT_THICKNESS : 0.18), a.z, new THREE.Vector3(0, 0, 0));
   for (const [m, mat] of [
     [covering, mats.roof],
+    [flatTop, mats.flatRoof],
     [gableWalls, mats.wall],
     [trim, mats.frame],
   ] as const) {

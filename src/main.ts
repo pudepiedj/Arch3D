@@ -47,6 +47,13 @@ for (const b of $$('#wallType button')) {
     panel.render();
   });
 }
+for (const b of $$('#roofMode button')) {
+  b.addEventListener('click', () => {
+    editor.setTool('roof');
+    editor.roofMode = b.dataset.roofmode as 'edit' | 'draw';
+    syncToolbar();
+  });
+}
 for (const b of $$('#stairShape button')) {
   b.addEventListener('click', () => {
     editor.stairShape = b.dataset.shape as typeof editor.stairShape;
@@ -191,6 +198,7 @@ const HINTS: Record<Tool, string> = {
   split: 'Click on a wall to add a joint you can drag',
   paste: 'Click on walls to place exact copies · Esc when done',
   stair: 'Click where the stair starts (its bottom step), then click in the direction it goes up',
+  roof: 'Click a roof to select it · click an edge of the selected roof to switch eave / gable end',
 };
 
 function syncToolbar() {
@@ -201,6 +209,8 @@ function syncToolbar() {
   $('#wallType').hidden = editor.tool !== 'wall';
   $('#ortho').hidden = editor.tool !== 'wall' && editor.tool !== 'stair';
   $('#stairShape').hidden = editor.tool !== 'stair';
+  $('#roofMode').hidden = editor.tool !== 'roof';
+  for (const b of $$('#roofMode button')) b.classList.toggle('on', b.dataset.roofmode === editor.roofMode);
   for (const b of $$('#stairShape button')) b.classList.toggle('on', b.dataset.shape === editor.stairShape);
   $('#ortho').classList.toggle('on', editor.ortho);
   $('#finish').hidden = !editor.drawing;
@@ -213,7 +223,10 @@ function syncToolbar() {
   const clip = editor.clipboard;
   $('#pasteTool').hidden = !clip;
   if (clip) $('#pasteTool').textContent = `Paste ${clip.kind} ${Math.round(clip.width * 100)}×${Math.round(clip.height * 100)}`;
-  $('#hint').textContent = HINTS[editor.tool];
+  $('#hint').textContent =
+    editor.tool === 'roof' && editor.roofMode === 'draw'
+      ? 'Click the corners of the new roof (snaps to walls) · click the first corner, double-click or Enter to finish'
+      : HINTS[editor.tool];
 
   const walkHint = $('#walkHint');
   walkHint.hidden = view.mode !== 'walk';
