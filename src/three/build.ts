@@ -12,7 +12,8 @@ import { openingsOf } from '../model/openings';
 import { detectRooms } from '../model/rooms';
 import { ceilingHeight, levelElevation } from '../model/building';
 import { type Shape, subtract } from '../model/clip';
-import { type StairGeometry, stairGeometry, stairwells } from '../model/stairs';
+import { type StairGeometry, stairGeometry, stairSurfaceAt, stairwells } from '../model/stairs';
+import { type RailLine, againstWall, buildRails, onSegment } from './rails';
 import type { Building, Opening, Plan } from '../model/types';
 
 export interface Materials {
@@ -113,6 +114,8 @@ export interface LevelOptions {
   ceilingHoles?: Shape[];
   /** Thickness of this floor, for the edges of stairwells cut through it. */
   slab?: number;
+  /** Where the stairs from below arrive (their walking line ends), to leave those edges open. */
+  wellExits?: Vec2[];
   /** Stairs standing on this floor. */
   stairs?: StairGeometry[];
 }
@@ -130,6 +133,7 @@ export function buildBuildingObject(b: Building, mats: Materials, upTo?: string)
     const obj = buildPlanObject(level, mats, {
       ceiling: i === cut ? null : ceilingHeight(b, level),
       floorHoles: below ? stairwells(below) : [],
+      wellExits: below ? Object.values(below.stairs ?? {}).map((st) => stairGeometry(st, below.height).path.at(-1)!) : [],
       ceilingHoles: stairwells(level),
       slab: level.slab,
       stairs: Object.values(level.stairs ?? {}).map((st) => stairGeometry(st, level.height)),
@@ -185,6 +189,19 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
       for (const piece of subtract(r.polygon, ceilingHoles)) ceilings.hshape(piece, opts.ceiling - 0.001, false);
     }
   }
+  // Guard rails around stairwells, except along walls and where the stair arrives.
+  const guards: RailLine[] = [];
+  for (const well of floorHoles) {
+    const ring = well[0];
+    ring.forEach((a, k) => {
+      const b = ring[(k + 1) % ring.length];
+      if ((opts.wellExits ?? []).some((e) => onSegment(e, a, b))) return;
+      if (againstWall(a, b, [...fps.values()])) return;
+      guards.push({ points: [{ p: a, z: 0 }, { p: b, z: 0 }], baseAt: () => 0 });
+    });
+  }
+  if (guards.length) group.add(buildRails(guards, [...fps.values()], mats.door, mats.frame));
+
   // The cut edges of the floor around a stairwell coming up from below.
   const slab = opts.slab ?? 0;
   for (const well of floorHoles) {
@@ -223,6 +240,25 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
     treadMesh.castShadow = treadMesh.receiveShadow = true;
     stairMesh.name = 'stairs';
     group.add(stairMesh, treadMesh);
+
+    // Handrails up both sides of every stair (balusters only where the side is open).
+    const lines: RailLine[] = opts.stairs.flatMap((g) =>
+      g.rails.map((points) => ({
+        points,
+        baseAt: (p: Vec2, pitch: number) => {
+          // The tread under the rail: look just either side of the stair's edge.
+          let top: number | null = null;
+          for (const dx of [-0.03, 0.03]) {
+            for (const dy of [-0.03, 0.03]) {
+              const z = stairSurfaceAt(g, { x: p.x + dx, y: p.y + dy });
+              if (z !== null && (top === null || z > top)) top = z;
+            }
+          }
+          return top ?? pitch - g.rise;
+        },
+      })),
+    );
+    group.add(buildRails(lines, [...fps.values()], mats.door, mats.frame));
   }
   if (opts.ceiling !== null) {
     const ceilingMesh = new THREE.Mesh(ceilings.geometry(), mats.ceiling);

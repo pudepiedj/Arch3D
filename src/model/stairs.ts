@@ -29,6 +29,16 @@ export interface StairGeometry {
   parts: Vec2[][];
   /** Walking line from bottom to top, for the arrow on the plan. */
   path: Vec2[];
+  /**
+   * The two edges of the stair as 3D polylines along the step nosings (z = height of the
+   * pitch line above the stair's floor). Handrails run a fixed height above these.
+   */
+  rails: RailPoint[][];
+}
+
+export interface RailPoint {
+  p: Vec2;
+  z: number;
 }
 
 export function riserCount(floorToFloor: number): number {
@@ -48,6 +58,8 @@ export function stairGeometry(s: Stair, height: number): StairGeometry {
   const treads: Tread[] = [];
   const parts: Vec2[][] = [];
   const path: Vec2[] = [];
+  const rails: { u: number; v: number; z: number }[][] = [];
+  const pt = (u: number, v: number, z: number) => ({ u, v, z });
   const rect = (u0: number, u1: number, v0: number, v1: number) => [vec(u0, v0), vec(u1, v0), vec(u1, v1), vec(u0, v1)];
   // Screen y points down, so "left" as you walk up is the -v side.
   const side = s.turn === 'right' ? 1 : -1;
@@ -57,6 +69,8 @@ export function stairGeometry(s: Stair, height: number): StairGeometry {
     for (let i = 0; i < k; i++) treads.push({ poly: rect(i * g, (i + 1) * g, -w / 2, w / 2), top: (i + 1) * r });
     parts.push(rect(0, k * g, -w / 2, w / 2));
     path.push(vec(0, 0), vec(k * g, 0));
+    // The pitch line through the nosings reaches the full height at the top edge.
+    for (const v of [-w / 2, w / 2]) rails.push([pt(0, v, r), pt(k * g, v, n * r)]);
   } else {
     // Two flights around one landing; the landing counts as a tread.
     const k1 = Math.floor((n - 2) / 2);
@@ -79,6 +93,9 @@ export function stairGeometry(s: Stair, height: number): StairGeometry {
       const end = v0 + side * k2 * g;
       parts.push(rect(lu, lu + w, Math.min(v0, end), Math.max(v0, end)));
       path.push(vec(0, 0), vec(lu + w / 2, 0), vec(lu + w / 2, end));
+      const inner = (side * w) / 2;
+      rails.push([pt(0, inner, r), pt(lu, inner, landTop), pt(lu, end, n * r)]);
+      rails.push([pt(0, -inner, r), pt(lu, -inner, landTop), pt(lu + w, -inner, landTop), pt(lu + w, inner, landTop), pt(lu + w, end, n * r)]);
     } else {
       // U: a landing across both flights, then the second flight comes back alongside.
       const vOuter = side * (w / 2 + w);
@@ -94,6 +111,18 @@ export function stairGeometry(s: Stair, height: number): StairGeometry {
       }
       parts.push(rect(lu - k2 * g, lu, vc - w / 2, vc + w / 2));
       path.push(vec(0, 0), vec(lu + w / 2, 0), vec(lu + w / 2, vc), vec(lu - k2 * g, vc));
+      const inner = (side * w) / 2;
+      const back = lu - k2 * g;
+      // The inner rail climbs the first flight and doubles back up the second on the same line.
+      rails.push([pt(0, inner, r), pt(lu, inner, landTop), pt(back, inner, n * r)]);
+      rails.push([
+        pt(0, -inner, r),
+        pt(lu, -inner, landTop),
+        pt(lu + w, -inner, landTop),
+        pt(lu + w, vOuter, landTop),
+        pt(lu, vOuter, landTop),
+        pt(back, vOuter, n * r),
+      ]);
     }
   }
 
@@ -107,6 +136,7 @@ export function stairGeometry(s: Stair, height: number): StairGeometry {
     treads: treads.map((t) => ({ ...t, poly: t.poly.map(place) })),
     parts: parts.map((p) => p.map(place)),
     path: path.map(place),
+    rails: rails.map((rail) => rail.map((q) => ({ p: place(vec(q.u, q.v)), z: q.z }))),
   };
 }
 
@@ -137,4 +167,11 @@ export function addStair(level: Level, x: number, y: number, angle: number, shap
   level.stairs ??= {};
   level.stairs[s.id] = s;
   return s;
+}
+
+/** Height of the stair surface at p (the top of the tread there), or null if off the stair. */
+export function stairSurfaceAt(g: StairGeometry, p: Vec2): number | null {
+  let best: number | null = null;
+  for (const t of g.treads) if (pointInPolygon(p, t.poly) && (best === null || t.top > best)) best = t.top;
+  return best;
 }

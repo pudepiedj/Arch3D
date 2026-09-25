@@ -29,6 +29,7 @@ npm run build    # static site in dist/
 - The number of steps and their height come from the floor-to-floor height: the fewest steps that keep each one under 19 cm, e.g. 16 steps of 18.1 cm for 2.9 m.
 - Select a stair to change its shape, which way an L or U turns, its width and tread depth, or to rotate it. Drag it to move it.
 - The floor above automatically gets a matching stairwell. It is shown dashed on that floor's plan and cut out of its floor and the ceiling below.
+- Handrails run up both sides at 90 cm, with balusters where a side is open (just the rail where it runs along a wall). Stairwells get a guard rail on their open edges, leaving the side where the stair arrives clear.
 - In walk mode, walk onto a stair to climb it. You arrive on the next floor, and the plan follows you up and down.
 
 **Floors:** the floor list at the top right of the plan switches between storeys (Page Up/Page Down also work).
@@ -81,7 +82,6 @@ Everything visible is *derived* from that data on every change, so there is no s
 
 ## Not done yet
 
-- Balustrades and handrails for stairs and stairwells.
 - Roofs.
 - Furniture.
 - Textures and materials per room.
