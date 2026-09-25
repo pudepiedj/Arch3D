@@ -37,7 +37,7 @@ export class View3D {
   /** Hide the levels above the active one in orbit view. */
   cutaway = true;
   private keys = new Set<string>();
-  private clock = new THREE.Clock();
+  private timer = new THREE.Timer();
   private framed = false;
   mode: ViewMode = 'orbit';
   onModeChange?: (m: ViewMode) => void;
@@ -53,7 +53,7 @@ export class View3D {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     container.appendChild(this.renderer.domElement);
 
@@ -242,7 +242,8 @@ export class View3D {
   }
 
   private tick() {
-    const dt = Math.min(this.clock.getDelta(), 0.1);
+    this.timer.update();
+    const dt = Math.min(this.timer.getDelta(), 0.1);
     if (this.mode === 'orbit') this.orbit.update();
     else this.walk(dt);
     this.renderer.render(this.scene, this.camera);

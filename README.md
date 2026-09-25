@@ -10,6 +10,8 @@ npm test         # model unit tests
 npm run build    # static site in dist/
 ```
 
+After a `git pull`, run `npm install` again before `npm run dev`. If Vite says it can't resolve an import from one of the `src` files, a new package has been added that isn't installed yet.
+
 ## Using it
 
 | Tool | What it does |
