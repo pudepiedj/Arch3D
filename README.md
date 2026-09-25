@@ -19,6 +19,11 @@ npm run build    # static site in dist/
 | **Door** (D) / **Window** (N) | Click on a wall to place one. It fits itself between corners and other openings. |
 | **Split** (X) | Click on a wall to add a joint, which is then selected so you can drag it (to make a bay, a nib or a step in the wall). |
 
+**Copying doors and windows exactly:** select one and press **Copy** in the panel (Ctrl/⌘+C).
+- **Paste** (toolbar button, or Ctrl/⌘+V) then click on walls to place identical copies: same type, width, height, sill, hinge and swing. A paste that would not fit at full size is refused, never shrunk. Press Esc when done.
+- **Duplicate** (Ctrl/⌘+D) puts a copy right beside the selected one.
+- **Match copied** resizes an existing door or window to the copied one.
+
 The panel edits exact sizes: wall thickness, height and length; opening width, height, sill and distance from the corner; door hinge side and swing direction.
 
 **3D:** *Orbit* to look around the model; *Walk* to explore at eye height. On desktop, click the view to capture the mouse and use W A S D (Shift to hurry). On touch screens, use your left thumb to move and your right thumb to look. You can walk through open doorways, but not through walls.

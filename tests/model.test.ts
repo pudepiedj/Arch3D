@@ -9,7 +9,14 @@ import {
   splitWallAt,
 } from '../src/model/plan';
 import { computeFootprints } from '../src/model/joints';
-import { moveOpening, placeOpening, OPENING_GAP } from '../src/model/openings';
+import {
+  duplicateOpening,
+  matchOpening,
+  moveOpening,
+  placeOpening,
+  templateOf,
+  OPENING_GAP,
+} from '../src/model/openings';
 import { detectRooms } from '../src/model/rooms';
 import { demoPlan } from '../src/model/demo';
 import type { Plan } from '../src/model/types';
@@ -170,6 +177,55 @@ describe('openings', () => {
     const os = Object.values(p.openings);
     expect(os).toHaveLength(1);
     expect(os[0].width).toBeLessThanOrEqual(1.4);
+  });
+});
+
+describe('copy and paste', () => {
+  const custom = { kind: 'window' as const, width: 1.55, height: 1.35, sill: 0.75 };
+
+  it('pastes an exact copy, never a shrunk one', () => {
+    const p = createPlan();
+    addWall(p, { x: 0, y: 0 }, { x: 6, y: 0 }, T);
+    addWall(p, { x: 0, y: 3 }, { x: 1.5, y: 3 }, T);
+    const [long, short] = Object.values(p.walls).map((w) => w.id);
+    const o = placeOpening(p, long, 3, custom)!;
+    expect(templateOf(o)).toMatchObject(custom);
+    // The short wall is too small for a 1.55 m window: an exact paste is refused.
+    expect(placeOpening(p, short, 0.75, templateOf(o))).toBeNull();
+  });
+
+  it('keeps door hinge and swing', () => {
+    const p = createPlan();
+    addWall(p, { x: 0, y: 0 }, { x: 6, y: 0 }, T);
+    const wid = Object.keys(p.walls)[0];
+    const d = placeOpening(p, wid, 1.5, 'door')!;
+    d.hingeFlip = true;
+    const copy = placeOpening(p, wid, 4.5, templateOf(d))!;
+    expect(copy.hingeFlip).toBe(true);
+    expect(copy.swingFlip).toBeUndefined();
+  });
+
+  it('duplicates beside the original, or before it when there is no room after', () => {
+    const p = createPlan();
+    addWall(p, { x: 0, y: 0 }, { x: 6, y: 0 }, T);
+    const wid = Object.keys(p.walls)[0];
+    const o = placeOpening(p, wid, 5, custom)!;
+    const copy = duplicateOpening(p, o.id)!;
+    expect(copy.width).toBe(custom.width);
+    expect(copy.offset).toBeLessThan(o.offset);
+    expect(o.offset - copy.offset).toBeCloseTo(custom.width + OPENING_GAP, 6);
+  });
+
+  it('matches an existing opening to the copied size, only if it fits', () => {
+    const p = createPlan();
+    addWall(p, { x: 0, y: 0 }, { x: 6, y: 0 }, T);
+    const wid = Object.keys(p.walls)[0];
+    const a = placeOpening(p, wid, 1.5, 'window')!;
+    const b = placeOpening(p, wid, 4.5, custom)!;
+    expect(matchOpening(p, a.id, templateOf(b))).toBe(true);
+    expect(templateOf(a)).toMatchObject(custom);
+    expect(matchOpening(p, a.id, { ...custom, width: 5 })).toBe(false);
+    expect(a.width).toBe(custom.width);
   });
 });
 

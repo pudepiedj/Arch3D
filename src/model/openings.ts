@@ -41,21 +41,44 @@ export function freeInterval(
   return hi > lo ? [lo, hi] : null;
 }
 
+/** The properties that make two openings "the same", independent of where they are. */
+export interface OpeningTemplate {
+  kind: OpeningKind;
+  width: number;
+  height: number;
+  sill: number;
+  hingeFlip?: boolean;
+  swingFlip?: boolean;
+}
+
+export function templateOf(o: Opening): OpeningTemplate {
+  return { kind: o.kind, width: o.width, height: o.height, sill: o.sill, hingeFlip: o.hingeFlip, swingFlip: o.swingFlip };
+}
+
+/**
+ * Place a new opening on a wall near position `u`.
+ * With a kind, it uses the default size, shrunk if necessary to fit.
+ * With a template (copy/paste), it is placed at exactly that size or not at all.
+ */
 export function placeOpening(
   plan: Plan,
   wallId: string,
   u: number,
-  kind: OpeningKind,
+  what: OpeningKind | OpeningTemplate,
   fps: Map<string, Footprint> = computeFootprints(plan),
 ): Opening | null {
   const fp = fps.get(wallId);
   const wall = plan.walls[wallId];
   if (!fp || !wall) return null;
+  const exact = typeof what !== 'string';
+  const t: OpeningTemplate = exact ? what : { kind: what, ...DEFAULTS[what] };
+  if (exact && t.sill + t.height > wall.height + 1e-9) return null;
+  const minWidth = exact ? t.width : MIN_OPENING_WIDTH;
   // Use the free gap nearest to u, so clicking near a corner still places the opening.
   let iv: [number, number] | null = null;
   let bestD = Infinity;
   for (const g of freeGaps(plan, fp)) {
-    if (g[1] - g[0] < MIN_OPENING_WIDTH) continue;
+    if (g[1] - g[0] < minWidth - 1e-9) continue;
     const d = u < g[0] ? g[0] - u : u > g[1] ? u - g[1] : 0;
     if (d < bestD) {
       bestD = d;
@@ -63,20 +86,60 @@ export function placeOpening(
     }
   }
   if (!iv || bestD > 0.5) return null;
-  const d = DEFAULTS[kind];
-  const width = Math.min(d.width, iv[1] - iv[0]);
-  const sill = Math.min(d.sill, Math.max(0, wall.height - MIN_OPENING_HEIGHT));
+  const width = Math.min(t.width, iv[1] - iv[0]);
+  const sill = Math.min(t.sill, Math.max(0, wall.height - MIN_OPENING_HEIGHT));
   const o: Opening = {
     id: `o${plan.nextId++}`,
     wallId,
-    kind,
+    kind: t.kind,
     offset: clamp(u, iv[0] + width / 2, iv[1] - width / 2),
     width,
-    height: Math.min(d.height, wall.height - sill),
+    height: Math.min(t.height, wall.height - sill),
     sill,
   };
+  if (t.hingeFlip) o.hingeFlip = true;
+  if (t.swingFlip) o.swingFlip = true;
   plan.openings[o.id] = o;
   return o;
+}
+
+/** Place an identical copy of an opening beside it on the same wall (after it if there is room, else before). */
+export function duplicateOpening(
+  plan: Plan,
+  id: string,
+  fps: Map<string, Footprint> = computeFootprints(plan),
+): Opening | null {
+  const o = plan.openings[id];
+  if (!o) return null;
+  const step = o.width + OPENING_GAP;
+  for (const u of [o.offset + step, o.offset - step]) {
+    const copy = placeOpening(plan, o.wallId, u, templateOf(o), fps);
+    if (copy) return copy;
+  }
+  return null;
+}
+
+/**
+ * Give an existing opening a template's type and size, keeping its centre where possible.
+ * Returns false (and changes nothing) if it would not fit.
+ */
+export function matchOpening(
+  plan: Plan,
+  id: string,
+  t: OpeningTemplate,
+  fps: Map<string, Footprint> = computeFootprints(plan),
+): boolean {
+  const o = plan.openings[id];
+  const fp = fps.get(o?.wallId ?? '');
+  const wall = o && plan.walls[o.wallId];
+  if (!o || !fp || !wall || t.sill + t.height > wall.height + 1e-9) return false;
+  const gap = freeGaps(plan, fp, id).find(([a, b]) => o.offset >= a && o.offset <= b);
+  if (!gap || gap[1] - gap[0] < t.width - 1e-9) return false;
+  Object.assign(o, { kind: t.kind, width: t.width, height: t.height, sill: t.sill });
+  o.hingeFlip = t.hingeFlip || undefined;
+  o.swingFlip = t.swingFlip || undefined;
+  o.offset = clamp(o.offset, gap[0] + t.width / 2, gap[1] - t.width / 2);
+  return true;
 }
 
 /**

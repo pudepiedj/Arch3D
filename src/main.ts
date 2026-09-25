@@ -119,6 +119,7 @@ const HINTS: Record<Tool, string> = {
   door: 'Click on a wall to place a door',
   window: 'Click on a wall to place a window',
   split: 'Click on a wall to add a joint you can drag',
+  paste: 'Click on walls to place exact copies · Esc when done',
 };
 
 function syncToolbar() {
@@ -134,6 +135,9 @@ function syncToolbar() {
   ($('#redo') as HTMLButtonElement).disabled = !store.canRedo;
   for (const b of $$('#layout button')) b.classList.toggle('on', b.dataset.layout === layout);
   for (const b of $$('#mode button')) b.classList.toggle('on', b.dataset.mode === view.mode);
+  const clip = editor.clipboard;
+  $('#pasteTool').hidden = !clip;
+  if (clip) $('#pasteTool').textContent = `Paste ${clip.kind} ${Math.round(clip.width * 100)}×${Math.round(clip.height * 100)}`;
   $('#hint').textContent = HINTS[editor.tool];
 
   const walkHint = $('#walkHint');

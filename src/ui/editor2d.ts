@@ -16,7 +16,14 @@ import {
   vec,
 } from '../model/geom';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
-import { moveOpening, placeOpening } from '../model/openings';
+import {
+  type OpeningTemplate,
+  duplicateOpening,
+  matchOpening,
+  moveOpening,
+  placeOpening,
+  templateOf,
+} from '../model/openings';
 import {
   EPS,
   addWall,
@@ -33,7 +40,7 @@ import { detectRooms } from '../model/rooms';
 import type { Opening, OpeningKind, Plan } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'split';
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'split' | 'paste';
 export type Selection = { kind: 'wall' | 'node' | 'opening'; id: string } | null;
 
 type Gesture =
@@ -60,6 +67,8 @@ export class Editor2D {
   tool: Tool = 'select';
   selection: Selection = null;
   wallProps = { thickness: 0.3, height: 2.6 };
+  /** A copied door or window: its exact type and size. */
+  clipboard: OpeningTemplate | null = null;
   ortho = false;
   gridStep = 0.05;
   onSelectionChange?: () => void;
@@ -478,10 +487,12 @@ export class Editor2D {
         break;
       }
       case 'door':
-      case 'window': {
+      case 'window':
+      case 'paste': {
         const fp = this.wallAt(w, 10 / this.view.scale);
-        if (!fp) break;
-        const o = placeOpening(plan, fp.wallId, local(fp, w).u, this.tool as OpeningKind, this.fps);
+        const spec = this.openingSpec();
+        if (!fp || !spec) break;
+        const o = placeOpening(plan, fp.wallId, local(fp, w).u, spec, this.fps);
         if (o) {
           this.store.commit();
           this.select({ kind: 'opening', id: o.id });
@@ -558,6 +569,22 @@ export class Editor2D {
       this.store.redo();
       return;
     }
+    if (mod && e.key.toLowerCase() === 'c') {
+      if (this.copySelection()) e.preventDefault();
+      return;
+    }
+    if (mod && e.key.toLowerCase() === 'v') {
+      if (this.clipboard) {
+        e.preventDefault();
+        this.setTool('paste');
+      }
+      return;
+    }
+    if (mod && e.key.toLowerCase() === 'd') {
+      e.preventDefault();
+      this.duplicateSelection();
+      return;
+    }
     if (mod) return;
 
     // Typing a length while drawing a wall: e.g. "3.5" then Enter.
@@ -613,6 +640,44 @@ export class Editor2D {
         this.onToolChange?.();
         break;
     }
+  }
+
+  /** What a click with the current tool places: a default door/window, or the copied one. */
+  private openingSpec(): OpeningKind | OpeningTemplate | null {
+    if (this.tool === 'door' || this.tool === 'window') return this.tool;
+    if (this.tool === 'paste') return this.clipboard;
+    return null;
+  }
+
+  /** Copy the selected door or window's type and size. */
+  copySelection(): boolean {
+    const s = this.selection;
+    const o = s?.kind === 'opening' ? this.plan.openings[s.id] : null;
+    if (!o) return false;
+    this.clipboard = templateOf(o);
+    this.onToolChange?.();
+    return true;
+  }
+
+  /** Put an identical copy of the selected door or window next to it. */
+  duplicateSelection(): boolean {
+    const s = this.selection;
+    if (s?.kind !== 'opening') return false;
+    const copy = duplicateOpening(this.plan, s.id);
+    if (!copy) return false;
+    this.store.commit();
+    this.select({ kind: 'opening', id: copy.id });
+    return true;
+  }
+
+  /** Make the selected door or window the same type and size as the copied one. */
+  matchSelection(): boolean {
+    const s = this.selection;
+    if (s?.kind !== 'opening' || !this.clipboard) return false;
+    if (!matchOpening(this.plan, s.id, this.clipboard)) return false;
+    this.store.commit();
+    this.onSelectionChange?.();
+    return true;
   }
 
   deleteSelection() {
@@ -674,6 +739,7 @@ export class Editor2D {
       accent: col('--accent', '#2f6fdf'),
       opening: col('--plan-opening', '#fbfaf7'),
       ink: col('--plan-ink', '#3b3d42'),
+      danger: col('--danger', '#c2413a'),
     };
     ctx.fillStyle = C.bg;
     ctx.fillRect(0, 0, W, H);
@@ -769,15 +835,22 @@ export class Editor2D {
         ctx.lineWidth = 2;
         ctx.stroke();
       }
-    } else if ((this.tool === 'door' || this.tool === 'window') && h) {
+    } else if ((this.tool === 'door' || this.tool === 'window' || this.tool === 'paste') && h) {
       const fp = this.wallAt(h, 10 / this.view.scale);
-      if (fp) {
+      const spec = this.openingSpec();
+      if (fp && spec) {
         const ghostPlan = clonePlan(this.plan);
-        const o = placeOpening(ghostPlan, fp.wallId, local(fp, h).u, this.tool, this.fps);
+        const o = placeOpening(ghostPlan, fp.wallId, local(fp, h).u, spec, this.fps);
         if (o) {
           ctx.globalAlpha = 0.6;
           this.drawOpening(fp, o, true, C);
           ctx.globalAlpha = 1;
+        } else if (this.tool === 'paste') {
+          const s = this.toScreen(h);
+          ctx.font = '600 12px system-ui, sans-serif';
+          ctx.fillStyle = C.danger;
+          ctx.textAlign = 'left';
+          ctx.fillText('No room for an exact copy here', s.x + 12, s.y - 12);
         }
       }
     } else if (this.tool === 'split' && h) {

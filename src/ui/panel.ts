@@ -123,7 +123,27 @@ export class Panel {
         this.done();
       }, 'm', 'Distance from the inside of the corner at the wall start');
     }
-    const btns: [string, () => void, boolean?][] = [];
+    const btns: [string, () => void, boolean?][] = [
+      ['Copy', () => {
+        this.editor.copySelection();
+        this.render();
+      }],
+      ['Duplicate', () => {
+        if (!this.editor.duplicateSelection()) alert('No room on this wall for another one this size.');
+      }],
+    ];
+    const clip = this.editor.clipboard;
+    const same =
+      clip &&
+      clip.kind === o.kind &&
+      Math.abs(clip.width - o.width) < 1e-6 &&
+      Math.abs(clip.height - o.height) < 1e-6 &&
+      Math.abs(clip.sill - o.sill) < 1e-6;
+    if (clip && !same) {
+      btns.push([`Match copied (${Math.round(clip.width * 100)}×${Math.round(clip.height * 100)})`, () => {
+        if (!this.editor.matchSelection()) alert('The copied size does not fit here.');
+      }]);
+    }
     if (o.kind === 'door') {
       btns.push(['Flip hinge', () => {
         o.hingeFlip = !o.hingeFlip;
