@@ -289,7 +289,9 @@ export class View3D {
       // Ease the eye towards its new height so steps feel like steps, not jumps.
       this.eyeY += (this.foot + EYE - this.eyeY) * Math.min(1, dt * 10);
       this.camera.position.set(res.p.x, this.eyeY, res.p.y);
-      const lvl = this.world.levelAt(this.foot);
+      // Only switch floors once the walker is actually standing on one (not mid-stair), so
+      // pausing near the top step doesn't flick the plan back and forth.
+      const lvl = this.world.levelStandingOn(this.foot);
       if (lvl && lvl !== this.walkLevelId) {
         this.walkLevelId = lvl;
         this.onWalkLevelChange?.(lvl);

@@ -57,6 +57,26 @@ describe('walking', () => {
     expect(res.foot).toBeLessThan(0.1);
   });
 
+  it('cannot step off the open side of a stair, even when drifting sideways', () => {
+    const b = house();
+    const world = new WalkWorld(b);
+    // Climb while drifting towards the open (+y) side: 0.9 m of drift over the climb.
+    const res = walk(world, { x: 1, y: 1 }, 0, { x: 8, y: 1.9 });
+    expect(res.foot).toBeCloseTo(2.905, 3);
+    // Standing mid-stair and walking straight off the side keeps you on the stair.
+    const mid = walk(world, { x: 1, y: 1 }, 0, { x: 4, y: 1 });
+    const side = walk(world, mid.p, mid.foot, { x: 4, y: 4 });
+    expect(side.foot).toBeCloseTo(mid.foot, 6);
+    expect(side.p.y).toBeLessThan(1.5);
+  });
+
+  it('switches floors only when standing on one', () => {
+    const world = new WalkWorld(house());
+    expect(world.levelStandingOn(0.005)).toBeDefined();
+    expect(world.levelStandingOn(1.4)).toBeUndefined();
+    expect(world.levelStandingOn(2.905)).toBeDefined();
+  });
+
   it('is stopped by walls', () => {
     const world = new WalkWorld(house());
     const res = walk(world, { x: 8, y: 3 }, 0, { x: 12, y: 3 });

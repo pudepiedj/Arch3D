@@ -17,6 +17,11 @@ import type { Building, Plan } from './types';
 export const RADIUS = 0.25;
 /** Highest step the walker climbs without noticing (a stair riser is at most 0.19). */
 export const STEP_UP = 0.35;
+/**
+ * Largest drop the walker will step down. Anything deeper (the open side of a stair, the
+ * edge of a stairwell) stops them, as a handrail would, instead of letting them fall.
+ */
+export const STEP_DOWN = 0.4;
 const HEAD = 1.8;
 
 /** A wall piece the walker collides with, in wall-local coordinates. */
@@ -70,6 +75,11 @@ export class WalkWorld {
     return best;
   }
 
+  /** The storey whose floor is (within a step of) height `foot`, if any. */
+  levelStandingOn(foot: number): string | undefined {
+    return this.levels.find((l) => Math.abs(foot - l.elevation) < STEP_UP)?.id;
+  }
+
   /** The storey whose walls apply to someone standing at `foot`. */
   levelAt(foot: number): string | undefined {
     let id = this.levels[0]?.id;
@@ -98,12 +108,13 @@ export class WalkWorld {
       const colliders = this.levels.find((l) => l.id === this.levelAt(foot))?.colliders ?? [];
       for (const t of tries) {
         for (let iter = 0; iter < 3; iter++) for (const c of colliders) pushOut(t, c);
-        if (!this.blocked(t, foot)) {
-          cur = t;
-          break;
-        }
+        if (this.blocked(t, foot)) continue;
+        const ground = this.groundAt(t, foot);
+        if (ground < foot - STEP_DOWN) continue;
+        cur = t;
+        foot = ground;
+        break;
       }
-      foot = this.groundAt(cur, foot);
     }
     return { p: cur, foot };
   }
