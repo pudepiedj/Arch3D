@@ -36,18 +36,37 @@ export interface Opening {
   swingFlip?: boolean;
 }
 
+/** The drawing of one floor: its wall graph, doors and windows. */
 export interface Plan {
-  version: 1;
   nodes: Record<string, PlanNode>;
   walls: Record<string, Wall>;
   openings: Record<string, Opening>;
   nextId: number;
 }
 
+/** A storey: a floor plan plus its vertical dimensions. */
+export interface Level extends Plan {
+  id: string;
+  name: string;
+  /** Floor-to-floor height. Walls normally run this full height, up to the next floor. */
+  height: number;
+  /** Thickness of this floor's structure (the slab above the storey below). */
+  slab: number;
+}
+
+/** A building is a stack of levels, listed from the bottom up. */
+export interface Building {
+  version: 2;
+  levels: Level[];
+  nextId: number;
+}
+
 export const DEFAULTS = {
   exteriorThickness: 0.3,
   interiorThickness: 0.12,
-  wallHeight: 2.6,
+  /** Floor-to-floor height: 2.6 m ceilings under a 0.3 m floor structure. */
+  levelHeight: 2.9,
+  slab: 0.3,
   door: { width: 0.9, height: 2.1, sill: 0 },
   window: { width: 1.2, height: 1.2, sill: 0.9 },
 };

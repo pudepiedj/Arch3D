@@ -12,7 +12,7 @@ import type { Plan, PlanNode, Wall } from './types';
 export const EPS = 1e-3;
 
 export function createPlan(): Plan {
-  return { version: 1, nodes: {}, walls: {}, openings: {}, nextId: 1 };
+  return { nodes: {}, walls: {}, openings: {}, nextId: 1 };
 }
 
 export function clonePlan(p: Plan): Plan {

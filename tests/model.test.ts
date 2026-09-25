@@ -18,7 +18,8 @@ import {
   OPENING_GAP,
 } from '../src/model/openings';
 import { detectRooms } from '../src/model/rooms';
-import { demoPlan } from '../src/model/demo';
+import { demoBuilding } from '../src/model/demo';
+const demoPlan = () => demoBuilding().levels[0];
 import type { Plan } from '../src/model/types';
 
 const T = { thickness: 0.2, height: 2.5 };

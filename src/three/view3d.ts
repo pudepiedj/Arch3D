@@ -5,8 +5,9 @@ import { computeFootprints, type Footprint } from '../model/joints';
 import { openingsOf } from '../model/openings';
 import { planBounds } from '../model/plan';
 import { detectRooms } from '../model/rooms';
-import type { Plan } from '../model/types';
-import { buildPlanObject, createMaterials, disposeObject } from './build';
+import { getLevel, levelElevation } from '../model/building';
+import type { Building, Level, Plan } from '../model/types';
+import { buildBuildingObject, createMaterials, disposeObject } from './build';
 
 export type ViewMode = 'orbit' | 'walk';
 
@@ -31,7 +32,13 @@ export class View3D {
   private planObj: THREE.Object3D | null = null;
   private sun: THREE.DirectionalLight;
   private colliders: Collider[] = [];
-  private plan: Plan | null = null;
+  private plan: Level | null = null;
+  private building: Building | null = null;
+  private activeId = '';
+  /** Elevation of the level being edited/walked. */
+  private floorY = 0;
+  /** Hide the levels above the active one in orbit view. */
+  cutaway = true;
   private keys = new Set<string>();
   private clock = new THREE.Clock();
   private framed = false;
@@ -56,6 +63,8 @@ export class View3D {
     this.scene.background = new THREE.Color(0xcfe3f3);
     this.scene.fog = new THREE.Fog(0xcfe3f3, 60, 180);
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0xb9b2a6, 1.4));
+    // Fill light so ceilings and rooms away from windows are not gloomy.
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.9));
     this.sun = new THREE.DirectionalLight(0xffffff, 2.2);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
@@ -103,21 +112,43 @@ export class View3D {
 
   private isTouch = false;
 
-  setPlan(plan: Plan) {
-    this.plan = plan;
+  /**
+   * Show a building while `activeId` is the level being edited. In orbit view with
+   * `cutaway` on, the levels above it are hidden and its ceilings removed, like a doll's house.
+   */
+  setBuilding(b: Building, activeId: string) {
+    const levelChanged = this.activeId !== activeId;
+    this.building = b;
+    this.activeId = activeId;
+    this.plan = getLevel(b, activeId) ?? b.levels[0];
+    this.floorY = levelElevation(b, this.plan.id);
+    this.rebuild();
+    if (this.mode === 'walk' && levelChanged) this.placeWalker();
+  }
+
+  setCutaway(on: boolean) {
+    this.cutaway = on;
+    this.rebuild();
+  }
+
+  private rebuild() {
+    const b = this.building;
+    if (!b) return;
     if (this.planObj) {
       this.scene.remove(this.planObj);
       disposeObject(this.planObj);
     }
-    this.planObj = buildPlanObject(plan, this.mats);
+    const cut = this.mode === 'orbit' && this.cutaway ? this.activeId : undefined;
+    this.planObj = buildBuildingObject(b, this.mats, cut);
     this.scene.add(this.planObj);
-    this.colliders = buildColliders(plan);
+    this.colliders = this.plan ? buildColliders(this.plan) : [];
 
-    const b = planBounds(plan);
-    if (b) {
-      const cx = (b.min.x + b.max.x) / 2;
-      const cy = (b.min.y + b.max.y) / 2;
-      const r = Math.max(b.max.x - b.min.x, b.max.y - b.min.y) / 2 + 4;
+    const bounds = buildingBounds(b);
+    if (bounds) {
+      const cx = (bounds.min.x + bounds.max.x) / 2;
+      const cy = (bounds.min.y + bounds.max.y) / 2;
+      const top = b.levels.reduce((z, l) => z + l.height, 0);
+      const r = Math.max(bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y, top) / 2 + 4;
       this.sun.position.set(cx + r * 0.8, r * 1.6, cy + r * 0.5);
       this.sun.target.position.set(cx, 0, cy);
       const cam = this.sun.shadow.camera;
@@ -135,14 +166,13 @@ export class View3D {
 
   /** Orbit camera looking at the whole plan. */
   frame() {
-    if (!this.plan) return;
-    const b = planBounds(this.plan);
+    const b = this.building && buildingBounds(this.building);
     if (!b) return;
     const cx = (b.min.x + b.max.x) / 2;
     const cy = (b.min.y + b.max.y) / 2;
     const r = Math.max(b.max.x - b.min.x, b.max.y - b.min.y, 4);
-    this.orbit.target.set(cx, 0.8, cy);
-    this.camera.position.set(cx + r * 0.7, r * 0.9, cy + r * 1.1);
+    this.orbit.target.set(cx, this.floorY + 0.8, cy);
+    this.camera.position.set(cx + r * 0.7, this.floorY + r * 0.9, cy + r * 1.1);
     this.camera.lookAt(this.orbit.target);
   }
 
@@ -158,6 +188,8 @@ export class View3D {
       this.orbit.enabled = true;
       this.frame();
     }
+    // Walking shows every floor; orbiting may cut away the floors above.
+    this.rebuild();
     this.onModeChange?.(mode);
   }
 
@@ -167,7 +199,7 @@ export class View3D {
     rooms.sort((a, b) => b.area - a.area);
     const b = this.plan && planBounds(this.plan);
     const start = rooms[0]?.centroid ?? (b ? { x: (b.min.x + b.max.x) / 2, y: b.max.y + 3 } : { x: 0, y: 0 });
-    this.camera.position.set(start.x, EYE, start.y);
+    this.camera.position.set(start.x, this.floorY + EYE, start.y);
     this.yaw = rooms[0] ? 0 : Math.PI;
     this.pitch = 0;
     this.applyYawPitch();
@@ -258,7 +290,7 @@ export class View3D {
       p.y += move.z / steps;
       for (let iter = 0; iter < 3; iter++) for (const c of this.colliders) pushOut(p, c);
     }
-    this.camera.position.set(p.x, EYE, p.y);
+    this.camera.position.set(p.x, this.floorY + EYE, p.y);
   }
 
   private resize() {
@@ -318,6 +350,22 @@ function pushOut(p: { x: number; y: number }, c: Collider) {
   }
   p.x += du * fp.dir.x + dv * fp.n.x;
   p.y += du * fp.dir.y + dv * fp.n.y;
+}
+
+function buildingBounds(b: Building) {
+  let out: ReturnType<typeof planBounds> = null;
+  for (const l of b.levels) {
+    const pb = planBounds(l);
+    if (!pb) continue;
+    if (!out) out = pb;
+    else {
+      out.min.x = Math.min(out.min.x, pb.min.x);
+      out.min.y = Math.min(out.min.y, pb.min.y);
+      out.max.x = Math.max(out.max.x, pb.max.x);
+      out.max.y = Math.max(out.max.y, pb.max.y);
+    }
+  }
+  return out;
 }
 
 function isTyping(e: KeyboardEvent) {

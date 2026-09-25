@@ -116,3 +116,21 @@ function insetLoop(pts: Vec2[], offsets: number[]): Vec2[] {
   }
   return out;
 }
+
+/**
+ * Walls on the outside of the building: those with a room on one side only.
+ * (Interior walls have rooms on both sides; free-standing walls have none.)
+ */
+export function outlineWallIds(plan: Plan, rooms: Room[] = detectRooms(plan)): string[] {
+  const sides = new Map<string, number>();
+  for (const r of rooms) {
+    r.nodeIds.forEach((id, i) => {
+      const next = r.nodeIds[(i + 1) % r.nodeIds.length];
+      const key = id < next ? `${id}|${next}` : `${next}|${id}`;
+      sides.set(key, (sides.get(key) ?? 0) + 1);
+    });
+  }
+  return Object.values(plan.walls)
+    .filter((w) => sides.get(w.a < w.b ? `${w.a}|${w.b}` : `${w.b}|${w.a}`) === 1)
+    .map((w) => w.id);
+}

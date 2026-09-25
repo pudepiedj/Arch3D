@@ -10,7 +10,8 @@ import { Vec2, sub, dot } from '../model/geom';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import { openingsOf } from '../model/openings';
 import { detectRooms } from '../model/rooms';
-import type { Opening, Plan } from '../model/types';
+import { ceilingHeight, levelElevation } from '../model/building';
+import type { Building, Opening, Plan } from '../model/types';
 
 export interface Materials {
   wall: THREE.Material;
@@ -19,13 +20,14 @@ export interface Materials {
   frame: THREE.Material;
   glass: THREE.Material;
   door: THREE.Material;
+  ceiling: THREE.Material;
 }
 
 export function createMaterials(): Materials {
   return {
     wall: new THREE.MeshStandardMaterial({ color: 0xf1ede6, roughness: 0.9, side: THREE.DoubleSide }),
     wallTop: new THREE.MeshStandardMaterial({ color: 0x55575c, roughness: 0.8, side: THREE.DoubleSide }),
-    floor: new THREE.MeshStandardMaterial({ color: 0xc8a57c, roughness: 0.7 }),
+    floor: new THREE.MeshStandardMaterial({ color: 0xc8a57c, roughness: 0.7, shadowSide: THREE.DoubleSide }),
     frame: new THREE.MeshStandardMaterial({ color: 0xfafafa, roughness: 0.5 }),
     glass: new THREE.MeshPhysicalMaterial({
       color: 0xa8cde8,
@@ -36,6 +38,8 @@ export function createMaterials(): Materials {
       depthWrite: false,
     }),
     door: new THREE.MeshStandardMaterial({ color: 0x8b5e3c, roughness: 0.6 }),
+    // One-sided: seen from inside the room, invisible when looking down from above.
+    ceiling: new THREE.MeshStandardMaterial({ color: 0xfbfaf8, roughness: 0.95, shadowSide: THREE.DoubleSide }),
   };
 }
 
@@ -85,7 +89,29 @@ class Mesher {
 const w3 = (p: Vec2, z: number) => new THREE.Vector3(p.x, z, p.y);
 const n3 = (p: Vec2, s = 1) => new THREE.Vector3(p.x * s, 0, p.y * s);
 
-export function buildPlanObject(plan: Plan, mats: Materials): THREE.Group {
+export interface LevelOptions {
+  /** Height of the ceiling above this floor, or null for no ceilings. */
+  ceiling: number | null;
+}
+
+/**
+ * The whole building: each level built in its own coordinates and lifted to its elevation.
+ * `upTo` hides the levels above it (a doll's-house cutaway) and that level's ceilings.
+ */
+export function buildBuildingObject(b: Building, mats: Materials, upTo?: string): THREE.Group {
+  const group = new THREE.Group();
+  const cut = upTo ? b.levels.findIndex((l) => l.id === upTo) : -1;
+  b.levels.forEach((level, i) => {
+    if (cut >= 0 && i > cut) return;
+    const obj = buildPlanObject(level, mats, { ceiling: i === cut ? null : ceilingHeight(b, level) });
+    obj.position.y = levelElevation(b, level.id);
+    obj.name = `level:${level.id}`;
+    group.add(obj);
+  });
+  return group;
+}
+
+export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions = { ceiling: null }): THREE.Group {
   const group = new THREE.Group();
   const fps = computeFootprints(plan);
   const sides = new Mesher();
@@ -125,9 +151,20 @@ export function buildPlanObject(plan: Plan, mats: Materials): THREE.Group {
   group.add(wallMesh, topMesh);
 
   const floors = new Mesher();
-  for (const r of detectRooms(plan)) floors.hpoly(r.polygon, 0.002, true);
+  const ceilings = new Mesher();
+  for (const r of detectRooms(plan)) {
+    // Slightly above the level's datum so it never fights with wall tops of the floor below.
+    floors.hpoly(r.polygon, 0.005, true);
+    if (opts.ceiling !== null) ceilings.hpoly(r.polygon, opts.ceiling - 0.001, false);
+  }
+  if (opts.ceiling !== null) {
+    const ceilingMesh = new THREE.Mesh(ceilings.geometry(), mats.ceiling);
+    ceilingMesh.castShadow = true;
+    ceilingMesh.name = 'ceilings';
+    group.add(ceilingMesh);
+  }
   const floorMesh = new THREE.Mesh(floors.geometry(), mats.floor);
-  floorMesh.receiveShadow = true;
+  floorMesh.receiveShadow = floorMesh.castShadow = true;
   floorMesh.name = 'floors';
   group.add(floorMesh);
   return group;

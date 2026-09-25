@@ -24,6 +24,13 @@ npm run build    # static site in dist/
 - **Duplicate** (Ctrl/⌘+D) puts a copy right beside the selected one.
 - **Match copied** resizes an existing door or window to the copied one.
 
+**Floors:** the floor list at the top right of the plan switches between storeys (Page Up/Page Down also work).
+- **+ Floor** adds a storey on top, starting with a copy of the outside walls of the floor below.
+- The floor below shows faintly under the plan, and new walls snap to its joints, so walls line up from floor to floor.
+- Click the current floor's name for its settings: name, floor-to-floor height and floor depth (the resulting ceiling height is shown), plus add or delete floors.
+- In 3D, **Cutaway** hides the floors above the one you are editing and lifts off its ceiling, doll's-house style. Walk mode puts you on the floor you are editing, with ceilings overhead.
+- Walls run the full floor-to-floor height by default. Changing a floor's height takes those walls with it.
+
 The panel edits exact sizes: wall thickness, height and length; opening width, height, sill and distance from the corner; door hinge side and swing direction.
 
 **3D:** *Orbit* to look around the model; *Walk* to explore at eye height. On desktop, click the view to capture the mouse and use W A S D (Shift to hurry). On touch screens, use your left thumb to move and your right thumb to look. You can walk through open doorways, but not through walls.
@@ -32,7 +39,9 @@ Plans save automatically in the browser. Use **File → Export/Import** to keep 
 
 ## How it works (and why joints don't break)
 
-The plan is a **graph** (`src/model`):
+A building (`building.ts`) is a stack of **levels**. Each level is an independent floor plan plus its floor-to-floor height and floor (slab) thickness. So everything below works per floor, and each floor is lifted to its elevation in 3D. Drawings saved before storeys existed load as a one-storey building.
+
+Each floor plan is a **graph** (`src/model`):
 
 - **Nodes** are wall junctions. **Walls** are edges between two nodes, each with its own thickness and height.
 - **Doors and windows are not holes.** Each is stored as a position along its wall (`offset`, `width`, `height`, `sill`).
@@ -63,10 +72,9 @@ Everything visible is *derived* from that data on every change, so there is no s
 
 ## Not done yet
 
-- Multiple storeys and stairs.
+- Stairs (and the matching hole in the floor above).
 - Roofs.
 - Furniture.
-- Ceilings.
 - Textures and materials per room.
 - Curved walls.
 - Snapping openings to exact positions from a room's inside corner on either side.

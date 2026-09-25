@@ -1,6 +1,6 @@
-import { demoPlan } from './model/demo';
-import { createPlan } from './model/plan';
-import type { Plan } from './model/types';
+import { addLevelOnTop, migrate } from './model/building';
+import { demoBuilding } from './model/demo';
+import type { Building } from './model/types';
 import { View3D, type ViewMode } from './three/view3d';
 import { Editor2D, type Tool } from './ui/editor2d';
 import { Panel } from './ui/panel';
@@ -9,7 +9,7 @@ import { Store } from './ui/store';
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const $$ = (sel: string) => [...document.querySelectorAll<HTMLButtonElement>(sel)];
 
-const store = new Store(Store.loadSaved() ?? demoPlan());
+const store = new Store(Store.loadSaved() ?? demoBuilding());
 const editor = new Editor2D($('#planPane'), store);
 const view = new View3D($('#viewPane'));
 const panel = new Panel($('#panel'), editor, store);
@@ -21,12 +21,13 @@ const rebuild = () => {
   rebuildQueued = true;
   requestAnimationFrame(() => {
     rebuildQueued = false;
-    view.setPlan(store.plan);
+    view.setBuilding(store.building, store.activeId);
   });
 };
 store.subscribe(rebuild);
 store.subscribe(syncToolbar);
-view.setPlan(store.plan);
+store.subscribe(renderLevels);
+view.setBuilding(store.building, store.activeId);
 
 editor.shortcutsEnabled = () => !(view.mode === 'walk' && layout !== 'plan');
 editor.onSelectionChange = () => panel.render();
@@ -71,24 +72,78 @@ for (const b of $$('#mode button')) {
   });
 }
 view.onModeChange = syncToolbar;
+$('#cutaway').addEventListener('click', () => {
+  view.setCutaway(!view.cutaway);
+  syncToolbar();
+});
+
+// ---------------------------------------------------------------- floors
+
+function setLevel(id: string) {
+  if (editor.drawing) editor.finishChain();
+  editor.select(null);
+  store.setActive(id);
+}
+
+function renderLevels() {
+  const nav = $('#levels');
+  nav.replaceChildren();
+  const add = document.createElement('button');
+  add.textContent = '+ Floor';
+  add.title = 'Add a floor on top, starting with a copy of the outside walls below';
+  add.addEventListener('click', () => {
+    const level = addLevelOnTop(store.building, true);
+    store.commit();
+    setLevel(level.id);
+  });
+  nav.append(add);
+  for (const level of [...store.building.levels].reverse()) {
+    const b = document.createElement('button');
+    b.textContent = level.name;
+    const active = level.id === store.activeId;
+    b.classList.toggle('on', active);
+    b.title = active ? 'Floor settings' : `Edit ${level.name}`;
+    b.addEventListener('click', () => {
+      if (active) editor.select({ kind: 'level', id: level.id });
+      else setLevel(level.id);
+    });
+    nav.append(b);
+  }
+}
+renderLevels();
+
+// Page Up / Page Down move between floors.
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'PageUp' && e.key !== 'PageDown') return;
+  const levels = store.building.levels;
+  const i = levels.findIndex((l) => l.id === store.activeId) + (e.key === 'PageUp' ? 1 : -1);
+  if (levels[i]) {
+    e.preventDefault();
+    setLevel(levels[i].id);
+  }
+});
 view.onLockChange = syncToolbar;
 
 // File menu.
 const menu = $('details.menu') as HTMLDetailsElement;
 const closeMenu = () => menu.removeAttribute('open');
-const load = (p: Plan) => {
+const load = (b: Building) => {
   editor.select(null);
-  store.replace(p);
+  store.replace(b);
   editor.zoomToFit();
   view.frame();
   closeMenu();
 };
 $('#new').addEventListener('click', () => {
-  if (confirm('Start a new empty plan? (You can undo this.)')) load(createPlan());
+  if (confirm('Start a new empty building? (You can undo this.)')) {
+    store.reset();
+    editor.select(null);
+    closeMenu();
+  }
 });
-$('#demo').addEventListener('click', () => load(demoPlan()));
+$('#demo').addEventListener('click', () => load(demoBuilding()));
 $('#export').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(store.plan, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify(store.building, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'plan.arch3d.json';
@@ -101,10 +156,7 @@ $('#importFile').addEventListener('change', async (e) => {
   const f = (e.target as HTMLInputElement).files?.[0];
   if (!f) return;
   try {
-    const p = JSON.parse(await f.text()) as Plan;
-    if (p.version !== 1 || !p.nodes || !p.walls) throw new Error('not an Arch3D plan');
-    p.openings ??= {};
-    load(p);
+    load(migrate(JSON.parse(await f.text())));
   } catch (err) {
     alert(`Could not import: ${(err as Error).message}`);
   }
@@ -135,6 +187,8 @@ function syncToolbar() {
   ($('#redo') as HTMLButtonElement).disabled = !store.canRedo;
   for (const b of $$('#layout button')) b.classList.toggle('on', b.dataset.layout === layout);
   for (const b of $$('#mode button')) b.classList.toggle('on', b.dataset.mode === view.mode);
+  $('#cutaway').classList.toggle('on', view.cutaway);
+  $('#cutaway').hidden = store.building.levels.length < 2 || view.mode === 'walk';
   const clip = editor.clipboard;
   $('#pasteTool').hidden = !clip;
   if (clip) $('#pasteTool').textContent = `Paste ${clip.kind} ${Math.round(clip.width * 100)}×${Math.round(clip.height * 100)}`;

@@ -15,6 +15,7 @@ import {
   sub,
   vec,
 } from '../model/geom';
+import { getLevel, levelBelow } from '../model/building';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import {
   type OpeningTemplate,
@@ -37,11 +38,11 @@ import {
   splitWallAt,
 } from '../model/plan';
 import { detectRooms } from '../model/rooms';
-import type { Opening, OpeningKind, Plan } from '../model/types';
+import type { Level, Opening, OpeningKind, Plan } from '../model/types';
 import type { Store } from './store';
 
 export type Tool = 'select' | 'wall' | 'door' | 'window' | 'split' | 'paste';
-export type Selection = { kind: 'wall' | 'node' | 'opening'; id: string } | null;
+export type Selection = { kind: 'wall' | 'node' | 'opening' | 'level'; id: string } | null;
 
 type Gesture =
   | { kind: 'pan'; last: Vec2 }
@@ -66,7 +67,8 @@ export class Editor2D {
   private view = { scale: 40, ox: 40, oy: 40 };
   tool: Tool = 'select';
   selection: Selection = null;
-  wallProps = { thickness: 0.3, height: 2.6 };
+  /** Thickness for new walls; their height is the level's floor-to-floor height. */
+  wallProps = { thickness: 0.3 };
   /** A copied door or window: its exact type and size. */
   clipboard: OpeningTemplate | null = null;
   ortho = false;
@@ -118,8 +120,13 @@ export class Editor2D {
     this.resize();
   }
 
-  get plan(): Plan {
+  get plan(): Level {
     return this.store.plan;
+  }
+
+  /** The level under the one being edited, if any. */
+  private below(): Plan | undefined {
+    return levelBelow(this.store.building, this.store.activeId);
   }
 
   setTool(t: Tool) {
@@ -196,6 +203,18 @@ export class Editor2D {
       }
     }
     if (best) return { p: best, kind: 'node', guides };
+    // ...then joints on the floor below, so walls can be stacked exactly.
+    const below = this.below();
+    if (below) {
+      for (const n of Object.values(below.nodes)) {
+        const d = dist(n, raw);
+        if (d < bestD) {
+          bestD = d;
+          best = vec(n.x, n.y);
+        }
+      }
+      if (best) return { p: best, kind: 'node', guides };
+    }
 
     // 2. Direction lock relative to the previous point (always within 4 degrees of 45s; hard with Ortho).
     const from = opts.from ?? null;
@@ -526,7 +545,7 @@ export class Editor2D {
       this.finishChain();
       return;
     }
-    const res = addWall(this.plan, this.drawStart, p, this.wallProps);
+    const res = addWall(this.plan, this.drawStart, p, { thickness: this.wallProps.thickness, height: this.plan.height });
     this.store.commit();
     if (res && this.chainStart && dist(p, this.chainStart) < 1e-6) {
       this.finishChain(); // closed the loop
@@ -695,6 +714,7 @@ export class Editor2D {
     if (!s) return;
     const p = this.plan;
     const exists =
+      (s.kind === 'level' && getLevel(this.store.building, s.id)) ||
       (s.kind === 'wall' && p.walls[s.id]) || (s.kind === 'node' && p.nodes[s.id]) || (s.kind === 'opening' && p.openings[s.id]);
     if (!exists) this.select(null);
   }
@@ -740,6 +760,7 @@ export class Editor2D {
       opening: col('--plan-opening', '#fbfaf7'),
       ink: col('--plan-ink', '#3b3d42'),
       danger: col('--danger', '#c2413a'),
+      underlay: col('--plan-underlay', 'rgba(59, 61, 66, 0.16)'),
     };
     ctx.fillStyle = C.bg;
     ctx.fillRect(0, 0, W, H);
@@ -747,6 +768,7 @@ export class Editor2D {
     const plan = this.plan;
     this.fps = computeFootprints(plan);
     this.drawGrid(W, H, C.grid, C.gridMajor);
+
 
     // Rooms.
     ctx.font = '12px system-ui, sans-serif';
@@ -757,6 +779,16 @@ export class Editor2D {
       this.path(r.polygon);
       ctx.fillStyle = C.room;
       ctx.fill();
+    }
+
+    // The floor below, faintly, as a guide for placing walls above it.
+    const below = this.below();
+    if (below) {
+      ctx.fillStyle = C.underlay;
+      for (const fp of computeFootprints(below).values()) {
+        this.path(fp.polygon);
+        ctx.fill();
+      }
     }
 
     // Walls.

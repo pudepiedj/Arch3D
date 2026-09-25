@@ -1,30 +1,45 @@
-import type { Plan } from '../model/types';
+import { createBuilding, getLevel, migrate } from '../model/building';
+import type { Building, Level } from '../model/types';
 
 const STORAGE_KEY = 'arch3d.plan.v1';
 
 /**
- * Holds the current plan plus undo/redo history as JSON snapshots.
- * Live edits (dragging) call `changed()`; finished operations call `commit()`.
+ * Holds the building plus undo/redo history as JSON snapshots, and which level is being
+ * edited. Live edits (dragging) call `changed()`; finished operations call `commit()`.
  */
 export class Store {
-  plan: Plan;
+  building: Building;
+  /** The level being edited. Not part of the undo history. */
+  activeId: string;
   private undoStack: string[] = [];
   private redoStack: string[] = [];
   private committed: string;
   private listeners = new Set<() => void>();
 
-  constructor(initial: Plan) {
-    this.plan = initial;
+  constructor(initial: Building) {
+    this.building = initial;
+    this.activeId = initial.levels[0].id;
     this.committed = JSON.stringify(initial);
   }
 
-  static loadSaved(): Plan | null {
+  static loadSaved(): Building | null {
     try {
       const s = localStorage.getItem(STORAGE_KEY);
-      return s ? (JSON.parse(s) as Plan) : null;
+      return s ? migrate(JSON.parse(s)) : null;
     } catch {
       return null;
     }
+  }
+
+  /** The level being edited. */
+  get plan(): Level {
+    return getLevel(this.building, this.activeId) ?? this.building.levels[0];
+  }
+
+  setActive(id: string) {
+    if (!getLevel(this.building, id) || id === this.activeId) return;
+    this.activeId = id;
+    this.emit();
   }
 
   subscribe(fn: () => void) {
@@ -39,7 +54,7 @@ export class Store {
 
   /** The operation is complete: record it for undo and save. */
   commit() {
-    const s = JSON.stringify(this.plan);
+    const s = JSON.stringify(this.building);
     if (s !== this.committed) {
       this.undoStack.push(this.committed);
       if (this.undoStack.length > 200) this.undoStack.shift();
@@ -47,18 +62,23 @@ export class Store {
       this.committed = s;
       this.save();
     }
+    this.fixActive();
     this.emit();
   }
 
   /** Abandon uncommitted live edits. */
   revert() {
-    this.plan = JSON.parse(this.committed);
-    this.emit();
+    this.restore(this.committed);
   }
 
-  replace(plan: Plan) {
-    this.plan = plan;
+  replace(b: Building) {
+    this.building = b;
+    this.activeId = b.levels[0].id;
     this.commit();
+  }
+
+  reset() {
+    this.replace(createBuilding());
   }
 
   get canUndo() {
@@ -74,9 +94,8 @@ export class Store {
     if (prev === undefined) return;
     this.redoStack.push(this.committed);
     this.committed = prev;
-    this.plan = JSON.parse(prev);
     this.save();
-    this.emit();
+    this.restore(prev);
   }
 
   redo() {
@@ -84,9 +103,21 @@ export class Store {
     if (next === undefined) return;
     this.undoStack.push(this.committed);
     this.committed = next;
-    this.plan = JSON.parse(next);
     this.save();
+    this.restore(next);
+  }
+
+  private restore(json: string) {
+    this.building = JSON.parse(json);
+    this.fixActive();
     this.emit();
+  }
+
+  /** Keep the active level valid when levels are added or removed (including by undo). */
+  private fixActive() {
+    if (!getLevel(this.building, this.activeId)) {
+      this.activeId = this.building.levels[this.building.levels.length - 1].id;
+    }
   }
 
   private save() {

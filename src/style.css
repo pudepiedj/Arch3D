@@ -16,6 +16,7 @@
   --plan-grid-major: #dcd7cd;
   --plan-wall: #3b3d42;
   --plan-room: #f1e8d8;
+  --plan-underlay: rgba(59, 61, 66, 0.16);
   --plan-text: #6b6356;
   --plan-opening: #fbfaf7;
   --plan-ink: #3b3d42;
@@ -42,6 +43,7 @@
     --plan-grid-major: #30323a;
     --plan-wall: #d8d4cc;
     --plan-room: #2a2822;
+    --plan-underlay: rgba(216, 212, 204, 0.14);
     --plan-text: #b4ab9c;
     --plan-opening: #1b1c1f;
     --plan-ink: #d8d4cc;
@@ -329,4 +331,35 @@ button.danger {
     right: 8px;
     width: auto;
   }
+}
+
+.levels {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
+}
+
+.levels button {
+  background: transparent;
+  text-align: left;
+  min-height: 32px;
+  padding: 5px 10px;
+}
+
+.levels button:first-child {
+  color: var(--accent);
+}
+
+.levels button.on {
+  background: var(--accent);
+  color: var(--accent-fg);
 }

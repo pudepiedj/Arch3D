@@ -1,6 +1,7 @@
 // Properties panel for the current selection. Every change goes through the model's
 // clean-up (normalize), so e.g. thickening a wall re-mitres its corners and re-fits its openings.
 
+import { addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelElevation, setLevelHeight } from '../model/building';
 import { computeFootprints } from '../model/joints';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
 import { deleteNode, deleteOpening, deleteWall, finishNodeMove, moveNode, normalize, setWallLength, splitWallAt } from '../model/plan';
@@ -59,6 +60,8 @@ export class Panel {
       ]);
       return;
     }
+
+    if (sel.kind === 'level') return this.renderLevel(sel.id);
 
     if (sel.kind === 'node') {
       const n = plan.nodes[sel.id];
@@ -162,6 +165,47 @@ export class Panel {
     this.buttons(btns);
   }
 
+  private renderLevel(id: string) {
+    const b = this.store.building;
+    const level = getLevel(b, id);
+    if (!level) return;
+    const isGround = b.levels[0].id === id;
+    this.title('Floor');
+    this.text('Name', level.name, (v) => {
+      level.name = v || level.name;
+      this.store.commit();
+    });
+    this.number('Floor to floor', level.height, 0.05, 2, 10, (v) => {
+      setLevelHeight(level, v);
+      this.done();
+    }, 'm', 'Walls that ran the full height follow the new height');
+    if (!isGround) {
+      this.number('Floor depth', level.slab, 0.01, 0.1, 1, (v) => {
+        level.slab = v;
+        this.done();
+      }, 'm', 'Thickness of this floor, which is also the ceiling structure of the floor below');
+    }
+    this.note(`Floor level +${levelElevation(b, id).toFixed(2)} m · ceiling height ${ceilingHeight(b, level).toFixed(2)} m`);
+    this.buttons([
+      ['Add floor above', () => this.addFloor(true)],
+      ['Add empty floor', () => this.addFloor(false)],
+      ['Delete floor', () => {
+        if (!confirm(`Delete ${level.name} and everything on it? (You can undo this.)`)) return;
+        deleteLevel(b, id);
+        this.editor.select(null);
+        this.store.commit();
+      }, true],
+    ]);
+    if (b.levels.length === 1) (this.el.querySelector('button.danger') as HTMLButtonElement).disabled = true;
+  }
+
+  private addFloor(copyOutline: boolean) {
+    const level = addLevelOnTop(this.store.building, copyOutline);
+    this.store.commit();
+    this.editor.select(null);
+    this.store.setActive(level.id);
+  }
+
   private renderDefaults() {
     const ed = this.editor;
     this.title('New wall');
@@ -169,9 +213,7 @@ export class Panel {
       ed.wallProps.thickness = v;
       ed.onToolChange?.();
     }, 'm');
-    this.number('Height', ed.wallProps.height, 0.05, 0.5, 10, (v) => {
-      ed.wallProps.height = v;
-    }, 'm');
+    this.note(`Walls run the full ${this.store.plan.height} m floor-to-floor height of ${this.store.plan.name.toLowerCase()}.`);
   }
 
   private done() {
@@ -229,6 +271,27 @@ export class Panel {
       e.stopPropagation();
     });
     row.append(span, input, u);
+    this.el.append(row);
+  }
+
+  private text(label: string, value: string, onChange: (v: string) => void) {
+    const row = document.createElement('label');
+    row.className = 'field';
+    const span = document.createElement('span');
+    span.textContent = label;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = value;
+    input.style.gridColumn = '2 / 4';
+    input.addEventListener('change', () => {
+      onChange(input.value.trim());
+      input.blur();
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') input.blur();
+      e.stopPropagation();
+    });
+    row.append(span, input);
     this.el.append(row);
   }
 
