@@ -1,9 +1,10 @@
 import { addLevelOnTop, createBuilding } from './building';
+import { addStair } from './stairs';
 import { addWall, findWallInterior } from './plan';
 import { placeOpening } from './openings';
 import { DEFAULTS, type Building, type OpeningKind, type Plan } from './types';
 
-/** A small two-storey house: four rooms downstairs, three up, doors and windows. */
+/** A small two-storey house: four rooms downstairs, three up, a stair, doors and windows. */
 export function demoBuilding(): Building {
   const b = createBuilding();
   const ground = b.levels[0];
@@ -36,10 +37,12 @@ export function demoBuilding(): Building {
   at(ground, 10, 6.5, 'window');
   at(ground, 0, 2, 'window');
   at(ground, 0, 6, 'window');
-  at(ground, 3, 8, 'window');
   at(ground, 6, 2.5, 'door');
   at(ground, 2.5, 4.2, 'door');
   at(ground, 8, 5, 'door');
+
+  // A straight stair along the back wall of the bedroom, rising towards the left.
+  addStair(ground, 4.9, 7.4, Math.PI, 'straight');
 
   const first = addLevelOnTop(b, true);
   addWall(first, { x: 5, y: 0 }, { x: 5, y: 8 }, int);

@@ -1,11 +1,12 @@
 // Properties panel for the current selection. Every change goes through the model's
 // clean-up (normalize), so e.g. thickening a wall re-mitres its corners and re-fits its openings.
 
-import { addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelElevation, setLevelHeight } from '../model/building';
+import { addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
+import { stairGeometry } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
 import { deleteNode, deleteOpening, deleteWall, finishNodeMove, moveNode, normalize, setWallLength, splitWallAt } from '../model/plan';
-import { DEFAULTS, type OpeningKind } from '../model/types';
+import { DEFAULTS, type OpeningKind, type Stair, type StairShape } from '../model/types';
 import type { Editor2D } from './editor2d';
 import type { Store } from './store';
 
@@ -62,6 +63,7 @@ export class Panel {
     }
 
     if (sel.kind === 'level') return this.renderLevel(sel.id);
+    if (sel.kind === 'stair') return this.renderStair(sel.id);
 
     if (sel.kind === 'node') {
       const n = plan.nodes[sel.id];
@@ -197,6 +199,55 @@ export class Panel {
       }, true],
     ]);
     if (b.levels.length === 1) (this.el.querySelector('button.danger') as HTMLButtonElement).disabled = true;
+  }
+
+  private renderStair(id: string) {
+    const level = this.store.plan;
+    const st = level.stairs?.[id];
+    if (!st) return;
+    const g = stairGeometry(st, level.height);
+    this.title('Stair');
+    this.select('Shape', st.shape, [
+      ['straight', 'Straight'],
+      ['L', 'L-shape (quarter turn)'],
+      ['U', 'U-shape (half turn)'],
+    ], (v) => {
+      st.shape = v as StairShape;
+      this.done();
+    });
+    if (st.shape !== 'straight') {
+      this.select('Turns', st.turn, [
+        ['left', 'Left'],
+        ['right', 'Right'],
+      ], (v) => {
+        st.turn = v as Stair['turn'];
+        this.done();
+      });
+    }
+    this.number('Width', st.width, 0.05, 0.6, 3, (v) => {
+      st.width = v;
+      this.done();
+    }, 'm');
+    this.number('Tread depth', st.going, 0.01, 0.2, 0.4, (v) => {
+      st.going = v;
+      this.done();
+    }, 'm', 'How deep each step is (the "going")');
+    this.note(
+      `${g.risers} risers of ${(g.rise * 100).toFixed(1)} cm climb the ${level.height} m to the next floor.` +
+        (st.shape === 'straight' ? ` Length ${(g.treads.length * st.going).toFixed(2)} m.` : '') +
+        (levelAbove(this.store.building, level.id) ? '' : ' There is no floor above yet: add one to use the stair.'),
+    );
+    this.buttons([
+      ['Rotate 90°', () => {
+        st.angle += Math.PI / 2;
+        this.done();
+      }],
+      ['Delete', () => {
+        delete level.stairs[id];
+        this.editor.select(null);
+        this.store.commit();
+      }, true],
+    ]);
   }
 
   private addFloor(copyOutline: boolean) {

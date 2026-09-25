@@ -16,6 +16,7 @@ import {
   vec,
 } from '../model/geom';
 import { getLevel, levelBelow } from '../model/building';
+import { DEFAULT_GOING, DEFAULT_STAIR_WIDTH, type StairGeometry, addStair, stairAt, stairGeometry } from '../model/stairs';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import {
   type OpeningTemplate,
@@ -38,11 +39,11 @@ import {
   splitWallAt,
 } from '../model/plan';
 import { detectRooms } from '../model/rooms';
-import type { Level, Opening, OpeningKind, Plan } from '../model/types';
+import type { Level, Opening, OpeningKind, Plan, StairShape } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'split' | 'paste';
-export type Selection = { kind: 'wall' | 'node' | 'opening' | 'level'; id: string } | null;
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'split' | 'paste' | 'stair';
+export type Selection = { kind: 'wall' | 'node' | 'opening' | 'level' | 'stair'; id: string } | null;
 
 type Gesture =
   | { kind: 'pan'; last: Vec2 }
@@ -50,6 +51,7 @@ type Gesture =
   | { kind: 'dragNode'; id: string }
   | { kind: 'dragWall'; id: string; start: Vec2; a0: Vec2; b0: Vec2; n: Vec2 }
   | { kind: 'dragOpening'; id: string }
+  | { kind: 'dragStair'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'click' };
 
 interface Snap {
@@ -69,6 +71,10 @@ export class Editor2D {
   selection: Selection = null;
   /** Thickness for new walls; their height is the level's floor-to-floor height. */
   wallProps = { thickness: 0.3 };
+  /** Shape for new stairs. */
+  stairShape: StairShape = 'straight';
+  /** First click of a stair being placed (its bottom step). */
+  private stairStart: Vec2 | null = null;
   /** A copied door or window: its exact type and size. */
   clipboard: OpeningTemplate | null = null;
   ortho = false;
@@ -131,6 +137,7 @@ export class Editor2D {
 
   setTool(t: Tool) {
     if (this.tool === 'wall' && t !== 'wall') this.finishChain();
+    this.stairStart = null;
     this.tool = t;
     this.onToolChange?.();
     this.requestRender();
@@ -314,6 +321,8 @@ export class Editor2D {
         return { kind: 'opening', id: o.id };
       }
     }
+    const stair = stairAt(this.plan, w);
+    if (stair) return { kind: 'stair', id: stair };
     const wall = this.wallAt(w, tol);
     return wall ? { kind: 'wall', id: wall.wallId } : null;
   }
@@ -365,6 +374,10 @@ export class Editor2D {
       const hit = this.hitTest(s);
       this.select(hit);
       if (hit?.kind === 'node') this.gesture = { kind: 'dragNode', id: hit.id };
+      else if (hit?.kind === 'stair') {
+        const st = this.plan.stairs[hit.id];
+        this.gesture = { kind: 'dragStair', id: hit.id, start: this.toWorld(s), x0: st.x, y0: st.y };
+      }
       else if (hit?.kind === 'opening') this.gesture = { kind: 'dragOpening', id: hit.id };
       else if (hit?.kind === 'wall') {
         const fp = this.fps.get(hit.id)!;
@@ -437,6 +450,15 @@ export class Editor2D {
         this.store.changed();
         break;
       }
+      case 'dragStair': {
+        const st = plan.stairs[cur.id];
+        if (!st) break;
+        const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
+        st.x = cur.x0 + snapTo(w.x - cur.start.x);
+        st.y = cur.y0 + snapTo(w.y - cur.start.y);
+        this.store.changed();
+        break;
+      }
       case 'dragOpening': {
         const o = plan.openings[cur.id];
         if (!o) break;
@@ -487,6 +509,7 @@ export class Editor2D {
         }
         break;
       case 'dragOpening':
+      case 'dragStair':
         if (this.dragging) this.store.commit();
         break;
       case 'click':
@@ -516,6 +539,21 @@ export class Editor2D {
           this.store.commit();
           this.select({ kind: 'opening', id: o.id });
         }
+        break;
+      }
+      case 'stair': {
+        if (!this.stairStart) {
+          this.stairStart = this.snap(w).p;
+          this.requestRender();
+          break;
+        }
+        const angle = this.stairAngle(this.stairStart, w);
+        if (angle === null) break;
+        const st = addStair(plan, this.stairStart.x, this.stairStart.y, angle, this.stairShape);
+        this.stairStart = null;
+        this.store.commit();
+        this.setTool('select');
+        this.select({ kind: 'stair', id: st.id });
         break;
       }
       case 'split': {
@@ -630,7 +668,10 @@ export class Editor2D {
     }
     switch (e.key) {
       case 'Escape':
-        if (this.drawStart) this.finishChain();
+        if (this.stairStart) {
+          this.stairStart = null;
+          this.requestRender();
+        } else if (this.drawStart) this.finishChain();
         else if (this.tool !== 'select') this.setTool('select');
         else this.select(null);
         break;
@@ -653,6 +694,9 @@ export class Editor2D {
         break;
       case 'x':
         this.setTool('split');
+        break;
+      case 's':
+        this.setTool('stair');
         break;
       case 'o':
         this.ortho = !this.ortho;
@@ -699,12 +743,84 @@ export class Editor2D {
     return true;
   }
 
+  /** Direction from the stair's start towards the pointer, snapped to 90° (or 15° steps). */
+  private stairAngle(start: Vec2, to: Vec2): number | null {
+    if (dist(start, to) < 0.2) return null;
+    const a = Math.atan2(to.y - start.y, to.x - start.x);
+    const right = Math.round(a / (Math.PI / 2)) * (Math.PI / 2);
+    if (this.ortho || Math.abs(right - a) < (10 * Math.PI) / 180) return right;
+    const step = Math.PI / 12;
+    return Math.round(a / step) * step;
+  }
+
+  /** A stair on the plan: treads, and the walking line with an arrow pointing up. */
+  private drawStair(g: StairGeometry, selected: boolean, fromBelow: boolean, C: Record<string, string>) {
+    const ctx = this.ctx;
+    const ink = selected ? C.accent : C.ink;
+    ctx.lineWidth = 1;
+    if (fromBelow) {
+      // The stairwell: an open hole in this floor, with the stair seen through it.
+      for (const part of g.parts) {
+        this.path(part);
+        ctx.fillStyle = C.bg;
+        ctx.fill();
+      }
+      ctx.strokeStyle = C.underlay;
+      for (const t of g.treads) {
+        this.path(t.poly);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = C.ink;
+      ctx.setLineDash([5, 4]);
+      for (const part of g.parts) {
+        this.path(part);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      return;
+    }
+    for (const t of g.treads) {
+      this.path(t.poly);
+      ctx.fillStyle = selected ? hexAlpha(C.accent, 0.12) : C.opening;
+      ctx.fill();
+      ctx.strokeStyle = ink;
+      ctx.stroke();
+    }
+    // Walking line with an arrowhead at the top.
+    const pts = g.path.map((p) => this.toScreen(p));
+    ctx.beginPath();
+    pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    const end = pts[pts.length - 1];
+    const prev = pts[pts.length - 2];
+    const ang = Math.atan2(end.y - prev.y, end.x - prev.x);
+    ctx.beginPath();
+    ctx.moveTo(end.x, end.y);
+    ctx.lineTo(end.x - 9 * Math.cos(ang - 0.45), end.y - 9 * Math.sin(ang - 0.45));
+    ctx.lineTo(end.x - 9 * Math.cos(ang + 0.45), end.y - 9 * Math.sin(ang + 0.45));
+    ctx.closePath();
+    ctx.fillStyle = ink;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(pts[0].x, pts[0].y, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = '600 11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const a0 = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
+    ctx.fillText('UP', pts[0].x - 14 * Math.cos(a0), pts[0].y - 14 * Math.sin(a0));
+  }
+
   deleteSelection() {
     const s = this.selection;
     if (!s) return;
     if (s.kind === 'wall') deleteWall(this.plan, s.id);
     else if (s.kind === 'node') deleteNode(this.plan, s.id);
-    else deleteOpening(this.plan, s.id);
+    else if (s.kind === 'opening') deleteOpening(this.plan, s.id);
+    else if (s.kind === 'stair') delete this.plan.stairs[s.id];
+    else return;
     this.select(null);
     this.store.commit();
   }
@@ -715,7 +831,8 @@ export class Editor2D {
     const p = this.plan;
     const exists =
       (s.kind === 'level' && getLevel(this.store.building, s.id)) ||
-      (s.kind === 'wall' && p.walls[s.id]) || (s.kind === 'node' && p.nodes[s.id]) || (s.kind === 'opening' && p.openings[s.id]);
+      (s.kind === 'wall' && p.walls[s.id]) || (s.kind === 'node' && p.nodes[s.id]) || (s.kind === 'opening' && p.openings[s.id]) ||
+      (s.kind === 'stair' && p.stairs?.[s.id]);
     if (!exists) this.select(null);
   }
 
@@ -805,6 +922,17 @@ export class Editor2D {
       if (fp) this.drawOpening(fp, o, this.selection?.kind === 'opening' && this.selection.id === o.id, C);
     }
 
+    // Stairs going up from here, and the stairwells of the stairs coming up from below.
+    if (below) {
+      for (const st of Object.values(levelBelowOf(this.store).stairs ?? {})) {
+        this.drawStair(stairGeometry(st, levelBelowOf(this.store).height), false, true, C);
+      }
+    }
+    for (const st of Object.values(plan.stairs ?? {})) {
+      const sel = this.selection?.kind === 'stair' && this.selection.id === st.id;
+      this.drawStair(stairGeometry(st, plan.height), sel, false, C);
+    }
+
     for (const r of rooms) {
       const c = this.toScreen(r.centroid);
       ctx.fillStyle = C.text;
@@ -885,6 +1013,23 @@ export class Editor2D {
           ctx.fillText('No room for an exact copy here', s.x + 12, s.y - 12);
         }
       }
+    } else if (this.tool === 'stair' && h) {
+      const start = this.stairStart;
+      if (start) {
+        const angle = this.stairAngle(start, h);
+        if (angle !== null) {
+          const ghost = { id: '', x: start.x, y: start.y, angle, width: DEFAULT_STAIR_WIDTH, going: DEFAULT_GOING, shape: this.stairShape, turn: 'left' as const };
+          ctx.globalAlpha = 0.6;
+          this.drawStair(stairGeometry(ghost, this.plan.height), true, false, C);
+          ctx.globalAlpha = 1;
+        }
+      }
+      const p = this.toScreen(start ?? this.snap(h).p);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+      ctx.strokeStyle = C.accent;
+      ctx.lineWidth = 2;
+      ctx.stroke();
     } else if (this.tool === 'split' && h) {
       const fp = this.wallAt(h, 10 / this.view.scale);
       if (fp) {
@@ -1029,6 +1174,10 @@ export class Editor2D {
     ctx.lineTo(sb.x, sb.y);
     ctx.stroke();
   }
+}
+
+function levelBelowOf(store: Store): Level {
+  return levelBelow(store.building, store.activeId)!;
 }
 
 /** A point in a wall's local frame. */

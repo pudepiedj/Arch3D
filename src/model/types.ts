@@ -36,6 +36,24 @@ export interface Opening {
   swingFlip?: boolean;
 }
 
+export type StairShape = 'straight' | 'L' | 'U';
+
+/** A stair rising from its level to the next one up. Steps are computed, not stored. */
+export interface Stair {
+  id: string;
+  /** Middle of the bottom edge of the first step. */
+  x: number;
+  y: number;
+  /** Direction of travel up the first flight, in radians. */
+  angle: number;
+  width: number;
+  /** Depth of each tread. */
+  going: number;
+  shape: StairShape;
+  /** Which way an L or U stair turns, as you walk up it. */
+  turn: 'left' | 'right';
+}
+
 /** The drawing of one floor: its wall graph, doors and windows. */
 export interface Plan {
   nodes: Record<string, PlanNode>;
@@ -52,6 +70,8 @@ export interface Level extends Plan {
   height: number;
   /** Thickness of this floor's structure (the slab above the storey below). */
   slab: number;
+  /** Stairs going up from this level. */
+  stairs: Record<string, Stair>;
 }
 
 /** A building is a stack of levels, listed from the bottom up. */

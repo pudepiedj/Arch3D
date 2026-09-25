@@ -18,12 +18,18 @@
         <button data-tool="door" title="Place a door (D)">Door</button>
         <button data-tool="window" title="Place a window (N)">Window</button>
         <button data-tool="split" title="Add a joint to a wall (X)">Split</button>
+        <button data-tool="stair" title="Place a stair up to the next floor (S)">Stair</button>
         <button data-tool="paste" id="pasteTool" title="Place exact copies of the copied door/window (Ctrl/⌘+V)" hidden>Paste</button>
       </div>
 
       <div class="group" id="wallType" aria-label="Wall type">
         <button data-thickness="0.3" title="30 cm exterior wall">Exterior</button>
         <button data-thickness="0.12" title="12 cm partition">Interior</button>
+      </div>
+      <div class="group" id="stairShape" aria-label="Stair shape">
+        <button data-shape="straight" title="Straight flight">Straight</button>
+        <button data-shape="L" title="Quarter turn with a landing">L-shape</button>
+        <button data-shape="U" title="Half turn with a landing">U-shape</button>
       </div>
       <button id="ortho" class="toggle" title="Lock wall directions to 45° steps (O)">Ortho</button>
       <button id="finish" hidden>Finish wall</button>

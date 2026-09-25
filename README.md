@@ -17,12 +17,19 @@ npm run build    # static site in dist/
 | **Select** (V) | Drag a **joint** to reshape every wall attached to it; drop it on another joint or wall to connect. Drag a **wall** to move it sideways (connected walls stretch). Drag a **door/window** along its wall, or onto another wall. Delete/Backspace removes the selection. |
 | **Wall** (W) | Click to start, click for each corner. Snaps to joints, onto existing walls (making a T-junction), to 45° directions and to alignment with other joints. Type a length (e.g. `3.5`) and press Enter for an exact wall. Click the start point, double-click, or press Esc to finish. **Ortho** locks to 45° steps. |
 | **Door** (D) / **Window** (N) | Click on a wall to place one. It fits itself between corners and other openings. |
+| **Stair** (S) | Choose Straight, L-shape or U-shape, click where the bottom step goes, then click in the direction it climbs (snaps to right angles; Ortho forces them). The stair always rises to the next floor. |
 | **Split** (X) | Click on a wall to add a joint, which is then selected so you can drag it (to make a bay, a nib or a step in the wall). |
 
 **Copying doors and windows exactly:** select one and press **Copy** in the panel (Ctrl/⌘+C).
 - **Paste** (toolbar button, or Ctrl/⌘+V) then click on walls to place identical copies: same type, width, height, sill, hinge and swing. A paste that would not fit at full size is refused, never shrunk. Press Esc when done.
 - **Duplicate** (Ctrl/⌘+D) puts a copy right beside the selected one.
 - **Match copied** resizes an existing door or window to the copied one.
+
+**Stairs:**
+- The number of steps and their height come from the floor-to-floor height: the fewest steps that keep each one under 19 cm, e.g. 16 steps of 18.1 cm for 2.9 m.
+- Select a stair to change its shape, which way an L or U turns, its width and tread depth, or to rotate it. Drag it to move it.
+- The floor above automatically gets a matching stairwell. It is shown dashed on that floor's plan and cut out of its floor and the ceiling below.
+- In walk mode, walk onto a stair to climb it. You arrive on the next floor, and the plan follows you up and down.
 
 **Floors:** the floor list at the top right of the plan switches between storeys (Page Up/Page Down also work).
 - **+ Floor** adds a storey on top, starting with a copy of the outside walls of the floor below.
@@ -68,11 +75,13 @@ Everything visible is *derived* from that data on every change, so there is no s
   - The top is the mitred footprint.
   - Exposed ends are capped, including the part of a taller wall above a lower neighbour.
   - Result: geometry that is watertight at every joint, whatever you do to the plan.
+- **Stairs** (`stairs.ts`) are stored as a start point, direction, width, tread depth and shape. Steps, landing, walking line and stairwell are computed from these and the storey height. Floors and ceilings have the stairwells cut out with a polygon-clipping library, since a stairwell may cross room boundaries.
+- **Walking** (`walk.ts`, no rendering code, unit-tested) treats every floor (minus its stairwells) and every stair tread as a surface. The walker stands on the highest surface that is at most one step above their feet. Climbing a stair is just walking onto it, and walking off the top lands you on the next floor. Walls of the storey you are on, and steps too tall to step onto, block movement.
 - **Rooms** (`rooms.ts`) are the enclosed faces of the wall graph. They give the floors and the net floor area labels.
 
 ## Not done yet
 
-- Stairs (and the matching hole in the floor above).
+- Balustrades and handrails for stairs and stairwells.
 - Roofs.
 - Furniture.
 - Textures and materials per room.

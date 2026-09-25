@@ -11,6 +11,8 @@ import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import { openingsOf } from '../model/openings';
 import { detectRooms } from '../model/rooms';
 import { ceilingHeight, levelElevation } from '../model/building';
+import { type Shape, subtract } from '../model/clip';
+import { type StairGeometry, stairGeometry, stairwells } from '../model/stairs';
 import type { Building, Opening, Plan } from '../model/types';
 
 export interface Materials {
@@ -70,6 +72,19 @@ class Mesher {
     this.quad(w3(p, z0), w3(q, z0), w3(q, z1), w3(p, z1), outward);
   }
 
+  /** Horizontal polygon with holes (outer ring first) at height z. */
+  hshape(rings: Vec2[][], z: number, up: boolean) {
+    const [outer, ...holes] = rings;
+    if (!outer || outer.length < 3) return;
+    const all = rings.flat();
+    const tris = THREE.ShapeUtils.triangulateShape(
+      outer.map((p) => new THREE.Vector2(p.x, p.y)),
+      holes.map((h) => h.map((p) => new THREE.Vector2(p.x, p.y))),
+    );
+    const n = new THREE.Vector3(0, up ? 1 : -1, 0);
+    for (const [i, j, k] of tris) this.tri(w3(all[i], z), w3(all[j], z), w3(all[k], z), n);
+  }
+
   /** Horizontal polygon at height z. */
   hpoly(pts: Vec2[], z: number, up: boolean) {
     const contour = pts.map((p) => new THREE.Vector2(p.x, p.y));
@@ -92,6 +107,14 @@ const n3 = (p: Vec2, s = 1) => new THREE.Vector3(p.x * s, 0, p.y * s);
 export interface LevelOptions {
   /** Height of the ceiling above this floor, or null for no ceilings. */
   ceiling: number | null;
+  /** Stairwells from the level below, cut out of this floor. */
+  floorHoles?: Shape[];
+  /** This level's own stairwells, cut out of its ceilings. */
+  ceilingHoles?: Shape[];
+  /** Thickness of this floor, for the edges of stairwells cut through it. */
+  slab?: number;
+  /** Stairs standing on this floor. */
+  stairs?: StairGeometry[];
 }
 
 /**
@@ -103,7 +126,14 @@ export function buildBuildingObject(b: Building, mats: Materials, upTo?: string)
   const cut = upTo ? b.levels.findIndex((l) => l.id === upTo) : -1;
   b.levels.forEach((level, i) => {
     if (cut >= 0 && i > cut) return;
-    const obj = buildPlanObject(level, mats, { ceiling: i === cut ? null : ceilingHeight(b, level) });
+    const below = b.levels[i - 1];
+    const obj = buildPlanObject(level, mats, {
+      ceiling: i === cut ? null : ceilingHeight(b, level),
+      floorHoles: below ? stairwells(below) : [],
+      ceilingHoles: stairwells(level),
+      slab: level.slab,
+      stairs: Object.values(level.stairs ?? {}).map((st) => stairGeometry(st, level.height)),
+    });
     obj.position.y = levelElevation(b, level.id);
     obj.name = `level:${level.id}`;
     group.add(obj);
@@ -143,6 +173,26 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
     for (const o of ops) group.add(buildOpeningObject(fp, o, mats));
   }
 
+
+  const floors = new Mesher();
+  const ceilings = new Mesher();
+  const floorHoles = opts.floorHoles ?? [];
+  const ceilingHoles = opts.ceilingHoles ?? [];
+  for (const r of detectRooms(plan)) {
+    // Slightly above the level's datum so it never fights with wall tops of the floor below.
+    for (const piece of subtract(r.polygon, floorHoles)) floors.hshape(piece, 0.005, true);
+    if (opts.ceiling !== null) {
+      for (const piece of subtract(r.polygon, ceilingHoles)) ceilings.hshape(piece, opts.ceiling - 0.001, false);
+    }
+  }
+  // The cut edges of the floor around a stairwell coming up from below.
+  const slab = opts.slab ?? 0;
+  for (const well of floorHoles) {
+    for (const ring of well) {
+      ring.forEach((p, k) => sides.vface(p, ring[(k + 1) % ring.length], -slab, 0.005, new THREE.Vector3(0, 0, 0)));
+    }
+  }
+
   const wallMesh = new THREE.Mesh(sides.geometry(), mats.wall);
   wallMesh.castShadow = wallMesh.receiveShadow = true;
   wallMesh.name = 'walls';
@@ -150,12 +200,29 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   topMesh.castShadow = true;
   group.add(wallMesh, topMesh);
 
-  const floors = new Mesher();
-  const ceilings = new Mesher();
-  for (const r of detectRooms(plan)) {
-    // Slightly above the level's datum so it never fights with wall tops of the floor below.
-    floors.hpoly(r.polygon, 0.005, true);
-    if (opts.ceiling !== null) ceilings.hpoly(r.polygon, opts.ceiling - 0.001, false);
+  // Stairs: each step is solid down to the floor, with a timber tread on top.
+  if (opts.stairs?.length) {
+    const treadTops = new Mesher();
+    const stringers = new Mesher();
+    for (const g of opts.stairs) {
+      for (const t of g.treads) {
+        treadTops.hpoly(t.poly, t.top, true);
+        const c = t.poly.reduce((acc, p) => ({ x: acc.x + p.x / t.poly.length, y: acc.y + p.y / t.poly.length }), { x: 0, y: 0 });
+        t.poly.forEach((p, k) => {
+          const q = t.poly[(k + 1) % t.poly.length];
+          const nrm = { x: q.y - p.y, y: p.x - q.x };
+          const mid = { x: (p.x + q.x) / 2 - c.x, y: (p.y + q.y) / 2 - c.y };
+          const out = dot(nrm, mid) >= 0 ? n3(nrm) : n3(nrm, -1);
+          stringers.vface(p, q, 0, t.top, out);
+        });
+      }
+    }
+    const stairMesh = new THREE.Mesh(stringers.geometry(), mats.wall);
+    stairMesh.castShadow = stairMesh.receiveShadow = true;
+    const treadMesh = new THREE.Mesh(treadTops.geometry(), mats.floor);
+    treadMesh.castShadow = treadMesh.receiveShadow = true;
+    stairMesh.name = 'stairs';
+    group.add(stairMesh, treadMesh);
   }
   if (opts.ceiling !== null) {
     const ceilingMesh = new THREE.Mesh(ceilings.geometry(), mats.ceiling);

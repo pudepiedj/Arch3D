@@ -47,6 +47,12 @@ for (const b of $$('#wallType button')) {
     panel.render();
   });
 }
+for (const b of $$('#stairShape button')) {
+  b.addEventListener('click', () => {
+    editor.stairShape = b.dataset.shape as typeof editor.stairShape;
+    syncToolbar();
+  });
+}
 $('#ortho').addEventListener('click', () => {
   editor.ortho = !editor.ortho;
   syncToolbar();
@@ -72,6 +78,11 @@ for (const b of $$('#mode button')) {
   });
 }
 view.onModeChange = syncToolbar;
+// Walking up or down the stairs takes the plan to the floor you arrive on.
+view.onWalkLevelChange = (id) => {
+  editor.select(null);
+  store.setActive(id);
+};
 $('#cutaway').addEventListener('click', () => {
   view.setCutaway(!view.cutaway);
   syncToolbar();
@@ -172,6 +183,7 @@ const HINTS: Record<Tool, string> = {
   window: 'Click on a wall to place a window',
   split: 'Click on a wall to add a joint you can drag',
   paste: 'Click on walls to place exact copies · Esc when done',
+  stair: 'Click where the stair starts (its bottom step), then click in the direction it goes up',
 };
 
 function syncToolbar() {
@@ -180,7 +192,9 @@ function syncToolbar() {
     b.classList.toggle('on', Math.abs(parseFloat(b.dataset.thickness!) - editor.wallProps.thickness) < 1e-6);
   }
   $('#wallType').hidden = editor.tool !== 'wall';
-  $('#ortho').hidden = editor.tool !== 'wall';
+  $('#ortho').hidden = editor.tool !== 'wall' && editor.tool !== 'stair';
+  $('#stairShape').hidden = editor.tool !== 'stair';
+  for (const b of $$('#stairShape button')) b.classList.toggle('on', b.dataset.shape === editor.stairShape);
   $('#ortho').classList.toggle('on', editor.ortho);
   $('#finish').hidden = !editor.drawing;
   ($('#undo') as HTMLButtonElement).disabled = !store.canUndo;

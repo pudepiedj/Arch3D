@@ -14,6 +14,7 @@ export function createLevel(b: Building, name?: string, height: number = DEFAULT
     name: name ?? LEVEL_NAMES[b.levels.length] ?? `Floor ${b.levels.length}`,
     height,
     slab: DEFAULTS.slab,
+    stairs: {},
   };
 }
 
@@ -95,7 +96,10 @@ export function setLevelHeight(level: Level, height: number) {
 export function migrate(data: unknown): Building {
   const d = data as Partial<Building> & Partial<Plan> & { version?: number };
   if (d && d.version === 2 && Array.isArray(d.levels) && d.levels.length) {
-    for (const l of d.levels) l.openings ??= {};
+    for (const l of d.levels) {
+      l.openings ??= {};
+      l.stairs ??= {};
+    }
     return d as Building;
   }
   if (d && d.nodes && d.walls) {
@@ -113,6 +117,7 @@ export function migrate(data: unknown): Building {
       name: LEVEL_NAMES[0],
       height,
       slab: DEFAULTS.slab,
+      stairs: {},
     });
     return b;
   }

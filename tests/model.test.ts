@@ -254,6 +254,6 @@ describe('rooms', () => {
   });
 
   it('demo house has all its openings', () => {
-    expect(Object.keys(demoPlan().openings)).toHaveLength(11);
+    expect(Object.keys(demoPlan().openings)).toHaveLength(10);
   });
 });

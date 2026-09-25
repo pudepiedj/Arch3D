@@ -1,26 +1,17 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
-import { computeFootprints, type Footprint } from '../model/joints';
-import { openingsOf } from '../model/openings';
 import { planBounds } from '../model/plan';
+import { WalkWorld } from '../model/walk';
 import { detectRooms } from '../model/rooms';
 import { getLevel, levelElevation } from '../model/building';
-import type { Building, Level, Plan } from '../model/types';
+import type { Building, Level } from '../model/types';
 import { buildBuildingObject, createMaterials, disposeObject } from './build';
 
 export type ViewMode = 'orbit' | 'walk';
 
 const EYE = 1.6;
-const RADIUS = 0.25;
 const SPEED = 1.8;
-
-/** A wall piece the walker collides with, in wall-local coordinates. */
-interface Collider {
-  fp: Footprint;
-  u0: number;
-  u1: number;
-}
 
 export class View3D {
   readonly renderer: THREE.WebGLRenderer;
@@ -31,7 +22,13 @@ export class View3D {
   private mats = createMaterials();
   private planObj: THREE.Object3D | null = null;
   private sun: THREE.DirectionalLight;
-  private colliders: Collider[] = [];
+  private world: WalkWorld | null = null;
+  /** Height of the walker's feet, and the smoothed eye height that follows it. */
+  private foot = 0;
+  private eyeY = EYE;
+  /** Level the walker is standing on; reported so the plan can follow them up the stairs. */
+  private walkLevelId = '';
+  onWalkLevelChange?: (levelId: string) => void;
   private plan: Level | null = null;
   private building: Building | null = null;
   private activeId = '';
@@ -123,7 +120,8 @@ export class View3D {
     this.plan = getLevel(b, activeId) ?? b.levels[0];
     this.floorY = levelElevation(b, this.plan.id);
     this.rebuild();
-    if (this.mode === 'walk' && levelChanged) this.placeWalker();
+    // Switching floors teleports the walker, unless they got there by climbing the stairs.
+    if (this.mode === 'walk' && levelChanged && activeId !== this.walkLevelId) this.placeWalker();
   }
 
   setCutaway(on: boolean) {
@@ -141,7 +139,7 @@ export class View3D {
     const cut = this.mode === 'orbit' && this.cutaway ? this.activeId : undefined;
     this.planObj = buildBuildingObject(b, this.mats, cut);
     this.scene.add(this.planObj);
-    this.colliders = this.plan ? buildColliders(this.plan) : [];
+    this.world = new WalkWorld(b);
 
     const bounds = buildingBounds(b);
     if (bounds) {
@@ -199,7 +197,10 @@ export class View3D {
     rooms.sort((a, b) => b.area - a.area);
     const b = this.plan && planBounds(this.plan);
     const start = rooms[0]?.centroid ?? (b ? { x: (b.min.x + b.max.x) / 2, y: b.max.y + 3 } : { x: 0, y: 0 });
-    this.camera.position.set(start.x, this.floorY + EYE, start.y);
+    this.foot = this.world ? this.world.groundAt(start, this.floorY) : this.floorY;
+    this.eyeY = this.foot + EYE;
+    this.walkLevelId = this.activeId;
+    this.camera.position.set(start.x, this.eyeY, start.y);
     this.yaw = rooms[0] ? 0 : Math.PI;
     this.pitch = 0;
     this.applyYawPitch();
@@ -282,15 +283,18 @@ export class View3D {
     if (move.lengthSq() > 1) move.normalize();
     move.multiplyScalar(speed * dt);
 
-    // Sub-step so fast moves can't tunnel through thin walls.
-    const steps = Math.max(1, Math.ceil(move.length() / 0.05));
-    const p = { x: this.camera.position.x, y: this.camera.position.z };
-    for (let i = 0; i < steps; i++) {
-      p.x += move.x / steps;
-      p.y += move.z / steps;
-      for (let iter = 0; iter < 3; iter++) for (const c of this.colliders) pushOut(p, c);
+    if (this.world) {
+      const res = this.world.move({ x: this.camera.position.x, y: this.camera.position.z }, this.foot, { x: move.x, y: move.z });
+      this.foot = res.foot;
+      // Ease the eye towards its new height so steps feel like steps, not jumps.
+      this.eyeY += (this.foot + EYE - this.eyeY) * Math.min(1, dt * 10);
+      this.camera.position.set(res.p.x, this.eyeY, res.p.y);
+      const lvl = this.world.levelAt(this.foot);
+      if (lvl && lvl !== this.walkLevelId) {
+        this.walkLevelId = lvl;
+        this.onWalkLevelChange?.(lvl);
+      }
     }
-    this.camera.position.set(p.x, this.floorY + EYE, p.y);
   }
 
   private resize() {
@@ -301,55 +305,6 @@ export class View3D {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
-}
-
-/** Solid stretches of wall: everything except door openings. */
-function buildColliders(plan: Plan): Collider[] {
-  const out: Collider[] = [];
-  for (const fp of computeFootprints(plan).values()) {
-    const u0 = Math.min(fp.uL0, fp.uR0);
-    const u1 = Math.max(fp.uL1, fp.uR1);
-    let cursor = u0;
-    for (const o of openingsOf(plan, fp.wallId)) {
-      if (o.kind !== 'door') continue;
-      out.push({ fp, u0: cursor, u1: o.offset - o.width / 2 });
-      cursor = o.offset + o.width / 2;
-    }
-    out.push({ fp, u0: cursor, u1 });
-  }
-  return out.filter((c) => c.u1 > c.u0);
-}
-
-/** Push a circle of RADIUS at p out of a wall piece (rectangle in wall-local coordinates). */
-function pushOut(p: { x: number; y: number }, c: Collider) {
-  const { fp } = c;
-  const rx = p.x - fp.a.x;
-  const ry = p.y - fp.a.y;
-  const u = rx * fp.dir.x + ry * fp.dir.y;
-  const v = rx * fp.n.x + ry * fp.n.y;
-  const half = fp.thickness / 2;
-  const cu = Math.max(c.u0, Math.min(c.u1, u));
-  const cv = Math.max(-half, Math.min(half, v));
-  let du = u - cu;
-  let dv = v - cv;
-  const d = Math.hypot(du, dv);
-  if (d >= RADIUS) return;
-  if (d > 1e-9) {
-    du = (du / d) * (RADIUS - d);
-    dv = (dv / d) * (RADIUS - d);
-  } else {
-    // Centre inside the wall: leave by the nearest face.
-    const pen = [
-      { du: c.u0 - RADIUS - u, dv: 0 },
-      { du: c.u1 + RADIUS - u, dv: 0 },
-      { du: 0, dv: -half - RADIUS - v },
-      { du: 0, dv: half + RADIUS - v },
-    ].sort((a, b) => Math.abs(a.du) + Math.abs(a.dv) - (Math.abs(b.du) + Math.abs(b.dv)))[0];
-    du = pen.du;
-    dv = pen.dv;
-  }
-  p.x += du * fp.dir.x + dv * fp.n.x;
-  p.y += du * fp.dir.y + dv * fp.n.y;
 }
 
 function buildingBounds(b: Building) {
