@@ -2,11 +2,12 @@
 // clean-up (normalize), so e.g. thickening a wall re-mitres its corners and re-fits its openings.
 
 import { addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
+import { DEFAULT_ROOF, effectiveRoof } from '../model/roof';
 import { stairGeometry } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
 import { deleteNode, deleteOpening, deleteWall, finishNodeMove, moveNode, normalize, setWallLength, splitWallAt } from '../model/plan';
-import { DEFAULTS, type OpeningKind, type Stair, type StairShape } from '../model/types';
+import { DEFAULTS, type OpeningKind, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
 import type { Editor2D } from './editor2d';
 import type { Store } from './store';
 
@@ -188,6 +189,25 @@ export class Panel {
       }, 'm', 'Thickness of this floor, which is also the ceiling structure of the floor below');
     }
     this.note(`Floor level +${levelElevation(b, id).toFixed(2)} m · ceiling height ${ceilingHeight(b, level).toFixed(2)} m`);
+
+    // Roof over this floor (by default only the top floor has one).
+    const roof = effectiveRoof(b, level) ?? { ...DEFAULT_ROOF, kind: 'none' as const };
+    const setRoof = (change: Partial<Roof>) => {
+      level.roof = { ...roof, ...change };
+      this.done();
+    };
+    this.select('Roof', roof.kind, [
+      ['gable', 'Gable'],
+      ['hip', 'Hipped'],
+      ['flat', 'Flat'],
+      ['none', 'None'],
+    ], (v) => setRoof({ kind: v as RoofKind }));
+    if (roof.kind === 'gable' || roof.kind === 'hip') {
+      this.number('Roof pitch', roof.pitch, 1, 5, 70, (v) => setRoof({ pitch: v }), '°');
+    }
+    if (roof.kind !== 'none') {
+      this.number('Overhang', roof.overhang, 0.05, 0, 1.5, (v) => setRoof({ overhang: v }), 'm', 'How far the eaves project past the walls');
+    }
     this.buttons([
       ['Add floor above', () => this.addFloor(true)],
       ['Add empty floor', () => this.addFloor(false)],

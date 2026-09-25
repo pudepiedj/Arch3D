@@ -32,6 +32,14 @@ npm run build    # static site in dist/
 - Handrails run up both sides at 90 cm, with balusters where a side is open (just the rail where it runs along a wall). Stairwells get a guard rail on their open edges, leaving the side where the stair arrives clear.
 - In walk mode, walk onto a stair to climb it. You arrive on the next floor, and the plan follows you up and down.
 
+**Roofs:**
+- The top floor gets a gable roof automatically. It sits on the wall tops and follows the outside of the walls, whatever the plan shape: L-shaped houses get valleys and hips where they should.
+- Change it in the floor settings (click the current floor's name): **Gable**, **Hipped**, **Flat** or **None**, with the pitch (35° by default) and overhang (30 cm).
+- Gable walls stand flush with the walls below, and the eaves overhang the other sides.
+- The plan shows the eaves dashed and the ridges, hips and valleys dotted.
+- A lower floor can have its own roof too, e.g. a single-storey part. For now each roof covers its floor's whole outline.
+- In orbit view with **Cutaway** on, the roof of the floor you are editing is lifted off with its ceiling. Turn Cutaway off to see the whole house.
+
 **Floors:** the floor list at the top right of the plan switches between storeys (Page Up/Page Down also work).
 - **+ Floor** adds a storey on top, starting with a copy of the outside walls of the floor below.
 - The floor below shows faintly under the plan, and new walls snap to its joints, so walls line up from floor to floor.
@@ -78,11 +86,13 @@ Everything visible is *derived* from that data on every change, so there is no s
   - Result: geometry that is watertight at every joint, whatever you do to the plan.
 - **Stairs** (`stairs.ts`) are stored as a start point, direction, width, tread depth and shape. Steps, landing, walking line and stairwell are computed from these and the storey height. Floors and ceilings have the stairwells cut out with a polygon-clipping library, since a stairwell may cross room boundaries.
 - **Walking** (`walk.ts`, no rendering code, unit-tested) treats every floor (minus its stairwells) and every stair tread as a surface. The walker stands on the highest surface that is at most one step above their feet. Climbing a stair is just walking onto it, and walking off the top lands you on the next floor. Walls of the storey you are on, and steps too tall to step onto, block movement.
+- **Roofs** (`roof.ts`) are the straight skeleton of the outline of the outer walls' outside faces. Every eave rises at the same pitch, and the slopes meet along hips, valleys and ridges. This uses the MIT-licensed `straight-skeleton` 1.1.0, pinned; newer versions wrap GPL code. For a gable roof, each triangular hip end is turned into a vertical gable wall by moving its apex out to the wall line, which stretches the ridge to meet it. If the skeleton cannot be built for some outline, that floor simply gets no roof rather than a broken one.
 - **Rooms** (`rooms.ts`) are the enclosed faces of the wall graph. They give the floors and the net floor area labels.
 
 ## Not done yet
 
-- Roofs.
+- Roofs over only the uncovered part of a lower floor, and choosing gable or hip per roof edge.
+- Dormers and roof windows.
 - Furniture.
 - Textures and materials per room.
 - Curved walls.

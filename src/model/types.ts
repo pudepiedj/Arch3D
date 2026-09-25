@@ -54,6 +54,16 @@ export interface Stair {
   turn: 'left' | 'right';
 }
 
+export type RoofKind = 'gable' | 'hip' | 'flat' | 'none';
+
+export interface Roof {
+  kind: RoofKind;
+  /** Slope in degrees. */
+  pitch: number;
+  /** How far the eaves project beyond the outside face of the walls. */
+  overhang: number;
+}
+
 /** The drawing of one floor: its wall graph, doors and windows. */
 export interface Plan {
   nodes: Record<string, PlanNode>;
@@ -72,6 +82,8 @@ export interface Level extends Plan {
   slab: number;
   /** Stairs going up from this level. */
   stairs: Record<string, Stair>;
+  /** Roof over this level. Unset means the default: a gable roof if it is the top floor. */
+  roof?: Roof;
 }
 
 /** A building is a stack of levels, listed from the bottom up. */

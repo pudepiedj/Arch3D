@@ -16,6 +16,7 @@ import {
   vec,
 } from '../model/geom';
 import { getLevel, levelBelow } from '../model/building';
+import { effectiveRoof, roofGeometry } from '../model/roof';
 import { DEFAULT_GOING, DEFAULT_STAIR_WIDTH, type StairGeometry, addStair, stairAt, stairGeometry } from '../model/stairs';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import {
@@ -931,6 +932,22 @@ export class Editor2D {
     for (const st of Object.values(plan.stairs ?? {})) {
       const sel = this.selection?.kind === 'stair' && this.selection.id === st.id;
       this.drawStair(stairGeometry(st, plan.height), sel, false, C);
+    }
+
+    // This floor's roof: eaves dashed, ridges, hips and valleys as thin lines.
+    const roof = effectiveRoof(this.store.building, plan);
+    const rg = roof ? roofGeometry(plan, roof) : null;
+    if (rg) {
+      ctx.strokeStyle = C.text;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([8, 5]);
+      for (const ring of rg.outline) {
+        this.path(ring);
+        ctx.stroke();
+      }
+      ctx.setLineDash([2, 4]);
+      for (const [a, b] of rg.lines) this.line(a, b);
+      ctx.setLineDash([]);
     }
 
     for (const r of rooms) {
