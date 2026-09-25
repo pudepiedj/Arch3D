@@ -36,7 +36,7 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 
 **Roofs:**
 - The top floor gets a gable roof automatically. It sits on the wall tops and follows the outside of the walls, whatever the plan shape: L-shaped houses get valleys and hips where they should.
-- Change it in the floor settings (click the current floor's name): **Gable**, **Hipped**, **Flat** or **None**, with the pitch (35° by default) and overhang (30 cm).
+- Change it with **Floor & roof…** at the bottom of the floor list: **Gable**, **Hipped**, **Flat** or **None**, with the pitch (35° by default) and overhang (30 cm).
 - Gable walls stand flush with the walls below, and the eaves overhang the other sides.
 - The plan shows the eaves dashed and the ridges, hips and valleys dotted.
 - A lower floor can have its own roof too, e.g. a single-storey part. For now each roof covers its floor's whole outline.

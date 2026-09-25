@@ -120,6 +120,13 @@ function renderLevels() {
     });
     nav.append(b);
   }
+  // Floor height, roof type, pitch and overhang live in the floor settings panel.
+  const settings = document.createElement('button');
+  settings.className = 'settings';
+  settings.textContent = 'Floor & roof…';
+  settings.title = 'Height, floor depth and roof of the floor you are editing';
+  settings.addEventListener('click', () => editor.select({ kind: 'level', id: store.activeId }));
+  nav.append(settings);
 }
 renderLevels();
 

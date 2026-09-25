@@ -363,3 +363,11 @@ button.danger {
   background: var(--accent);
   color: var(--accent-fg);
 }
+
+.levels button.settings {
+  margin-top: 3px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 7px 7px;
+  color: var(--muted);
+  font-size: 13px;
+}
