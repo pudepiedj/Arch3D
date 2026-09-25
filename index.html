@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Arch3D</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 15 16 5l12 10v13H4z' fill='%232f6fdf'/%3E%3Cpath d='M13 28v-8h6v8' fill='%23fff'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <strong class="brand">Arch3D</strong>
+
+      <div class="group" id="tools" role="toolbar" aria-label="Tools">
+        <button data-tool="select" title="Select and drag (V)">Select</button>
+        <button data-tool="wall" title="Draw walls (W)">Wall</button>
+        <button data-tool="door" title="Place a door (D)">Door</button>
+        <button data-tool="window" title="Place a window (N)">Window</button>
+        <button data-tool="split" title="Add a joint to a wall (X)">Split</button>
+      </div>
+
+      <div class="group" id="wallType" aria-label="Wall type">
+        <button data-thickness="0.3" title="30 cm exterior wall">Exterior</button>
+        <button data-thickness="0.12" title="12 cm partition">Interior</button>
+      </div>
+      <button id="ortho" class="toggle" title="Lock wall directions to 45° steps (O)">Ortho</button>
+      <button id="finish" hidden>Finish wall</button>
+
+      <div class="group">
+        <button id="undo" title="Undo (Ctrl/⌘+Z)">Undo</button>
+        <button id="redo" title="Redo (Ctrl/⌘+Shift+Z)">Redo</button>
+      </div>
+
+      <span class="spacer"></span>
+
+      <div class="group" id="layout" aria-label="Layout">
+        <button data-layout="plan">Plan</button>
+        <button data-layout="split">Both</button>
+        <button data-layout="3d">3D</button>
+      </div>
+      <div class="group" id="mode" aria-label="3D mode">
+        <button data-mode="orbit" title="Orbit around the model">Orbit</button>
+        <button data-mode="walk" title="Walk through at eye level">Walk</button>
+      </div>
+      <details class="menu">
+        <summary>File</summary>
+        <div class="menu-items">
+          <button id="new">New empty plan</button>
+          <button id="demo">Load demo house</button>
+          <button id="export">Export JSON…</button>
+          <button id="import">Import JSON…</button>
+          <input id="importFile" type="file" accept="application/json,.json" hidden />
+        </div>
+      </details>
+    </header>
+
+    <main class="work" id="work" data-layout="split">
+      <section class="pane" id="planPane">
+        <aside class="panel" id="panel"></aside>
+        <div class="hint" id="hint"></div>
+      </section>
+      <section class="pane" id="viewPane">
+        <div class="overlay" id="walkHint" hidden></div>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

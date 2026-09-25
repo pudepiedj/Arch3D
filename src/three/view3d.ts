@@ -1,0 +1,326 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
+import { computeFootprints, type Footprint } from '../model/joints';
+import { openingsOf } from '../model/openings';
+import { planBounds } from '../model/plan';
+import { detectRooms } from '../model/rooms';
+import type { Plan } from '../model/types';
+import { buildPlanObject, createMaterials, disposeObject } from './build';
+
+export type ViewMode = 'orbit' | 'walk';
+
+const EYE = 1.6;
+const RADIUS = 0.25;
+const SPEED = 1.8;
+
+/** A wall piece the walker collides with, in wall-local coordinates. */
+interface Collider {
+  fp: Footprint;
+  u0: number;
+  u1: number;
+}
+
+export class View3D {
+  readonly renderer: THREE.WebGLRenderer;
+  readonly scene = new THREE.Scene();
+  readonly camera = new THREE.PerspectiveCamera(60, 1, 0.05, 500);
+  private orbit: OrbitControls;
+  private look: PointerLockControls;
+  private mats = createMaterials();
+  private planObj: THREE.Object3D | null = null;
+  private sun: THREE.DirectionalLight;
+  private colliders: Collider[] = [];
+  private plan: Plan | null = null;
+  private keys = new Set<string>();
+  private clock = new THREE.Clock();
+  private framed = false;
+  mode: ViewMode = 'orbit';
+  onModeChange?: (m: ViewMode) => void;
+  onLockChange?: (locked: boolean) => void;
+
+  // Touch walking: left half of the view is a joystick, right half turns the head.
+  private touchMove: { id: number; x: number; y: number; dx: number; dy: number } | null = null;
+  private touchLook: { id: number; x: number; y: number } | null = null;
+  private yaw = 0;
+  private pitch = 0;
+
+  constructor(private container: HTMLElement) {
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    container.appendChild(this.renderer.domElement);
+
+    this.scene.background = new THREE.Color(0xcfe3f3);
+    this.scene.fog = new THREE.Fog(0xcfe3f3, 60, 180);
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xb9b2a6, 1.4));
+    this.sun = new THREE.DirectionalLight(0xffffff, 2.2);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.bias = -0.0005;
+    this.sun.shadow.normalBias = 0.02;
+    this.scene.add(this.sun, this.sun.target);
+
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(200, 64),
+      new THREE.MeshStandardMaterial({ color: 0x9fb98f, roughness: 1 }),
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.01;
+    ground.receiveShadow = true;
+    this.scene.add(ground);
+
+    this.camera.position.set(12, 14, 20);
+    this.orbit = new OrbitControls(this.camera, this.renderer.domElement);
+    this.orbit.enableDamping = true;
+    this.orbit.maxPolarAngle = Math.PI / 2 - 0.02;
+
+    this.look = new PointerLockControls(this.camera, this.renderer.domElement);
+    this.look.addEventListener('lock', () => this.onLockChange?.(true));
+    this.look.addEventListener('unlock', () => this.onLockChange?.(false));
+
+    const el = this.renderer.domElement;
+    el.style.touchAction = 'none';
+    el.addEventListener('click', () => {
+      if (this.mode === 'walk' && !this.isTouch && !this.look.isLocked) this.look.lock();
+    });
+    el.addEventListener('pointerdown', (e) => this.onPointerDown(e));
+    el.addEventListener('pointermove', (e) => this.onPointerMove(e));
+    el.addEventListener('pointerup', (e) => this.onPointerUp(e));
+    el.addEventListener('pointercancel', (e) => this.onPointerUp(e));
+    window.addEventListener('keydown', (e) => {
+      if (this.mode === 'walk' && !isTyping(e)) this.keys.add(e.code);
+    });
+    window.addEventListener('keyup', (e) => this.keys.delete(e.code));
+    window.addEventListener('blur', () => this.keys.clear());
+
+    new ResizeObserver(() => this.resize()).observe(container);
+    this.resize();
+    this.renderer.setAnimationLoop(() => this.tick());
+  }
+
+  private isTouch = false;
+
+  setPlan(plan: Plan) {
+    this.plan = plan;
+    if (this.planObj) {
+      this.scene.remove(this.planObj);
+      disposeObject(this.planObj);
+    }
+    this.planObj = buildPlanObject(plan, this.mats);
+    this.scene.add(this.planObj);
+    this.colliders = buildColliders(plan);
+
+    const b = planBounds(plan);
+    if (b) {
+      const cx = (b.min.x + b.max.x) / 2;
+      const cy = (b.min.y + b.max.y) / 2;
+      const r = Math.max(b.max.x - b.min.x, b.max.y - b.min.y) / 2 + 4;
+      this.sun.position.set(cx + r * 0.8, r * 1.6, cy + r * 0.5);
+      this.sun.target.position.set(cx, 0, cy);
+      const cam = this.sun.shadow.camera;
+      cam.left = cam.bottom = -r * 1.3;
+      cam.right = cam.top = r * 1.3;
+      cam.near = 0.5;
+      cam.far = r * 5;
+      cam.updateProjectionMatrix();
+      if (!this.framed) {
+        this.frame();
+        this.framed = true;
+      }
+    }
+  }
+
+  /** Orbit camera looking at the whole plan. */
+  frame() {
+    if (!this.plan) return;
+    const b = planBounds(this.plan);
+    if (!b) return;
+    const cx = (b.min.x + b.max.x) / 2;
+    const cy = (b.min.y + b.max.y) / 2;
+    const r = Math.max(b.max.x - b.min.x, b.max.y - b.min.y, 4);
+    this.orbit.target.set(cx, 0.8, cy);
+    this.camera.position.set(cx + r * 0.7, r * 0.9, cy + r * 1.1);
+    this.camera.lookAt(this.orbit.target);
+  }
+
+  setMode(mode: ViewMode) {
+    if (mode === this.mode) return;
+    this.mode = mode;
+    this.keys.clear();
+    if (mode === 'walk') {
+      this.orbit.enabled = false;
+      this.placeWalker();
+    } else {
+      if (this.look.isLocked) this.look.unlock();
+      this.orbit.enabled = true;
+      this.frame();
+    }
+    this.onModeChange?.(mode);
+  }
+
+  /** Start walking in the middle of the biggest room, facing its longest direction. */
+  private placeWalker() {
+    const rooms = this.plan ? detectRooms(this.plan) : [];
+    rooms.sort((a, b) => b.area - a.area);
+    const b = this.plan && planBounds(this.plan);
+    const start = rooms[0]?.centroid ?? (b ? { x: (b.min.x + b.max.x) / 2, y: b.max.y + 3 } : { x: 0, y: 0 });
+    this.camera.position.set(start.x, EYE, start.y);
+    this.yaw = rooms[0] ? 0 : Math.PI;
+    this.pitch = 0;
+    this.applyYawPitch();
+  }
+
+  private applyYawPitch() {
+    this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+  }
+
+  private onPointerDown(e: PointerEvent) {
+    this.isTouch = e.pointerType !== 'mouse';
+    if (this.mode !== 'walk' || e.pointerType === 'mouse') return;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const leftHalf = e.clientX - rect.left < rect.width / 2;
+    if (leftHalf && !this.touchMove) this.touchMove = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
+    else if (!this.touchLook) this.touchLook = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    // Keep the camera's current orientation as the starting point.
+    const eul = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
+    this.yaw = eul.y;
+    this.pitch = eul.x;
+  }
+
+  private onPointerMove(e: PointerEvent) {
+    if (this.touchMove?.id === e.pointerId) {
+      this.touchMove.dx = e.clientX - this.touchMove.x;
+      this.touchMove.dy = e.clientY - this.touchMove.y;
+    } else if (this.touchLook?.id === e.pointerId) {
+      this.yaw -= (e.clientX - this.touchLook.x) * 0.005;
+      this.pitch = THREE.MathUtils.clamp(this.pitch - (e.clientY - this.touchLook.y) * 0.005, -1.4, 1.4);
+      this.touchLook.x = e.clientX;
+      this.touchLook.y = e.clientY;
+      this.applyYawPitch();
+    }
+  }
+
+  private onPointerUp(e: PointerEvent) {
+    if (this.touchMove?.id === e.pointerId) this.touchMove = null;
+    if (this.touchLook?.id === e.pointerId) this.touchLook = null;
+  }
+
+  private tick() {
+    const dt = Math.min(this.clock.getDelta(), 0.1);
+    if (this.mode === 'orbit') this.orbit.update();
+    else this.walk(dt);
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  private walk(dt: number) {
+    let fwd = 0;
+    let strafe = 0;
+    const k = this.keys;
+    if (k.has('KeyW') || k.has('ArrowUp')) fwd += 1;
+    if (k.has('KeyS') || k.has('ArrowDown')) fwd -= 1;
+    if (k.has('KeyD')) strafe += 1;
+    if (k.has('KeyA')) strafe -= 1;
+    // Arrow keys turn when the mouse isn't captured.
+    if (!this.look.isLocked) {
+      const turn = (k.has('ArrowLeft') ? 1 : 0) - (k.has('ArrowRight') ? 1 : 0);
+      if (turn) {
+        const eul = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
+        this.yaw = eul.y + turn * dt * 1.8;
+        this.pitch = eul.x;
+        this.applyYawPitch();
+      }
+    } else {
+      if (k.has('ArrowLeft')) strafe -= 1;
+      if (k.has('ArrowRight')) strafe += 1;
+    }
+    if (this.touchMove) {
+      fwd += THREE.MathUtils.clamp(-this.touchMove.dy / 60, -1, 1);
+      strafe += THREE.MathUtils.clamp(this.touchMove.dx / 60, -1, 1);
+    }
+    const speed = SPEED * (k.has('ShiftLeft') || k.has('ShiftRight') ? 2 : 1);
+    const dir = new THREE.Vector3();
+    this.camera.getWorldDirection(dir);
+    dir.y = 0;
+    dir.normalize();
+    const right = new THREE.Vector3(-dir.z, 0, dir.x);
+    const move = dir.multiplyScalar(fwd).add(right.multiplyScalar(strafe));
+    if (move.lengthSq() > 1) move.normalize();
+    move.multiplyScalar(speed * dt);
+
+    // Sub-step so fast moves can't tunnel through thin walls.
+    const steps = Math.max(1, Math.ceil(move.length() / 0.05));
+    const p = { x: this.camera.position.x, y: this.camera.position.z };
+    for (let i = 0; i < steps; i++) {
+      p.x += move.x / steps;
+      p.y += move.z / steps;
+      for (let iter = 0; iter < 3; iter++) for (const c of this.colliders) pushOut(p, c);
+    }
+    this.camera.position.set(p.x, EYE, p.y);
+  }
+
+  private resize() {
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    if (!w || !h) return;
+    this.renderer.setSize(w, h);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+  }
+}
+
+/** Solid stretches of wall: everything except door openings. */
+function buildColliders(plan: Plan): Collider[] {
+  const out: Collider[] = [];
+  for (const fp of computeFootprints(plan).values()) {
+    const u0 = Math.min(fp.uL0, fp.uR0);
+    const u1 = Math.max(fp.uL1, fp.uR1);
+    let cursor = u0;
+    for (const o of openingsOf(plan, fp.wallId)) {
+      if (o.kind !== 'door') continue;
+      out.push({ fp, u0: cursor, u1: o.offset - o.width / 2 });
+      cursor = o.offset + o.width / 2;
+    }
+    out.push({ fp, u0: cursor, u1 });
+  }
+  return out.filter((c) => c.u1 > c.u0);
+}
+
+/** Push a circle of RADIUS at p out of a wall piece (rectangle in wall-local coordinates). */
+function pushOut(p: { x: number; y: number }, c: Collider) {
+  const { fp } = c;
+  const rx = p.x - fp.a.x;
+  const ry = p.y - fp.a.y;
+  const u = rx * fp.dir.x + ry * fp.dir.y;
+  const v = rx * fp.n.x + ry * fp.n.y;
+  const half = fp.thickness / 2;
+  const cu = Math.max(c.u0, Math.min(c.u1, u));
+  const cv = Math.max(-half, Math.min(half, v));
+  let du = u - cu;
+  let dv = v - cv;
+  const d = Math.hypot(du, dv);
+  if (d >= RADIUS) return;
+  if (d > 1e-9) {
+    du = (du / d) * (RADIUS - d);
+    dv = (dv / d) * (RADIUS - d);
+  } else {
+    // Centre inside the wall: leave by the nearest face.
+    const pen = [
+      { du: c.u0 - RADIUS - u, dv: 0 },
+      { du: c.u1 + RADIUS - u, dv: 0 },
+      { du: 0, dv: -half - RADIUS - v },
+      { du: 0, dv: half + RADIUS - v },
+    ].sort((a, b) => Math.abs(a.du) + Math.abs(a.dv) - (Math.abs(b.du) + Math.abs(b.dv)))[0];
+    du = pen.du;
+    dv = pen.dv;
+  }
+  p.x += du * fp.dir.x + dv * fp.n.x;
+  p.y += du * fp.dir.y + dv * fp.n.y;
+}
+
+function isTyping(e: KeyboardEvent) {
+  const t = e.target as HTMLElement | null;
+  return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+}

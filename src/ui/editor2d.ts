@@ -1,0 +1,941 @@
+// The 2D plan editor: a canvas with pan/zoom, snapping, drawing and direct manipulation.
+// All geometry it draws (mitred wall outlines, openings, rooms) comes from the same model
+// functions that feed the 3D view, so the plan and the 3D model always agree.
+
+import {
+  Vec2,
+  add,
+  dist,
+  dot,
+  lineIntersect,
+  normalize as unit,
+  pointInPolygon,
+  projectOnSegment,
+  scale,
+  sub,
+  vec,
+} from '../model/geom';
+import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
+import { moveOpening, placeOpening } from '../model/openings';
+import {
+  EPS,
+  addWall,
+  clonePlan,
+  deleteNode,
+  deleteOpening,
+  deleteWall,
+  finishNodeMove,
+  moveNode,
+  planBounds,
+  splitWallAt,
+} from '../model/plan';
+import { detectRooms } from '../model/rooms';
+import type { Opening, OpeningKind, Plan } from '../model/types';
+import type { Store } from './store';
+
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'split';
+export type Selection = { kind: 'wall' | 'node' | 'opening'; id: string } | null;
+
+type Gesture =
+  | { kind: 'pan'; last: Vec2 }
+  | { kind: 'pinch'; dist: number; mid: Vec2 }
+  | { kind: 'dragNode'; id: string }
+  | { kind: 'dragWall'; id: string; start: Vec2; a0: Vec2; b0: Vec2; n: Vec2 }
+  | { kind: 'dragOpening'; id: string }
+  | { kind: 'click' };
+
+interface Snap {
+  p: Vec2;
+  kind: 'node' | 'wall' | 'grid' | 'angle' | 'free';
+  guides: { from: Vec2; to: Vec2 }[];
+}
+
+const DRAG_THRESHOLD = 5; // px before a press becomes a drag
+const SNAP_PX = 12;
+
+export class Editor2D {
+  readonly canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+  private view = { scale: 40, ox: 40, oy: 40 };
+  tool: Tool = 'select';
+  selection: Selection = null;
+  wallProps = { thickness: 0.3, height: 2.6 };
+  ortho = false;
+  gridStep = 0.05;
+  onSelectionChange?: () => void;
+  onToolChange?: () => void;
+  shortcutsEnabled: () => boolean = () => true;
+
+  private pointers = new Map<number, Vec2>();
+  private gesture: Gesture | null = null;
+  private downAt: Vec2 | null = null;
+  private dragging = false;
+  private hover: Vec2 | null = null; // world position of the pointer
+  private drawStart: Vec2 | null = null;
+  private chainStart: Vec2 | null = null;
+  private lengthInput = '';
+  private renderQueued = false;
+  private fps: Map<string, Footprint> = new Map();
+
+  constructor(
+    private container: HTMLElement,
+    private store: Store,
+  ) {
+    this.canvas = document.createElement('canvas');
+    this.canvas.style.touchAction = 'none';
+    container.appendChild(this.canvas);
+    this.ctx = this.canvas.getContext('2d')!;
+
+    const c = this.canvas;
+    c.addEventListener('pointerdown', (e) => this.onDown(e));
+    c.addEventListener('pointermove', (e) => this.onMove(e));
+    c.addEventListener('pointerup', (e) => this.onUp(e));
+    c.addEventListener('pointercancel', (e) => this.onUp(e, true));
+    c.addEventListener('pointerleave', () => {
+      this.hover = null;
+      this.requestRender();
+    });
+    c.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
+    c.addEventListener('contextmenu', (e) => e.preventDefault());
+    c.addEventListener('dblclick', () => {
+      if (this.tool === 'wall') this.finishChain();
+    });
+    window.addEventListener('keydown', (e) => this.onKey(e));
+    new ResizeObserver(() => this.resize()).observe(container);
+    store.subscribe(() => {
+      this.validateSelection();
+      this.requestRender();
+    });
+    this.resize();
+  }
+
+  get plan(): Plan {
+    return this.store.plan;
+  }
+
+  setTool(t: Tool) {
+    if (this.tool === 'wall' && t !== 'wall') this.finishChain();
+    this.tool = t;
+    this.onToolChange?.();
+    this.requestRender();
+  }
+
+  select(s: Selection) {
+    this.selection = s;
+    this.onSelectionChange?.();
+    this.requestRender();
+  }
+
+  /** True while a wall chain is being drawn. */
+  get drawing() {
+    return this.drawStart !== null;
+  }
+
+  finishChain() {
+    this.drawStart = null;
+    this.chainStart = null;
+    this.lengthInput = '';
+    this.onToolChange?.();
+    this.requestRender();
+  }
+
+  zoomToFit() {
+    const b = planBounds(this.plan);
+    const w = this.canvas.clientWidth;
+    const h = this.canvas.clientHeight;
+    if (!b || !w || !h) return;
+    const pad = 60;
+    const sx = (w - pad * 2) / Math.max(1, b.max.x - b.min.x);
+    const sy = (h - pad * 2) / Math.max(1, b.max.y - b.min.y);
+    this.view.scale = Math.min(120, Math.max(5, Math.min(sx, sy)));
+    this.view.ox = w / 2 - ((b.min.x + b.max.x) / 2) * this.view.scale;
+    this.view.oy = h / 2 - ((b.min.y + b.max.y) / 2) * this.view.scale;
+    this.requestRender();
+  }
+
+  // ---------------------------------------------------------------- coordinates
+
+  private toScreen(p: Vec2): Vec2 {
+    return vec(p.x * this.view.scale + this.view.ox, p.y * this.view.scale + this.view.oy);
+  }
+
+  private toWorld(p: Vec2): Vec2 {
+    return vec((p.x - this.view.ox) / this.view.scale, (p.y - this.view.oy) / this.view.scale);
+  }
+
+  private eventPoint(e: PointerEvent | WheelEvent): Vec2 {
+    const r = this.canvas.getBoundingClientRect();
+    return vec(e.clientX - r.left, e.clientY - r.top);
+  }
+
+  // ---------------------------------------------------------------- snapping
+
+  private snap(raw: Vec2, opts: { from?: Vec2 | null; excludeNode?: string } = {}): Snap {
+    const tol = SNAP_PX / this.view.scale;
+    const plan = this.plan;
+    const guides: Snap['guides'] = [];
+
+    // 1. Existing joints.
+    let best: Vec2 | null = null;
+    let bestD = tol;
+    for (const n of Object.values(plan.nodes)) {
+      if (n.id === opts.excludeNode) continue;
+      const d = dist(n, raw);
+      if (d < bestD) {
+        bestD = d;
+        best = vec(n.x, n.y);
+      }
+    }
+    if (best) return { p: best, kind: 'node', guides };
+
+    // 2. Direction lock relative to the previous point (always within 4 degrees of 45s; hard with Ortho).
+    const from = opts.from ?? null;
+    let dir: Vec2 | null = null;
+    let p = raw;
+    let kind: Snap['kind'] = 'free';
+    if (from) {
+      const d = sub(raw, from);
+      const L = Math.hypot(d.x, d.y);
+      if (L > 1e-9) {
+        const ang = Math.atan2(d.y, d.x);
+        const step = Math.PI / 4;
+        const snapped = Math.round(ang / step) * step;
+        if (this.ortho || Math.abs(snapped - ang) < (4 * Math.PI) / 180) {
+          dir = vec(Math.cos(snapped), Math.sin(snapped));
+          const Ls = Math.round(dot(d, dir) / this.gridStep) * this.gridStep;
+          p = add(from, scale(dir, Ls));
+          kind = 'angle';
+        } else {
+          const Ls = Math.round(L / this.gridStep) * this.gridStep;
+          p = add(from, scale(unit(d), Ls));
+        }
+      }
+    } else {
+      p = vec(Math.round(raw.x / this.gridStep) * this.gridStep, Math.round(raw.y / this.gridStep) * this.gridStep);
+      kind = 'grid';
+    }
+
+    // 3. Onto an existing wall (creating a T-junction when the wall is added).
+    let wallHit: { a: Vec2; b: Vec2; point: Vec2; d: number } | null = null;
+    for (const w of Object.values(plan.walls)) {
+      if (opts.excludeNode && (w.a === opts.excludeNode || w.b === opts.excludeNode)) continue;
+      const a = plan.nodes[w.a];
+      const b = plan.nodes[w.b];
+      const pr = projectOnSegment(raw, a, b);
+      const reach = Math.max(tol, w.thickness / 2);
+      if (pr.dist < reach && (!wallHit || pr.dist < wallHit.d)) wallHit = { a, b, point: pr.point, d: pr.dist };
+    }
+    if (wallHit) {
+      let q = wallHit.point;
+      if (dir && from) {
+        // Keep the drawing direction and land exactly on the wall's centre line.
+        const x = lineIntersect(from, dir, wallHit.a, sub(wallHit.b, wallHit.a));
+        if (x && projectOnSegment(x, wallHit.a, wallHit.b).dist < 1e-6 && dist(x, raw) < tol * 3) q = x;
+      } else {
+        // Round the position along the wall to the grid step.
+        const wd = unit(sub(wallHit.b, wallHit.a));
+        const u = Math.round(dot(sub(q, wallHit.a), wd) / this.gridStep) * this.gridStep;
+        const L = dist(wallHit.a, wallHit.b);
+        if (u > EPS && u < L - EPS) q = add(wallHit.a, scale(wd, u));
+      }
+      return { p: q, kind: 'wall', guides };
+    }
+
+    // 4. Line up with other joints horizontally / vertically.
+    if (kind !== 'angle') {
+      let ax: Vec2 | null = null;
+      let ay: Vec2 | null = null;
+      for (const n of Object.values(plan.nodes)) {
+        if (n.id === opts.excludeNode) continue;
+        if (Math.abs(n.x - p.x) < tol && (!ax || Math.abs(n.x - p.x) < Math.abs(ax.x - p.x))) ax = n;
+        if (Math.abs(n.y - p.y) < tol && (!ay || Math.abs(n.y - p.y) < Math.abs(ay.y - p.y))) ay = n;
+      }
+      if (ax) {
+        p = vec(ax.x, p.y);
+        guides.push({ from: ax, to: p });
+      }
+      if (ay) {
+        p = vec(p.x, ay.y);
+        guides.push({ from: ay, to: p });
+      }
+    }
+    return { p, kind, guides };
+  }
+
+  // ---------------------------------------------------------------- hit testing
+
+  private hitTest(s: Vec2): Selection {
+    const w = this.toWorld(s);
+    const tol = 8 / this.view.scale;
+    const plan = this.plan;
+    let best: Selection = null;
+    let bestD = 12 / this.view.scale;
+    for (const n of Object.values(plan.nodes)) {
+      const d = dist(n, w);
+      if (d < bestD) {
+        bestD = d;
+        best = { kind: 'node', id: n.id };
+      }
+    }
+    if (best) return best;
+    for (const o of Object.values(plan.openings)) {
+      const fp = this.fps.get(o.wallId);
+      if (!fp) continue;
+      const { u, v } = local(fp, w);
+      if (Math.abs(u - o.offset) <= o.width / 2 + tol && Math.abs(v) <= fp.thickness / 2 + tol) {
+        return { kind: 'opening', id: o.id };
+      }
+    }
+    const wall = this.wallAt(w, tol);
+    return wall ? { kind: 'wall', id: wall.wallId } : null;
+  }
+
+  private wallAt(w: Vec2, tol: number): Footprint | null {
+    let best: Footprint | null = null;
+    let bestD = Infinity;
+    for (const fp of this.fps.values()) {
+      const pr = projectOnSegment(w, fp.a, fp.b);
+      const inside = pointInPolygon(w, fp.polygon);
+      const d = inside ? 0 : pr.dist - fp.thickness / 2;
+      if (d < tol && d < bestD) {
+        bestD = d;
+        best = fp;
+      }
+    }
+    return best;
+  }
+
+  // ---------------------------------------------------------------- pointer input
+
+  private onDown(e: PointerEvent) {
+    this.canvas.setPointerCapture(e.pointerId);
+    const s = this.eventPoint(e);
+    this.pointers.set(e.pointerId, s);
+    if (this.pointers.size === 2) {
+      // Second finger: abandon whatever the first one started and pinch instead.
+      if (this.dragging && this.gesture && this.gesture.kind.startsWith('drag')) this.store.revert();
+      const [p, q] = [...this.pointers.values()];
+      this.gesture = { kind: 'pinch', dist: dist(p, q), mid: scale(add(p, q), 0.5) };
+      return;
+    }
+    if (this.pointers.size > 2) return;
+    this.downAt = s;
+    this.dragging = false;
+
+    if (e.button === 1 || (e.button === 2 && this.tool !== 'wall')) {
+      this.gesture = { kind: 'pan', last: s };
+      this.dragging = true;
+      return;
+    }
+    if (e.button === 2) {
+      this.finishChain();
+      this.gesture = null;
+      return;
+    }
+
+    if (this.tool === 'select') {
+      const hit = this.hitTest(s);
+      this.select(hit);
+      if (hit?.kind === 'node') this.gesture = { kind: 'dragNode', id: hit.id };
+      else if (hit?.kind === 'opening') this.gesture = { kind: 'dragOpening', id: hit.id };
+      else if (hit?.kind === 'wall') {
+        const fp = this.fps.get(hit.id)!;
+        const wall = this.plan.walls[hit.id];
+        this.gesture = {
+          kind: 'dragWall',
+          id: hit.id,
+          start: this.toWorld(s),
+          a0: { ...this.plan.nodes[wall.a] },
+          b0: { ...this.plan.nodes[wall.b] },
+          n: fp.n,
+        };
+      } else this.gesture = { kind: 'pan', last: s };
+    } else {
+      this.gesture = { kind: 'click' };
+    }
+  }
+
+  private onMove(e: PointerEvent) {
+    const s = this.eventPoint(e);
+    if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, s);
+    if (e.pointerType === 'mouse' || this.pointers.size === 1) this.hover = this.toWorld(s);
+
+    const g = this.gesture;
+    if (g?.kind === 'pinch' && this.pointers.size >= 2) {
+      const [p, q] = [...this.pointers.values()];
+      const d = dist(p, q);
+      const mid = scale(add(p, q), 0.5);
+      this.zoomAt(g.mid, d / Math.max(1, g.dist));
+      this.view.ox += mid.x - g.mid.x;
+      this.view.oy += mid.y - g.mid.y;
+      g.dist = d;
+      g.mid = mid;
+      this.requestRender();
+      return;
+    }
+    if (!g || !this.downAt) {
+      this.requestRender();
+      return;
+    }
+    if (!this.dragging && dist(s, this.downAt) < DRAG_THRESHOLD) return;
+    if (!this.dragging) {
+      this.dragging = true;
+      // A drag with a drawing tool pans the view instead of placing anything.
+      if (g.kind === 'click') this.gesture = { kind: 'pan', last: this.downAt };
+    }
+    const w = this.toWorld(s);
+    const plan = this.plan;
+    const cur = this.gesture!;
+    switch (cur.kind) {
+      case 'pan':
+        this.view.ox += s.x - cur.last.x;
+        this.view.oy += s.y - cur.last.y;
+        cur.last = s;
+        this.requestRender();
+        break;
+      case 'dragNode': {
+        const snap = this.snap(w, { excludeNode: cur.id });
+        this.lastGuides = snap.guides;
+        moveNode(plan, cur.id, snap.p);
+        this.store.changed();
+        break;
+      }
+      case 'dragWall': {
+        const wall = plan.walls[cur.id];
+        if (!wall) break;
+        const off = Math.round(dot(sub(w, cur.start), cur.n) / this.gridStep) * this.gridStep;
+        moveNode(plan, wall.a, add(cur.a0, scale(cur.n, off)));
+        moveNode(plan, wall.b, add(cur.b0, scale(cur.n, off)));
+        this.store.changed();
+        break;
+      }
+      case 'dragOpening': {
+        const o = plan.openings[cur.id];
+        if (!o) break;
+        // Follow the pointer onto another wall if it moves over one.
+        const fp = this.wallAt(w, 10 / this.view.scale) ?? this.fps.get(o.wallId);
+        if (!fp) break;
+        const u = Math.round(local(fp, w).u / 0.01) * 0.01;
+        moveOpening(plan, o.id, fp.wallId, u, this.fps);
+        this.store.changed();
+        break;
+      }
+    }
+  }
+
+  private lastGuides: Snap['guides'] = [];
+
+  private onUp(e: PointerEvent, cancelled = false) {
+    this.pointers.delete(e.pointerId);
+    const g = this.gesture;
+    if (g?.kind === 'pinch') {
+      if (this.pointers.size === 0) this.gesture = null;
+      return;
+    }
+    if (!g) return;
+    this.gesture = null;
+    this.lastGuides = [];
+    if (cancelled) {
+      if (this.dragging && g.kind.startsWith('drag')) this.store.revert();
+      return;
+    }
+    const plan = this.plan;
+    switch (g.kind) {
+      case 'dragNode':
+        if (this.dragging) {
+          finishNodeMove(plan, g.id);
+          this.store.commit();
+        }
+        break;
+      case 'dragWall':
+        if (this.dragging) {
+          const wall = plan.walls[g.id];
+          if (wall) {
+            const b = wall.b;
+            finishNodeMove(plan, wall.a);
+            finishNodeMove(plan, b);
+          }
+          this.store.commit();
+        }
+        break;
+      case 'dragOpening':
+        if (this.dragging) this.store.commit();
+        break;
+      case 'click':
+        if (!this.dragging) this.click(this.toWorld(this.eventPoint(e)));
+        break;
+    }
+    this.dragging = false;
+    this.downAt = null;
+  }
+
+  private click(w: Vec2) {
+    const plan = this.plan;
+    switch (this.tool) {
+      case 'wall': {
+        const s = this.snap(w, { from: this.drawStart });
+        this.placeWallPoint(s.p);
+        break;
+      }
+      case 'door':
+      case 'window': {
+        const fp = this.wallAt(w, 10 / this.view.scale);
+        if (!fp) break;
+        const o = placeOpening(plan, fp.wallId, local(fp, w).u, this.tool as OpeningKind, this.fps);
+        if (o) {
+          this.store.commit();
+          this.select({ kind: 'opening', id: o.id });
+        }
+        break;
+      }
+      case 'split': {
+        const fp = this.wallAt(w, 10 / this.view.scale);
+        if (!fp) break;
+        const u = Math.round(local(fp, w).u / this.gridStep) * this.gridStep;
+        const id = splitWallAt(plan, fp.wallId, u);
+        if (id) {
+          this.store.commit();
+          this.setTool('select');
+          this.select({ kind: 'node', id });
+        }
+        break;
+      }
+    }
+  }
+
+  private placeWallPoint(p: Vec2) {
+    if (!this.drawStart) {
+      this.drawStart = p;
+      this.chainStart = p;
+      this.onToolChange?.();
+      this.requestRender();
+      return;
+    }
+    if (dist(p, this.drawStart) < 1e-6) {
+      this.finishChain();
+      return;
+    }
+    const res = addWall(this.plan, this.drawStart, p, this.wallProps);
+    this.store.commit();
+    if (res && this.chainStart && dist(p, this.chainStart) < 1e-6) {
+      this.finishChain(); // closed the loop
+      return;
+    }
+    this.drawStart = p;
+    this.lengthInput = '';
+    this.requestRender();
+  }
+
+  private zoomAt(s: Vec2, factor: number) {
+    const before = this.toWorld(s);
+    this.view.scale = Math.min(400, Math.max(4, this.view.scale * factor));
+    this.view.ox = s.x - before.x * this.view.scale;
+    this.view.oy = s.y - before.y * this.view.scale;
+  }
+
+  private onWheel(e: WheelEvent) {
+    e.preventDefault();
+    const s = this.eventPoint(e);
+    // Wheel / trackpad pinch (ctrlKey) zooms about the pointer; horizontal scroll pans.
+    if (e.deltaY) this.zoomAt(s, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)));
+    if (!e.ctrlKey && e.deltaX) this.view.ox -= e.deltaX;
+    this.requestRender();
+  }
+
+  private onKey(e: KeyboardEvent) {
+    const t = e.target as HTMLElement;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+    if (!this.shortcutsEnabled()) return;
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) this.store.redo();
+      else this.store.undo();
+      return;
+    }
+    if (mod && e.key.toLowerCase() === 'y') {
+      e.preventDefault();
+      this.store.redo();
+      return;
+    }
+    if (mod) return;
+
+    // Typing a length while drawing a wall: e.g. "3.5" then Enter.
+    if (this.tool === 'wall' && this.drawStart) {
+      if (/^[0-9.]$/.test(e.key)) {
+        this.lengthInput += e.key;
+        this.requestRender();
+        return;
+      }
+      if (e.key === 'Backspace' && this.lengthInput) {
+        this.lengthInput = this.lengthInput.slice(0, -1);
+        this.requestRender();
+        return;
+      }
+      if (e.key === 'Enter') {
+        const L = parseFloat(this.lengthInput);
+        const target = this.hover ? this.snap(this.hover, { from: this.drawStart }).p : null;
+        if (L > 0 && target && dist(target, this.drawStart) > 1e-6) {
+          const d = unit(sub(target, this.drawStart));
+          this.placeWallPoint(add(this.drawStart, scale(d, L)));
+        } else this.finishChain();
+        return;
+      }
+    }
+    switch (e.key) {
+      case 'Escape':
+        if (this.drawStart) this.finishChain();
+        else if (this.tool !== 'select') this.setTool('select');
+        else this.select(null);
+        break;
+      case 'Delete':
+      case 'Backspace':
+        this.deleteSelection();
+        e.preventDefault();
+        break;
+      case 'v':
+        this.setTool('select');
+        break;
+      case 'w':
+        this.setTool('wall');
+        break;
+      case 'd':
+        this.setTool('door');
+        break;
+      case 'n':
+        this.setTool('window');
+        break;
+      case 'x':
+        this.setTool('split');
+        break;
+      case 'o':
+        this.ortho = !this.ortho;
+        this.onToolChange?.();
+        break;
+    }
+  }
+
+  deleteSelection() {
+    const s = this.selection;
+    if (!s) return;
+    if (s.kind === 'wall') deleteWall(this.plan, s.id);
+    else if (s.kind === 'node') deleteNode(this.plan, s.id);
+    else deleteOpening(this.plan, s.id);
+    this.select(null);
+    this.store.commit();
+  }
+
+  private validateSelection() {
+    const s = this.selection;
+    if (!s) return;
+    const p = this.plan;
+    const exists =
+      (s.kind === 'wall' && p.walls[s.id]) || (s.kind === 'node' && p.nodes[s.id]) || (s.kind === 'opening' && p.openings[s.id]);
+    if (!exists) this.select(null);
+  }
+
+  // ---------------------------------------------------------------- rendering
+
+  private resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    this.canvas.width = Math.round(w * dpr);
+    this.canvas.height = Math.round(h * dpr);
+    this.canvas.style.width = `${w}px`;
+    this.canvas.style.height = `${h}px`;
+    this.requestRender();
+  }
+
+  requestRender() {
+    if (this.renderQueued) return;
+    this.renderQueued = true;
+    requestAnimationFrame(() => {
+      this.renderQueued = false;
+      this.render();
+    });
+  }
+
+  private render() {
+    const ctx = this.ctx;
+    const dpr = window.devicePixelRatio || 1;
+    const W = this.canvas.width / dpr;
+    const H = this.canvas.height / dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const css = getComputedStyle(this.canvas);
+    const col = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+    const C = {
+      bg: col('--plan-bg', '#fbfaf7'),
+      grid: col('--plan-grid', '#ebe8e1'),
+      gridMajor: col('--plan-grid-major', '#d9d4ca'),
+      wall: col('--plan-wall', '#3b3d42'),
+      room: col('--plan-room', '#efe6d6'),
+      text: col('--plan-text', '#5b5549'),
+      accent: col('--accent', '#2f6fdf'),
+      opening: col('--plan-opening', '#fbfaf7'),
+      ink: col('--plan-ink', '#3b3d42'),
+    };
+    ctx.fillStyle = C.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    const plan = this.plan;
+    this.fps = computeFootprints(plan);
+    this.drawGrid(W, H, C.grid, C.gridMajor);
+
+    // Rooms.
+    ctx.font = '12px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const rooms = detectRooms(plan);
+    for (const r of rooms) {
+      this.path(r.polygon);
+      ctx.fillStyle = C.room;
+      ctx.fill();
+    }
+
+    // Walls.
+    for (const fp of this.fps.values()) {
+      this.path(fp.polygon);
+      const sel = this.selection?.kind === 'wall' && this.selection.id === fp.wallId;
+      ctx.fillStyle = sel ? C.accent : C.wall;
+      ctx.fill();
+    }
+
+    // Openings.
+    for (const o of Object.values(plan.openings)) {
+      const fp = this.fps.get(o.wallId);
+      if (fp) this.drawOpening(fp, o, this.selection?.kind === 'opening' && this.selection.id === o.id, C);
+    }
+
+    for (const r of rooms) {
+      const c = this.toScreen(r.centroid);
+      ctx.fillStyle = C.text;
+      ctx.fillText(`${r.netArea.toFixed(1)} m²`, c.x, c.y);
+    }
+
+    // Selected wall: dimension.
+    if (this.selection?.kind === 'wall') {
+      const fp = this.fps.get(this.selection.id);
+      if (fp) this.dimension(fp.a, fp.b, fp.thickness / 2 + 12 / this.view.scale, C.accent);
+    }
+
+    // Joints.
+    const showNodes = this.tool === 'select' || this.tool === 'wall' || this.tool === 'split';
+    if (showNodes) {
+      for (const n of Object.values(plan.nodes)) {
+        const s = this.toScreen(n);
+        const sel = this.selection?.kind === 'node' && this.selection.id === n.id;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, sel ? 6 : 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = sel ? C.accent : C.bg;
+        ctx.strokeStyle = sel ? C.bg : C.accent;
+        ctx.lineWidth = 1.5;
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
+    this.drawToolPreview(C);
+
+    for (const g of this.lastGuides) this.guide(g.from, g.to, C.accent);
+  }
+
+  private drawToolPreview(C: Record<string, string>) {
+    const ctx = this.ctx;
+    const h = this.hover;
+    if (this.tool === 'wall') {
+      const s = h ? this.snap(h, { from: this.drawStart }) : null;
+      if (this.drawStart && s) {
+        let end = s.p;
+        const L = parseFloat(this.lengthInput);
+        if (L > 0 && dist(end, this.drawStart) > 1e-6) end = add(this.drawStart, scale(unit(sub(end, this.drawStart)), L));
+        const d = unit(sub(end, this.drawStart));
+        const n = scale(vec(-d.y, d.x), this.wallProps.thickness / 2);
+        this.path([add(this.drawStart, n), add(end, n), sub(end, n), sub(this.drawStart, n)]);
+        ctx.fillStyle = hexAlpha(C.accent, 0.35);
+        ctx.fill();
+        ctx.strokeStyle = C.accent;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        this.dimension(this.drawStart, end, this.wallProps.thickness / 2 + 14 / this.view.scale, C.accent, this.lengthInput ? `${this.lengthInput}▍ m` : undefined);
+      }
+      if (s) {
+        for (const g of s.guides) this.guide(g.from, g.to, C.accent);
+        const p = this.toScreen(s.p);
+        ctx.beginPath();
+        if (s.kind === 'node' || s.kind === 'wall') ctx.rect(p.x - 5, p.y - 5, 10, 10);
+        else ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.strokeStyle = C.accent;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    } else if ((this.tool === 'door' || this.tool === 'window') && h) {
+      const fp = this.wallAt(h, 10 / this.view.scale);
+      if (fp) {
+        const ghostPlan = clonePlan(this.plan);
+        const o = placeOpening(ghostPlan, fp.wallId, local(fp, h).u, this.tool, this.fps);
+        if (o) {
+          ctx.globalAlpha = 0.6;
+          this.drawOpening(fp, o, true, C);
+          ctx.globalAlpha = 1;
+        }
+      }
+    } else if (this.tool === 'split' && h) {
+      const fp = this.wallAt(h, 10 / this.view.scale);
+      if (fp) {
+        const u = Math.round(local(fp, h).u / this.gridStep) * this.gridStep;
+        const p1 = this.toScreen(wallPoint(fp, u, fp.thickness / 2 + 6 / this.view.scale));
+        const p2 = this.toScreen(wallPoint(fp, u, -fp.thickness / 2 - 6 / this.view.scale));
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.strokeStyle = C.accent;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+  }
+
+  private drawOpening(fp: Footprint, o: Opening, selected: boolean, C: Record<string, string>) {
+    const ctx = this.ctx;
+    const half = fp.thickness / 2;
+    const lo = o.offset - o.width / 2;
+    const hi = o.offset + o.width / 2;
+    const rect = [wallPoint(fp, lo, half), wallPoint(fp, hi, half), wallPoint(fp, hi, -half), wallPoint(fp, lo, -half)];
+    this.path(rect);
+    ctx.fillStyle = C.opening;
+    ctx.fill();
+    const ink = selected ? C.accent : C.ink;
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = selected ? 2 : 1.2;
+    // Jamb lines.
+    this.line(rect[0], rect[3]);
+    this.line(rect[1], rect[2]);
+    if (o.kind === 'window') {
+      this.line(wallPoint(fp, lo, half * 0.25), wallPoint(fp, hi, half * 0.25));
+      this.line(wallPoint(fp, lo, -half * 0.25), wallPoint(fp, hi, -half * 0.25));
+      this.line(rect[0], rect[1]);
+      this.line(rect[3], rect[2]);
+    } else {
+      const side = o.swingFlip ? -1 : 1;
+      const hingeU = o.hingeFlip ? hi : lo;
+      const otherU = o.hingeFlip ? lo : hi;
+      const hinge = wallPoint(fp, hingeU, side * half);
+      const leafEnd = add(hinge, scale(fp.n, side * o.width));
+      this.line(hinge, leafEnd);
+      const hs = this.toScreen(hinge);
+      const a1 = Math.atan2(leafEnd.y - hinge.y, leafEnd.x - hinge.x);
+      const closed = wallPoint(fp, otherU, side * half);
+      const a2 = Math.atan2(closed.y - hinge.y, closed.x - hinge.x);
+      let delta = a2 - a1;
+      while (delta > Math.PI) delta -= 2 * Math.PI;
+      while (delta < -Math.PI) delta += 2 * Math.PI;
+      ctx.beginPath();
+      ctx.arc(hs.x, hs.y, o.width * this.view.scale, a1, a2, delta < 0);
+      ctx.setLineDash([3, 3]);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  private drawGrid(W: number, H: number, minor: string, major: string) {
+    const ctx = this.ctx;
+    const tl = this.toWorld(vec(0, 0));
+    const br = this.toWorld(vec(W, H));
+    const steps = [0.1, 0.5, 1, 5, 10];
+    const step = steps.find((s) => s * this.view.scale >= 12) ?? 10;
+    const majorStep = step < 1 ? 1 : step * 5;
+    ctx.lineWidth = 1;
+    for (const [s, color] of [
+      [step, minor],
+      [majorStep, major],
+    ] as const) {
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      for (let x = Math.floor(tl.x / s) * s; x <= br.x; x += s) {
+        const sx = Math.round(this.toScreen(vec(x, 0)).x) + 0.5;
+        ctx.moveTo(sx, 0);
+        ctx.lineTo(sx, H);
+      }
+      for (let y = Math.floor(tl.y / s) * s; y <= br.y; y += s) {
+        const sy = Math.round(this.toScreen(vec(0, y)).y) + 0.5;
+        ctx.moveTo(0, sy);
+        ctx.lineTo(W, sy);
+      }
+      ctx.stroke();
+    }
+  }
+
+  private dimension(a: Vec2, b: Vec2, offset: number, color: string, label?: string) {
+    const ctx = this.ctx;
+    const d = unit(sub(b, a));
+    const n = vec(-d.y, d.x);
+    const pa = add(a, scale(n, offset));
+    const pb = add(b, scale(n, offset));
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    this.line(pa, pb);
+    const t = 4 / this.view.scale;
+    this.line(add(pa, scale(n, -t)), add(pa, scale(n, t)));
+    this.line(add(pb, scale(n, -t)), add(pb, scale(n, t)));
+    const m = this.toScreen(add(scale(add(pa, pb), 0.5), scale(n, 10 / this.view.scale)));
+    const text = label ?? `${dist(a, b).toFixed(2)} m`;
+    ctx.font = '600 12px system-ui, sans-serif';
+    const w = ctx.measureText(text).width + 8;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(m.x - w / 2, m.y - 9, w, 18, 4);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, m.x, m.y + 0.5);
+  }
+
+  private guide(a: Vec2, b: Vec2, color: string) {
+    const ctx = this.ctx;
+    ctx.strokeStyle = hexAlpha(color, 0.6);
+    ctx.setLineDash([2, 4]);
+    ctx.lineWidth = 1;
+    this.line(a, b);
+    ctx.setLineDash([]);
+  }
+
+  private path(pts: Vec2[]) {
+    const ctx = this.ctx;
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      const s = this.toScreen(p);
+      if (i === 0) ctx.moveTo(s.x, s.y);
+      else ctx.lineTo(s.x, s.y);
+    });
+    ctx.closePath();
+  }
+
+  private line(a: Vec2, b: Vec2) {
+    const ctx = this.ctx;
+    const sa = this.toScreen(a);
+    const sb = this.toScreen(b);
+    ctx.beginPath();
+    ctx.moveTo(sa.x, sa.y);
+    ctx.lineTo(sb.x, sb.y);
+    ctx.stroke();
+  }
+}
+
+/** A point in a wall's local frame. */
+function local(fp: Footprint, p: Vec2) {
+  const r = sub(p, fp.a);
+  return { u: dot(r, fp.dir), v: dot(r, fp.n) };
+}
+
+function hexAlpha(color: string, a: number): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(color);
+  if (!m) return color;
+  const v = parseInt(m[1], 16);
+  return `rgba(${(v >> 16) & 255}, ${(v >> 8) & 255}, ${v & 255}, ${a})`;
+}
+
