@@ -66,6 +66,9 @@
         <div class="menu-items">
           <button id="new">New empty building</button>
           <button id="demo">Load demo house</button>
+          <button id="saveShared">Save to computer…</button>
+          <button id="openShared">Open from computer…</button>
+          <hr />
           <button id="export">Export JSON…</button>
           <button id="import">Import JSON…</button>
           <input id="importFile" type="file" accept="application/json,.json" hidden />
@@ -83,6 +86,14 @@
         <div class="overlay" id="walkHint" hidden></div>
       </section>
     </main>
+    <dialog id="drawingsDialog">
+      <form method="dialog">
+        <h2>Drawings saved on the computer</h2>
+        <p class="note">Newest first. Opening one replaces what is on screen (Undo brings it back).</p>
+        <ul id="drawingsList"></ul>
+        <button value="cancel">Close</button>
+      </form>
+    </dialog>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

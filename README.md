@@ -11,7 +11,12 @@ npm run build    # static site in dist/
 ```
 
 **On an iPad (or phone):** keep `npm run dev` running on your computer. As well as the Local address, it prints a **Network:** address such as `http://192.168.1.23:5173/`. With the iPad on the same Wi-Fi, type that address into Safari. Tip: Share → **Add to Home Screen** gives it an app icon.
-- Drawings are saved separately in each browser. To move one between computer and iPad, use **File → Export JSON…** on one, then **Import JSON…** on the other (via AirDrop, iCloud Drive or email).
+- Each browser keeps its own working copy. To move a drawing between computer and iPad, use **File → Save to computer…** on one and **File → Open from computer…** on the other.
+  - Saves go into the `drawings` folder of this project on the computer running `npm run dev`. That folder is not committed to git.
+  - Every save is a new, dated file: nothing is ever overwritten. The list shows which device each one came from.
+  - Opening a drawing replaces what is on screen, but **Undo** brings it back.
+  - Anyone on your home Wi-Fi who opens the app could also see the saved drawings.
+- **Export/Import JSON** still work for keeping or sending a copy elsewhere.
 - If the iPad can't connect, the computer's firewall may be asking whether to allow incoming connections to `node`. Allow it.
 
 After a `git pull`, run `npm install` again before `npm run dev`. If Vite says it can't resolve an import from one of the `src` files, a new package has been added that isn't installed yet.

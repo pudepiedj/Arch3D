@@ -371,3 +371,62 @@ button.danger {
   color: var(--muted);
   font-size: 13px;
 }
+
+.menu-items hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 4px 2px;
+}
+
+#drawingsDialog {
+  width: min(460px, calc(100vw - 32px));
+  max-height: min(70vh, 560px);
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bar);
+  color: var(--fg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+#drawingsDialog::backdrop {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+#drawingsDialog h2 {
+  font-size: 16px;
+  margin: 0 0 4px;
+}
+
+#drawingsDialog .note {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 10px;
+}
+
+#drawingsList {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  max-height: 46vh;
+  overflow: auto;
+}
+
+#drawingsList li + li {
+  margin-top: 4px;
+}
+
+#drawingsList button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  padding: 8px 10px;
+}
+
+#drawingsList span {
+  color: var(--muted);
+  font-size: 12px;
+}

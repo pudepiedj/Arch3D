@@ -167,6 +167,81 @@ $('#new').addEventListener('click', () => {
   }
 });
 $('#demo').addEventListener('click', () => load(demoBuilding()));
+// Drawings kept on the computer running the app, shared by every device that uses it.
+// Each save is a new file; nothing is overwritten.
+const thisDevice = () =>
+  /iPad|iPhone/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
+    ? 'iPad'
+    : /Android/.test(navigator.userAgent)
+      ? 'tablet'
+      : 'computer';
+const sharedUnavailable = () =>
+  alert('Saving to the computer only works while the app is running from "npm run dev" (or "npm run preview") on it.');
+
+$('#saveShared').addEventListener('click', async () => {
+  closeMenu();
+  const when = new Date().toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  const name = prompt('Name for this saved drawing:', `House, ${when}`);
+  if (name === null) return;
+  try {
+    const res = await fetch('/api/drawings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim() || 'Drawing', device: thisDevice(), building: store.building }),
+    });
+    if (!res.ok) throw new Error(`${res.status}`);
+    const saved = await res.json();
+    alert(`Saved as a new drawing on the computer:\n${saved.file}`);
+  } catch {
+    sharedUnavailable();
+  }
+});
+
+$('#openShared').addEventListener('click', async () => {
+  closeMenu();
+  let items: { file: string; name: string; device: string; savedAt: string }[];
+  try {
+    const res = await fetch('/api/drawings', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`${res.status}`);
+    items = await res.json();
+  } catch {
+    return sharedUnavailable();
+  }
+  const dialog = $('#drawingsDialog') as HTMLDialogElement;
+  const list = $('#drawingsList');
+  list.replaceChildren();
+  if (!items.length) {
+    const li = document.createElement('li');
+    li.className = 'note';
+    li.textContent = 'Nothing saved yet: use File → Save to computer… first.';
+    list.append(li);
+  }
+  for (const d of items) {
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.type = 'button';
+    const title = document.createElement('strong');
+    title.textContent = d.name;
+    const meta = document.createElement('span');
+    meta.textContent = `${new Date(d.savedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' })}${d.device ? ` · from ${d.device}` : ''}`;
+    b.append(title, meta);
+    b.addEventListener('click', async () => {
+      try {
+        const res = await fetch(`/api/drawings/${encodeURIComponent(d.file)}`, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`${res.status}`);
+        const record = await res.json();
+        dialog.close();
+        load(migrate(record.building));
+      } catch (err) {
+        alert(`Could not open that drawing: ${(err as Error).message}`);
+      }
+    });
+    li.append(b);
+    list.append(li);
+  }
+  dialog.showModal();
+});
+
 $('#export').addEventListener('click', () => {
   const blob = new Blob([JSON.stringify(store.building, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
