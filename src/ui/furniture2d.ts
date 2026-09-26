@@ -92,6 +92,27 @@ function unit(ctx: Ctx, w: number, d: number, fill: string) {
 }
 
 const SYMBOLS: Record<string, Symbol> = {
+  fireplace: (ctx, _f, w, d, fill) => {
+    rect(ctx, -w / 2, -d / 2, w, d, 'rgba(60, 60, 64, 0.25)'); // hearth
+    rect(ctx, -w / 2, -d / 2, w, 0.22, fill); // surround
+    const leg = Math.min(0.25, w * 0.18);
+    rect(ctx, -w / 2 + leg, -d / 2, w - 2 * leg, 0.18, '#444444');
+  },
+  woodburner: (ctx, _f, w, d, fill) => {
+    rect(ctx, -w / 2, -d / 2, w, d, 'rgba(60, 60, 64, 0.25)');
+    const sw = Math.min(0.5, w * 0.55);
+    const sd = Math.min(0.42, d * 0.5);
+    rect(ctx, -sw / 2, -d / 2 + 0.08, sw, sd, fill);
+    circle(ctx, 0, -d / 2 + 0.08 + sd / 2 - 0.02, 0.075);
+  },
+  radiator: (ctx, _f, w, d, fill) => {
+    rect(ctx, -w / 2, -d / 2 + 0.03, w, d - 0.03, fill);
+    for (let x = -w / 2 + 0.1; x < w / 2 - 0.05; x += 0.1) line(ctx, x, -d / 2 + 0.03, x, d / 2);
+  },
+  columnrad: (ctx, _f, w, d, fill) => {
+    rect(ctx, -w / 2, -d / 2 + 0.02, w, d - 0.02, fill);
+    for (let x = -w / 2 + 0.07; x < w / 2 - 0.03; x += 0.07) line(ctx, x, -d / 2 + 0.02, x, d / 2);
+  },
   grand: (ctx, f, w, d, fill) => {
     const outline = grandOutline(w, d);
     poly(ctx, outline, fill);

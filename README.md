@@ -29,6 +29,7 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 | **Wall** (W) | Click to start, click for each corner. Snaps to joints, onto existing walls (making a T-junction), to 45° directions and to alignment with other joints. Type a length (e.g. `3.5`) and press Enter for an exact wall. Click the start point, double-click, or press Esc to finish. **Ortho** locks to 45° steps. |
 | **Door** (D) / **Window** (N) | Click on a wall to place one. It fits itself between corners and other openings. |
 | **Stair** (S) | Choose Straight, L-shape or U-shape, click where the bottom step goes, then click in the direction it climbs (snaps to right angles; Ortho forces them). The stair always rises to the next floor. |
+| **Glass door** (K) | Click on a wall to place floor-to-ceiling glass doors: French doors, sliding doors or bi-folds (choose in the panel). |
 | **Garage** (G) | Click on a wall to place a garage roller door (2.5 m wide; set any width in the panel). |
 | **Pillar** (P) | Click to place a pillar (post). It rises to the underside of the roof above it, or to the wall height if there is none. Drag to move. |
 | **Chimney** (C) | Click on the roof to place a chimney stack (on the floor whose roof it goes through). |
@@ -39,9 +40,10 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 | **Furniture** (F) | Opens the catalogue. Pick a piece, then click to place it: near a wall it turns its back to the wall and sits tight against it. [ and ] turn it in 15° steps. Esc when done. |
 | **Split** (X) | Click on a wall to add a joint, which is then selected so you can drag it (to make a bay, a nib or a step in the wall). |
 
-**Furniture:** about 40 pieces in seven groups:
+**Furniture:** about 45 pieces in eight groups:
 - **Music:** grand piano, upright piano, music stand.
 - **Living:** sofas, armchair, coffee table, TV, bookcase, lamp, rug.
+- **Heating:** fireplace with mantelpiece and a lit fire (stone, white, marble or oak surround), wood-burning stove on a slate hearth with its flue to the ceiling, and panel or column radiators. Like everything else, they back onto the nearest wall; radiators are fixed 15 cm above the floor.
 - **Dining:** table with 6 chairs, round table with 4 chairs, chair, sideboard.
 - **Bedroom:** beds, bedside table, wardrobe, chest of drawers, desk.
 - **Kitchen:** base, sink, hob and oven, tall units, fridge, island.
@@ -60,6 +62,11 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - **Paste** (toolbar button, or Ctrl/⌘+V) then click on walls to place identical copies: same type, width, height, sill, hinge and swing. A paste that would not fit at full size is refused, never shrunk. Press Esc when done.
 - **Duplicate** (Ctrl/⌘+D) puts a copy right beside the selected one.
 - **Match copied** resizes an existing door or window to the copied one.
+
+**Glass doors:** full-height glazing in slim anthracite frames, 2.4 m wide and 2.4 m high to start with.
+- **Style:** **French doors** (two leaves swinging from the jambs), **Sliding doors** (two panels on two tracks) or **Bi-fold doors** (leaves of about 80 cm).
+- **Show open** swings the leaves out, slides the moving panel behind the fixed one, or folds the bi-folds into a stack at one end. You can walk through when they are shown open.
+- **Full height** takes them up to the ceiling. **Open to other side**, **Slide other way** and **Fold to other end** change the direction.
 
 **Garage roller doors:** drawn with horizontal slats running in guides, and a roller casing above the opening on the inside. In the panel:
 - **Show open** shows the door rolled up (and lets you walk or drive through in walk mode). **Show shut** puts it back down.

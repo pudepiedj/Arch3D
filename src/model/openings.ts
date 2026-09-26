@@ -4,7 +4,7 @@
 // keeps openings valid when walls are shortened, split, merged or re-joined.
 
 import { computeFootprints, type Footprint } from './joints';
-import { DEFAULTS, type Opening, type OpeningKind, type Plan } from './types';
+import { DEFAULTS, type GlazedStyle, type Opening, type OpeningKind, type Plan } from './types';
 
 /** Minimum solid wall kept between openings, and between an opening and a corner. */
 export const OPENING_GAP = 0.05;
@@ -49,10 +49,11 @@ export interface OpeningTemplate {
   sill: number;
   hingeFlip?: boolean;
   swingFlip?: boolean;
+  style?: GlazedStyle;
 }
 
 export function templateOf(o: Opening): OpeningTemplate {
-  return { kind: o.kind, width: o.width, height: o.height, sill: o.sill, hingeFlip: o.hingeFlip, swingFlip: o.swingFlip };
+  return { kind: o.kind, width: o.width, height: o.height, sill: o.sill, hingeFlip: o.hingeFlip, swingFlip: o.swingFlip, style: o.style };
 }
 
 /**
@@ -99,6 +100,7 @@ export function placeOpening(
   };
   if (t.hingeFlip) o.hingeFlip = true;
   if (t.swingFlip) o.swingFlip = true;
+  if (t.style) o.style = t.style;
   plan.openings[o.id] = o;
   return o;
 }
@@ -138,6 +140,7 @@ export function matchOpening(
   Object.assign(o, { kind: t.kind, width: t.width, height: t.height, sill: t.sill });
   o.hingeFlip = t.hingeFlip || undefined;
   o.swingFlip = t.swingFlip || undefined;
+  o.style = t.style;
   o.offset = clamp(o.offset, gap[0] + t.width / 2, gap[1] - t.width / 2);
   return true;
 }

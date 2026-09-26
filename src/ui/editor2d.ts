@@ -51,7 +51,7 @@ import { detectRooms } from '../model/rooms';
 import type { Furniture, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture';
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture';
 export type Selection = {
   kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture';
   id: string;
@@ -716,6 +716,7 @@ export class Editor2D {
       case 'door':
       case 'window':
       case 'garage':
+      case 'glazed':
       case 'paste': {
         const fp = this.wallAt(w, 10 / this.view.scale);
         const spec = this.openingSpec();
@@ -935,6 +936,9 @@ export class Editor2D {
       case 'm':
         this.toggleDims();
         break;
+      case 'k':
+        this.setTool('glazed');
+        break;
       case 'f':
         this.onOpenCatalogue?.();
         break;
@@ -947,7 +951,7 @@ export class Editor2D {
 
   /** What a click with the current tool places: a default door/window, or the copied one. */
   private openingSpec(): OpeningKind | OpeningTemplate | null {
-    if (this.tool === 'door' || this.tool === 'window' || this.tool === 'garage') return this.tool;
+    if (this.tool === 'door' || this.tool === 'window' || this.tool === 'garage' || this.tool === 'glazed') return this.tool;
     if (this.tool === 'paste') return this.clipboard;
     return null;
   }
@@ -1668,7 +1672,7 @@ export class Editor2D {
         ctx.lineWidth = 2;
         ctx.stroke();
       }
-    } else if ((this.tool === 'door' || this.tool === 'window' || this.tool === 'garage' || this.tool === 'paste') && h) {
+    } else if ((this.tool === 'door' || this.tool === 'window' || this.tool === 'garage' || this.tool === 'glazed' || this.tool === 'paste') && h) {
       const fp = this.wallAt(h, 10 / this.view.scale);
       const spec = this.openingSpec();
       if (fp && spec) {
@@ -1779,6 +1783,8 @@ export class Editor2D {
       ctx.lineWidth = 1;
       this.line(wallPoint(fp, lo - 0.1, side * (half + 0.34)), wallPoint(fp, hi + 0.1, side * (half + 0.34)));
       ctx.setLineDash([]);
+    } else if (o.kind === 'glazed') {
+      this.drawGlazed(fp, o, half);
     } else if (o.kind === 'window') {
       this.line(wallPoint(fp, lo, half * 0.25), wallPoint(fp, hi, half * 0.25));
       this.line(wallPoint(fp, lo, -half * 0.25), wallPoint(fp, hi, -half * 0.25));
@@ -1805,6 +1811,75 @@ export class Editor2D {
       ctx.stroke();
       ctx.setLineDash([]);
     }
+  }
+
+  /** Glazed doors: the glass line(s), and the leaves' swing, slide or fold. */
+  private drawGlazed(fp: Footprint, o: Opening, half: number) {
+    const ctx = this.ctx;
+    const lo = o.offset - o.width / 2;
+    const hi = o.offset + o.width / 2;
+    const side = o.swingFlip ? -1 : 1;
+    const style = o.style ?? 'french';
+    const thin = () => {
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+    };
+    if (style === 'sliding') {
+      // Two panes on two tracks, overlapping in the middle.
+      const mid = o.offset;
+      const a = 0.18 * half;
+      this.line(wallPoint(fp, lo, a), wallPoint(fp, mid + 0.05, a));
+      this.line(wallPoint(fp, mid - 0.05, -a), wallPoint(fp, hi, -a));
+      // The arrow on the moving pane.
+      const movesToLo = !o.hingeFlip;
+      const from = movesToLo ? mid + (hi - mid) * 0.7 : mid - (mid - lo) * 0.7;
+      const to = movesToLo ? mid + (hi - mid) * 0.2 : mid - (mid - lo) * 0.2;
+      const y = movesToLo ? -a - half * 0.5 : a + half * 0.5;
+      thin();
+      this.line(wallPoint(fp, from, y), wallPoint(fp, to, y));
+      ctx.setLineDash([]);
+      const tip = wallPoint(fp, to, y);
+      const back = movesToLo ? 0.12 : -0.12;
+      this.line(tip, wallPoint(fp, to + back, y + 0.06));
+      this.line(tip, wallPoint(fp, to + back, y - 0.06));
+      return;
+    }
+    this.line(wallPoint(fp, lo, 0), wallPoint(fp, hi, 0));
+    thin();
+    if (style === 'french') {
+      // Two leaves, each swinging from its jamb.
+      const w = o.width / 2;
+      for (const [hingeU, otherU] of [[lo, o.offset], [hi, o.offset]]) {
+        const hinge = wallPoint(fp, hingeU, side * half);
+        const leafEnd = add(hinge, scale(fp.n, side * w));
+        ctx.setLineDash([]);
+        this.line(hinge, leafEnd);
+        ctx.setLineDash([3, 3]);
+        const hs = this.toScreen(hinge);
+        const closed = wallPoint(fp, otherU, side * half);
+        const a1 = Math.atan2(leafEnd.y - hinge.y, leafEnd.x - hinge.x);
+        const a2 = Math.atan2(closed.y - hinge.y, closed.x - hinge.x);
+        let delta = a2 - a1;
+        while (delta > Math.PI) delta -= 2 * Math.PI;
+        while (delta < -Math.PI) delta += 2 * Math.PI;
+        ctx.beginPath();
+        ctx.arc(hs.x, hs.y, w * this.view.scale, a1, a2, delta < 0);
+        ctx.stroke();
+      }
+    } else {
+      // Bi-fold: a zigzag of leaves folding out to one side.
+      const n = Math.max(2, Math.round((o.width - 0.12) / 0.8));
+      const w = o.width / n;
+      const depth = Math.min(w * 0.45, 0.35);
+      ctx.beginPath();
+      for (let k = 0; k <= n; k++) {
+        const p = this.toScreen(wallPoint(fp, lo + k * w, side * (half + (k % 2 ? depth : 0))));
+        if (k) ctx.lineTo(p.x, p.y);
+        else ctx.moveTo(p.x, p.y);
+      }
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
   }
 
   private drawGrid(W: number, H: number, minor: string, major: string) {

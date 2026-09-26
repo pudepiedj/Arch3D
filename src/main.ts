@@ -338,6 +338,7 @@ const HINTS: Record<Tool, string> = {
   stair: 'Click where the stair starts (its bottom step), then click in the direction it goes up',
   roof: 'Click a roof to select it · click an edge of the selected roof to switch eave / gable end',
   garage: 'Click on a wall to place a garage roller door (2.5 m wide; change it in the panel)',
+  glazed: 'Click on a wall to place floor-to-ceiling glass doors (French, sliding or bi-fold: choose in the panel)',
   pillar: 'Click to place a pillar; it rises to the roof above it',
   chimney: 'Click on the roof to place a chimney stack (on the floor whose roof it goes through)',
   solar: 'Click on a roof slope to lay a solar array on it (on the floor the roof belongs to)',

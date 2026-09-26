@@ -970,6 +970,8 @@ function buildOpeningObject(fp: Footprint, o: Opening, mats: Materials): THREE.O
       // Rolled up: only the bottom rail shows, tucked under the casing.
       box(o.width - 0.04, 0.05, 0.04, o.offset, top - 0.03, face, mats.garage);
     }
+  } else if (o.kind === 'glazed') {
+    buildGlazed(g, o, t, mats);
   } else {
     // Door lining covers the reveals.
     const depth = t + 0.01;
@@ -1000,6 +1002,87 @@ function buildOpeningObject(fp: Footprint, o: Opening, mats: Materials): THREE.O
     g.add(pivot);
   }
   return g;
+}
+
+/**
+ * A floor-to-ceiling glazed door in the wall's local frame (u along, y up, v across): a slim
+ * outer frame, and glass leaves that swing (French), slide (one behind the other) or fold
+ * back into a stack at one end (bi-fold) when shown open.
+ */
+function buildGlazed(g: THREE.Group, o: Opening, t: number, mats: Materials) {
+  const lo = o.offset - o.width / 2;
+  const hi = o.offset + o.width / 2;
+  const top = o.sill + o.height;
+  const F = 0.06; // outer frame
+  const S = 0.05; // leaf frame (sash)
+  const depth = Math.min(0.1, t);
+  const box = (w: number, h: number, d: number, x: number, y: number, z: number, parent: THREE.Object3D, mat = mats.darkFrame) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    parent.add(m);
+  };
+  box(F, o.height, depth, lo + F / 2, o.sill + o.height / 2, 0, g);
+  box(F, o.height, depth, hi - F / 2, o.sill + o.height / 2, 0, g);
+  box(o.width, F, depth, o.offset, top - F / 2, 0, g);
+  box(o.width, 0.02, depth + 0.04, o.offset, o.sill + 0.01, 0, g); // threshold
+
+  const clearW = o.width - 2 * F;
+  const leafH = o.height - F - 0.02;
+  /** A glass leaf, `w` wide, running from its pivot at x = 0 towards +x (or -x if `dir` is -1). */
+  const leaf = (w: number, dir: number) => {
+    const p = new THREE.Group();
+    const cx = (dir * w) / 2;
+    box(S, leafH, 0.05, dir * (S / 2), leafH / 2, 0, p);
+    box(S, leafH, 0.05, dir * (w - S / 2), leafH / 2, 0, p);
+    box(w, S, 0.05, cx, leafH - S / 2, 0, p);
+    box(w, S * 1.4, 0.05, cx, (S * 1.4) / 2, 0, p);
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(w - 2 * S, leafH - S * 2.4), mats.glass);
+    glass.position.set(cx, S * 1.4 + (leafH - S * 2.4) / 2, 0);
+    p.add(glass);
+    p.position.y = o.sill + 0.02;
+    g.add(p);
+    return p;
+  };
+  const side = o.swingFlip ? -1 : 1; // which face the leaves open towards
+  const style = o.style ?? 'french';
+  if (style === 'french') {
+    const w = clearW / 2;
+    const a = o.open ? THREE.MathUtils.degToRad(85) : 0;
+    const l = leaf(w, 1);
+    l.position.set(lo + F, l.position.y, side * (depth / 2 - 0.025));
+    l.rotation.y = -side * a;
+    const r = leaf(w, -1);
+    r.position.set(hi - F, r.position.y, side * (depth / 2 - 0.025));
+    r.rotation.y = side * a;
+  } else if (style === 'sliding') {
+    // Two leaves on two tracks; open, the moving one sits behind the fixed one.
+    const w = clearW / 2 + 0.03;
+    const fixedAtLo = !o.hingeFlip;
+    const fixed = leaf(w, 1);
+    fixed.position.set(fixedAtLo ? lo + F : hi - F - w, fixed.position.y, 0.028);
+    const moving = leaf(w, 1);
+    const shut = fixedAtLo ? hi - F - w : lo + F;
+    const open = fixedAtLo ? lo + F + 0.02 : hi - F - w - 0.02;
+    moving.position.set(o.open ? open : shut, moving.position.y, -0.028);
+  } else {
+    // Bi-fold: n leaves; open, they fold into a stack at one end.
+    const n = Math.max(2, Math.round(clearW / 0.8));
+    const w = clearW / n;
+    const atLo = !o.hingeFlip;
+    for (let k = 0; k < n; k++) {
+      const dir = atLo ? 1 : -1;
+      if (!o.open) {
+        const l = leaf(w, dir);
+        l.position.set(atLo ? lo + F + k * w : hi - F - k * w, l.position.y, 0);
+      } else {
+        const l = leaf(w, 1);
+        const u = atLo ? lo + F + 0.03 + k * 0.06 : hi - F - 0.03 - k * 0.06;
+        l.position.set(u, l.position.y, side * (depth / 2));
+        l.rotation.y = -side * (Math.PI / 2);
+      }
+    }
+  }
 }
 
 export function disposeObject(obj: THREE.Object3D) {

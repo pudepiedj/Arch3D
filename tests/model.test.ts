@@ -19,6 +19,8 @@ import {
 } from '../src/model/openings';
 import { detectRooms } from '../src/model/rooms';
 import { demoBuilding } from '../src/model/demo';
+import { createBuilding } from '../src/model/building';
+import { WalkWorld } from '../src/model/walk';
 const demoPlan = () => demoBuilding().levels[0];
 import type { Plan } from '../src/model/types';
 
@@ -252,6 +254,25 @@ describe('rooms', () => {
   });
 
   it('demo house has all its openings', () => {
-    expect(Object.keys(demoPlan().openings)).toHaveLength(15);
+    const openings = Object.values(demoPlan().openings);
+    expect(openings).toHaveLength(16);
+    // Including the French doors from the garden room onto the deck.
+    expect(openings.filter((o) => o.kind === 'glazed')).toHaveLength(1);
+  });
+});
+
+describe('glazed doors', () => {
+  it('can be walked through only when shown open', () => {
+    const b = createBuilding();
+    const l = b.levels[0];
+    addWall(l, { x: 0, y: 0 }, { x: 6, y: 0 }, { thickness: 0.3, height: l.height });
+    const [wall] = Object.values(l.walls);
+    const o = placeOpening(l, wall.id, 3, 'glazed')!;
+    expect(o.height).toBeCloseTo(2.4);
+    expect(o.sill).toBe(0);
+    const through = () => new WalkWorld(b).move({ x: 3, y: -1 }, 0, { x: 0, y: 2 }).p.y;
+    expect(through()).toBeLessThan(0);
+    o.open = true;
+    expect(through()).toBeGreaterThan(0.5);
   });
 });

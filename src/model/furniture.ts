@@ -23,7 +23,7 @@ export interface CatalogueItem {
   flat?: boolean;
 }
 
-export const CATEGORIES = ['Music', 'Living', 'Dining', 'Bedroom', 'Kitchen', 'Bathroom', 'Garden'];
+export const CATEGORIES = ['Music', 'Living', 'Heating', 'Dining', 'Bedroom', 'Kitchen', 'Bathroom', 'Garden'];
 
 const WOODS = ['oak', 'walnut', 'white'];
 const FABRICS = ['grey', 'blue', 'green', 'cream', 'rust'];
@@ -42,6 +42,10 @@ export const CATALOGUE: CatalogueItem[] = [
   { kind: 'lamp', name: 'Floor lamp', category: 'Living', width: 0.4, depth: 0.4, height: 1.6 },
   { kind: 'rug', name: 'Rug', category: 'Living', width: 2.4, depth: 1.7, height: 0.01, finishes: ['red', 'blue', 'grey', 'cream'], flat: true },
 
+  { kind: 'fireplace', name: 'Fireplace and mantelpiece', category: 'Heating', width: 1.5, depth: 0.7, height: 1.2, finishes: ['stone', 'white', 'marble', 'oak'] },
+  { kind: 'woodburner', name: 'Wood-burning stove', category: 'Heating', width: 1.0, depth: 0.9, height: 2.6, finishes: ['black', 'grey', 'cream'] },
+  { kind: 'radiator', name: 'Radiator', category: 'Heating', width: 1.0, depth: 0.1, height: 0.6, finishes: ['white', 'anthracite'] },
+  { kind: 'columnrad', name: 'Column radiator', category: 'Heating', width: 0.8, depth: 0.12, height: 0.6, finishes: ['white', 'anthracite', 'cream'] },
   { kind: 'dining6', name: 'Dining table, 6 chairs', category: 'Dining', width: 1.8, depth: 1.9, height: 0.75, finishes: WOODS },
   { kind: 'dininground', name: 'Round table, 4 chairs', category: 'Dining', width: 1.9, depth: 1.9, height: 0.75, finishes: WOODS },
   { kind: 'chair', name: 'Chair', category: 'Dining', width: 0.45, depth: 0.5, height: 0.9, finishes: WOODS },

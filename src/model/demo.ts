@@ -32,7 +32,7 @@ export function demoBuilding(): Building {
   };
   const at = (p: Plan, x: number, y: number, kind: OpeningKind) => {
     const hit = findWallInterior(p, { x, y }, 0.01);
-    if (hit) placeOpening(p, hit.wallId, hit.u, kind);
+    return hit ? placeOpening(p, hit.wallId, hit.u, kind) : null;
   };
   /** A window bay on the front: its three walls, with the house wall across it removed. */
   const bay = (level: Level) => {
@@ -93,6 +93,9 @@ export function demoBuilding(): Building {
   at(ground, 8, 8, 'door');
   at(ground, 8, 10.5, 'window');
   at(ground, 6.5, 9.25, 'window');
+  // French doors from the garden room out onto the deck, shown open.
+  const french = at(ground, 9.5, 9.25, 'glazed');
+  if (french) Object.assign(french, { width: 1.8, open: true });
 
   // A covered terrace behind the bedroom: a flat roof on pillars, against the house wall.
   ground.roofSections = {
@@ -150,6 +153,7 @@ export function demoBuilding(): Building {
   first.roof = { kind: 'gable', pitch: 35, overhang: 0.3, edges: [{ x: 2.4, y: -1.15, type: 'gable' }] };
   // Bedrooms and bathroom.
   furnish(first, 'double', 0.5, 6.2);
+  furnish(first, 'radiator', 0.25, 4.0);
   furnish(first, 'wardrobe', 3.0, 7.6);
   furnish(first, 'bedside', 0.3, 7.3);
   furnish(first, 'single', 9.7, 1.2);
@@ -167,6 +171,9 @@ export function demoBuilding(): Building {
   furnish(ground, 'sofa3', 0.4, 2.3);
   addFurniture(ground, 'rug', { x: 1.9, y: 2.3 }, Math.PI / 2);
   addFurniture(ground, 'dining6', { x: 2.6, y: 5.7 }, 0);
+  furnish(ground, 'fireplace', 4.6, 3.9);
+  furnish(ground, 'woodburner', 5.5, 5.4);
+  furnish(ground, 'radiator', 8.0, 10.25);
   furnish(ground, 'sideboard', 0.4, 5.9);
   for (const [kind, x] of [['base', 6.55], ['base', 7.15], ['sink', 7.95], ['hob', 8.75], ['base', 9.35]] as const) furnish(ground, kind, x, 0.3);
   furnish(ground, 'fridge', 9.7, 4.2);

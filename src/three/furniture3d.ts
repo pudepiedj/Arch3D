@@ -164,7 +164,98 @@ function cabinet(k: Kit, w: number, d: number, h: number, m: THREE.Material, row
   }
 }
 
+const SURROUND: Record<string, number> = { stone: 0xcfc6b6, white: 0xf3f1ec, marble: 0xe4e2de, oak: 0xb88a5a };
+const METAL: Record<string, number> = { black: 0x1d1e20, grey: 0x55595e, cream: 0xe6dcc4, white: 0xf4f3ef, anthracite: 0x3a3d42 };
+
+/** Burning logs: a few logs, glowing embers and flames. */
+function fire(k: Kit, x: number, y: number, z: number, w: number) {
+  const log = plain(0x3b2a1e, 0.9);
+  for (let i = 0; i < 3; i++) {
+    const m = k.cyl(0.045, w * 0.8, x, y + (i - 1) * 0.06, z + 0.05 + (i === 1 ? 0.06 : 0), log, 0.045, 8);
+    m.rotation.z = Math.PI / 2;
+    m.rotation.y = (i - 1) * 0.3;
+    m.position.y = z + 0.05 + (i === 1 ? 0.06 : 0);
+  }
+  const ember = mat('ember', () => new THREE.MeshStandardMaterial({ color: 0x802010, emissive: 0xff4a10, emissiveIntensity: 1.2 }));
+  const flame = mat('flame', () => new THREE.MeshStandardMaterial({ color: 0xff8a30, emissive: 0xff6a10, emissiveIntensity: 1.8, transparent: true, opacity: 0.75, depthWrite: false }));
+  const core = mat('flamecore', () => new THREE.MeshStandardMaterial({ color: 0xffd070, emissive: 0xffc040, emissiveIntensity: 2.2, transparent: true, opacity: 0.85, depthWrite: false }));
+  k.box(w * 0.8, 0.14, 0.02, x, y, z, ember);
+  // Soft tongues of flame: tall rounded blobs, a yellow core inside each.
+  const n = 4;
+  for (let i = 0; i < n; i++) {
+    const fx = x + (i - (n - 1) / 2) * w * 0.2;
+    const fh = 0.1 + ((i * 37) % 5) * 0.02;
+    const outer = k.sphere(0.05, fx, y, z + 0.08 + fh / 2, flame);
+    outer.scale.set(1, fh / 0.1, 0.7);
+    const inner = k.sphere(0.028, fx, y, z + 0.07 + fh / 3, core);
+    inner.scale.set(1, fh / 0.09, 0.7);
+  }
+}
+
 const BUILDERS: Record<string, Builder> = {
+  fireplace: (k, f, w, d, h) => {
+    const stone = plain(SURROUND[f.finish ?? 'stone'] ?? SURROUND.stone, f.finish === 'marble' ? 0.25 : 0.7);
+    const back = 0.22; // depth of the surround against the wall
+    const by = -d / 2 + back / 2;
+    // Hearth, projecting into the room.
+    k.box(w, d, 0.05, 0, 0, 0, plain(0x2f3033, 0.6));
+    // Surround: two pilasters, a frieze and the mantel shelf.
+    const leg = Math.min(0.25, w * 0.18);
+    for (const s of [-1, 1]) k.box(leg, back, h - 0.25, s * (w / 2 - leg / 2), by, 0.05, stone);
+    k.box(w, back, 0.2, 0, by, h - 0.2, stone);
+    k.box(w + 0.1, back + 0.08, 0.05, 0, by + 0.04, h, stone);
+    // The fire opening: a black cast-iron insert with the fire in its grate.
+    const ow = w - 2 * leg;
+    k.box(ow, 0.05, h - 0.25, 0, -d / 2 + 0.03, 0.05, plain(0x121214, 0.7));
+    k.box(ow * 0.7, back - 0.06, 0.05, 0, by, 0.06, plain(0x202022, 0.5, 0.4)); // grate
+    fire(k, 0, by + 0.02, 0.1, ow * 0.6);
+  },
+
+  woodburner: (k, f, w, d, h) => {
+    const body = plain(METAL[f.finish ?? 'black'] ?? METAL.black, 0.55, 0.3);
+    k.box(w, d, 0.05, 0, 0, 0, plain(0x2f3033, 0.6)); // slate hearth
+    const sw = Math.min(0.5, w * 0.55);
+    const sd = Math.min(0.42, d * 0.5);
+    const sy = -d / 2 + 0.08 + sd / 2;
+    for (const [x, y] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) k.box(0.04, 0.04, 0.15, x * (sw / 2 - 0.04), sy + y * (sd / 2 - 0.04), 0.05, body);
+    k.box(sw, sd, 0.5, 0, sy, 0.2, body);
+    k.box(sw + 0.04, sd + 0.04, 0.03, 0, sy, 0.7, body); // top plate
+    // Glass door with the fire behind it.
+    k.box(sw * 0.72, 0.01, 0.3, 0, sy + sd / 2 + 0.005, 0.28, mat('stoveglass', () => new THREE.MeshStandardMaterial({ color: 0x331a0a, emissive: 0xff5a18, emissiveIntensity: 0.4, roughness: 0.1 })));
+    k.box(0.03, 0.04, 0.12, sw / 2 - 0.08, sy + sd / 2 + 0.02, 0.4, chrome());
+    fire(k, 0, sy + 0.02, 0.26, sw * 0.6);
+    // Flue pipe up to the ceiling.
+    k.cyl(0.075, h - 0.73, 0, sy - 0.02, 0.73, body, 0.075, 16);
+  },
+
+  radiator: (k, f, w, d, h) => {
+    const m = plain(METAL[f.finish ?? 'white'] ?? METAL.white, 0.4, 0.2);
+    const z = 0.15; // fixed above the skirting
+    const face = d / 2 - 0.035;
+    k.box(w, 0.05, h, 0, face - 0.02, z, m); // panel
+    for (let x = -w / 2 + 0.04; x < w / 2 - 0.02; x += 0.05) k.box(0.02, 0.008, h - 0.02, x, face + 0.008, z + 0.01, m);
+    k.box(w, 0.07, 0.04, 0, face - 0.02, z + h - 0.04, m); // top grille
+    for (const s of [-1, 1]) {
+      k.cyl(0.012, z, s * (w / 2 + 0.03), face - 0.02, 0, chrome()); // pipes
+      k.cyl(0.02, 0.06, s * (w / 2 + 0.03), face - 0.02, z - 0.02, chrome());
+    }
+    for (const s of [-1, 1]) k.box(0.03, 0.035, 0.05, s * (w / 2 - 0.15), -d / 2 + 0.017, z + h * 0.7, dark()); // brackets
+  },
+
+  columnrad: (k, f, w, d, h) => {
+    const m = plain(METAL[f.finish ?? 'white'] ?? METAL.white, 0.35, 0.3);
+    const z = 0.15;
+    const n = Math.max(3, Math.round(w / 0.07));
+    for (let i = 0; i < n; i++) {
+      const x = -w / 2 + (w * (i + 0.5)) / n;
+      for (const y of [-0.025, 0.025]) k.cyl(0.012, h, x, y + 0.01, z, m, 0.012, 8);
+    }
+    k.box(w, 0.07, 0.05, 0, 0.01, z, m);
+    k.box(w, 0.07, 0.05, 0, 0.01, z + h - 0.05, m);
+    for (const s of [-1, 1]) k.cyl(0.012, z, s * (w / 2 + 0.03), 0.01, 0, chrome());
+    void d;
+  },
+
   grand: (k, f, w, d) => {
     const lac = lacquer(WOOD[f.finish ?? 'black'] ?? WOOD.black);
     const outline = grandOutline(w, d);

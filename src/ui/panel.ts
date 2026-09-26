@@ -13,7 +13,7 @@ import { stairGeometry } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
 import { deleteNode, deleteOpening, deleteWall, finishNodeMove, moveNode, normalize, setWallLength, splitWallAt } from '../model/plan';
-import { DEFAULTS, type OpeningKind, type PatioSurface, type Pillar, type TreeKind, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
+import { DEFAULTS, type OpeningKind, type GlazedStyle, type PatioSurface, type Pillar, type TreeKind, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
 import type { Editor2D } from './editor2d';
 import type { Store } from './store';
 
@@ -106,10 +106,11 @@ export class Panel {
     if (!o) return;
     const fps = computeFootprints(plan);
     const fp = fps.get(o.wallId);
-    this.title(o.kind === 'door' ? 'Door' : o.kind === 'garage' ? 'Garage door' : 'Window');
+    this.title(o.kind === 'door' ? 'Door' : o.kind === 'garage' ? 'Garage door' : o.kind === 'glazed' ? 'Glass doors' : 'Window');
     this.select('Type', o.kind, [
       ['door', 'Door'],
       ['window', 'Window'],
+      ['glazed', 'Glass doors'],
       ['garage', 'Garage roller door'],
     ], (v) => {
       const k = v as OpeningKind;
@@ -132,6 +133,16 @@ export class Panel {
       o.height = v;
       this.done();
     }, 'm');
+    if (o.kind === 'glazed') {
+      this.select('Style', o.style ?? 'french', [
+        ['french', 'French doors'],
+        ['sliding', 'Sliding doors'],
+        ['bifold', 'Bi-fold doors'],
+      ], (v) => {
+        o.style = v as GlazedStyle;
+        this.done();
+      });
+    }
     if (o.kind === 'window') {
       this.number('Sill height', o.sill, 0.01, 0, 10, (v) => {
         o.sill = v;
@@ -174,6 +185,31 @@ export class Panel {
         o.swingFlip = !o.swingFlip;
         this.done();
       }]);
+    }
+    if (o.kind === 'glazed') {
+      btns.push([o.open ? 'Show shut' : 'Show open', () => {
+        o.open = !o.open || undefined;
+        this.done();
+      }]);
+      const ceiling = ceilingHeight(this.store.building, plan);
+      if (Math.abs(o.sill + o.height - ceiling) > 0.005) {
+        btns.push(['Full height', () => {
+          o.sill = 0;
+          o.height = ceiling;
+          this.done();
+        }]);
+      }
+      btns.push([(o.style ?? 'french') === 'sliding' ? 'Slide other way' : 'Open to other side', () => {
+        if ((o.style ?? 'french') === 'sliding') o.hingeFlip = !o.hingeFlip || undefined;
+        else o.swingFlip = !o.swingFlip || undefined;
+        this.done();
+      }]);
+      if (o.style === 'bifold') {
+        btns.push(['Fold to other end', () => {
+          o.hingeFlip = !o.hingeFlip || undefined;
+          this.done();
+        }]);
+      }
     }
     if (o.kind === 'door') {
       btns.push([o.shut ? 'Show open' : 'Show shut', () => {
