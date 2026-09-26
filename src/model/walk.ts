@@ -121,6 +121,37 @@ export class WalkWorld {
     );
   }
 
+  /** True if a walker standing at p (feet at `foot`) would overlap a wall, post or piece of furniture. */
+  private obstructed(p: Vec2, foot: number): boolean {
+    // The walker's whole body, not just the centre, must be clear of furniture and steps.
+    for (let i = 0; i <= 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const r = i === 8 ? 0 : RADIUS;
+      if (this.blocked({ x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r }, foot)) return true;
+    }
+    const here = this.levels.find((l) => l.id === this.levelAt(foot));
+    for (const c of here?.colliders ?? []) {
+      const t = { ...p };
+      pushOut(t, c);
+      if (Math.hypot(t.x - p.x, t.y - p.y) > 1e-6) return true;
+    }
+    return (here?.posts ?? []).some((q) => Math.hypot(p.x - q.x, p.y - q.y) < RADIUS + q.r);
+  }
+
+  /** The nearest spot to p (searching outwards) where a walker can stand clear of everything. */
+  clearSpot(p: Vec2, foot: number): Vec2 {
+    if (!this.obstructed(p, foot)) return p;
+    for (let r = 0.1; r <= 4; r += 0.1) {
+      const n = Math.max(8, Math.round((2 * Math.PI * r) / 0.1));
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const q = { x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r };
+        if (!this.obstructed(q, foot)) return q;
+      }
+    }
+    return p;
+  }
+
   /** Move from p by d, sliding along walls and stair sides; returns the new position and foot height. */
   move(p: Vec2, foot: number, d: Vec2): { p: Vec2; foot: number } {
     const steps = Math.max(1, Math.ceil(Math.hypot(d.x, d.y) / 0.05));
@@ -147,7 +178,8 @@ export class WalkWorld {
             }
           }
         }
-        if (this.blocked(t, foot)) continue;
+        // Blocked, unless already inside the obstacle (so a walker placed there can step out).
+        if (this.blocked(t, foot) && !this.blocked(cur, foot)) continue;
         const ground = this.groundAt(t, foot);
         if (ground < foot - STEP_DOWN) continue;
         cur = t;

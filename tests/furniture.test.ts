@@ -70,3 +70,16 @@ describe('furniture', () => {
     expect(Math.max(...nearTail.map((p) => p.x))).toBeLessThan(0);
   });
 });
+
+describe('walking among furniture', () => {
+  it('finds a clear spot next to a piano standing where the walker would start, and lets them out if inside', () => {
+    const { b, l } = room();
+    addFurniture(l, 'grand', { x: 3, y: 2 });
+    const world = new WalkWorld(b);
+    const spot = world.clearSpot({ x: 3, y: 2 }, 0);
+    expect(Math.hypot(spot.x - 3, spot.y - 2)).toBeGreaterThan(0.5);
+    // Someone already inside the piano's footprint can still walk out of it.
+    const r = world.move({ x: 3, y: 2 }, 0, { x: 0, y: 1.5 });
+    expect(r.p.y).toBeGreaterThan(3);
+  });
+});

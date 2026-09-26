@@ -223,9 +223,9 @@ const BUILDERS: Record<string, Builder> = {
     lid.rotation.z = angle;
     k.g.add(lid);
     if (f.open) {
-      // The stick is hinged on top of the rim on the curved treble side, and leans in to a
-      // cup under the lid, so it stands clear of the strings.
-      const y = d / 2 - 0.36 * d;
+      // The stick is hinged on top of the rim on the straight part of the treble side, near
+      // the keyboard end, and leans in to a cup under the lid.
+      const y = (front + (d / 2 - 0.22 * d)) / 2;
       const edge = rimEdgeAt(caseLine, y);
       const foot = { x: edge - 0.025, y, z: floor + rim };
       // A point on the lid's underside, a little inboard of the foot.
