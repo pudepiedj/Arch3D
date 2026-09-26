@@ -138,18 +138,28 @@ export function levelRoofs(b: Building, level: Level): LevelRoof[] {
     // An edge drawn along a wall is moved to the wall's outside face: outwards if the
     // section is over the building (a bay), inwards if it is outside it (a canopy).
     const inBuilding = (p: Vec2) => own.some((ring) => pointInPolygon(p, ring));
+    // Edges drawn along one of this floor's walls with the building beyond them are
+    // attached to the house: they stop at the wall's outside face and never overhang it.
+    const attached: boolean[] = [];
     const ring = outsetLoop(
       pts,
       pts.map((a, k) => {
         const b2 = pts[(k + 1) % pts.length];
         const half = wallHalfThickness(level, a, b2);
+        attached[k] = false;
         if (!half) return 0;
         const m = { x: (a.x + b2.x) / 2, y: (a.y + b2.y) / 2 };
         const inward = perp(normalize(sub(b2, a)));
-        return inBuilding({ x: m.x + inward.x * 0.3, y: m.y + inward.y * 0.3 }) ? half : -half;
+        const probe = (d: number) => inBuilding({ x: m.x + inward.x * d, y: m.y + inward.y * d });
+        // An edge on a wall with the section outside and the building beyond: the house wall.
+        if (!probe(half + 0.05) && probe(-(half + 0.05))) {
+          attached[k] = true;
+          return -half;
+        }
+        return probe(0.3) ? half : -half;
       }),
     );
-    const walls = ring.map((p, k) => onAboveWall(p, ring[(k + 1) % ring.length]));
+    const walls = ring.map((p, k) => attached[k] || onAboveWall(p, ring[(k + 1) % ring.length]));
     out.push(makeRoof(`section:${s.id}`, ring, walls, s.roof, s.base ?? level.height));
   }
   return out;

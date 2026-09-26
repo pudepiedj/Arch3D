@@ -312,3 +312,49 @@ describe('the demo house', () => {
     expect(lower.map((r) => r.roof.kind).sort()).toEqual(['flat', 'flat', 'gable']);
   });
 });
+
+describe('roof sections attached to the house', () => {
+  const rect: [number, number][] = [
+    [0, 0],
+    [10, 0],
+    [10, 6],
+    [0, 6],
+  ];
+  const veranda = (level: Level, kind: Roof['kind']) => {
+    level.roofSections = {
+      v: {
+        id: 'v',
+        points: [
+          { x: 0, y: 6 },
+          { x: 10, y: 6 },
+          { x: 10, y: 9 },
+          { x: 0, y: 9 },
+        ],
+        roof: { ...DEFAULT_ROOF, kind },
+      },
+    };
+  };
+  const intrusions = (r: LevelRoof) =>
+    r.geometry!.faces.flatMap((f) => f.pts).filter((p) => p.x > -0.14 && p.x < 10.14 && p.y < 6.149);
+
+  for (const kind of ['flat', 'gable', 'hip'] as const) {
+    it(`${kind}: never reaches into the house, whatever is above`, () => {
+      // Thinner walls upstairs, so the faces above don't line up with the wall below.
+      const b = createBuilding();
+      const g = b.levels[0];
+      box(g, rect, 0.3);
+      box(addLevelOnTop(b, false), rect, 0.2);
+      veranda(g, kind);
+      let r = levelRoofs(b, g).find((x) => x.id === 'section:v')!;
+      expect(r.walls.filter(Boolean)).toHaveLength(1);
+      expect(intrusions(r)).toHaveLength(0);
+      // A single-storey house: nothing above at all.
+      const b2 = createBuilding();
+      box(b2.levels[0], rect, 0.3);
+      veranda(b2.levels[0], kind);
+      r = levelRoofs(b2, b2.levels[0]).find((x) => x.id === 'section:v')!;
+      expect(r.walls.filter(Boolean)).toHaveLength(1);
+      expect(intrusions(r)).toHaveLength(0);
+    });
+  }
+});
