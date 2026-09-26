@@ -5,12 +5,15 @@ import { View3D, type ViewMode } from './three/view3d';
 import { Editor2D, type Tool } from './ui/editor2d';
 import { Panel } from './ui/panel';
 import { SunPanel } from './ui/sunpanel';
+import { CATALOGUE, CATEGORIES } from './model/furniture';
 import { Store } from './ui/store';
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const $$ = (sel: string) => [...document.querySelectorAll<HTMLButtonElement>(sel)];
 
+declare const __APP_VERSION__: string;
 const store = new Store(Store.loadSaved() ?? demoBuilding());
+document.querySelector('#version')!.textContent = `Version ${__APP_VERSION__}`;
 const editor = new Editor2D($('#planPane'), store);
 const view = new View3D($('#viewPane'));
 const panel = new Panel($('#panel'), editor, store);
@@ -31,7 +34,7 @@ store.subscribe(syncToolbar);
 store.subscribe(renderLevels);
 view.setBuilding(store.building, store.activeId);
 
-editor.shortcutsEnabled = () => !(view.mode === 'walk' && layout !== 'plan');
+editor.shortcutsEnabled = () => !(view.mode === 'walk' && layout !== 'plan') && !document.querySelector('dialog[open]');
 editor.onSelectionChange = () => panel.render();
 editor.onToolChange = () => {
   syncToolbar();
@@ -62,6 +65,34 @@ for (const b of $$('#patioSurface button')) {
     editor.setTool('patio');
   });
 }
+// The furniture catalogue: pick a piece, then place it on the plan.
+const catalogue = $<HTMLDialogElement>('#catalogueDialog');
+for (const cat of CATEGORIES) {
+  const h = document.createElement('h3');
+  h.textContent = cat;
+  const grid = document.createElement('div');
+  grid.className = 'items';
+  for (const c of CATALOGUE.filter((c) => c.category === cat)) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    const name = document.createElement('strong');
+    name.textContent = c.kind === 'grand' ? 'Grand piano (Blüthner Model 6)' : c.name;
+    const size = document.createElement('span');
+    size.textContent = `${Math.round(c.width * 100)} × ${Math.round(c.depth * 100)} cm`;
+    b.append(name, size);
+    b.addEventListener('click', () => {
+      editor.furnitureKind = c.kind;
+      editor.furnitureAngle = 0;
+      editor.setTool('furniture');
+      catalogue.close();
+    });
+    grid.append(b);
+  }
+  $('#catalogueList').append(h, grid);
+}
+const openCatalogue = () => catalogue.showModal();
+$('#furnitureBtn').addEventListener('click', openCatalogue);
+editor.onOpenCatalogue = openCatalogue;
 for (const b of $$('#treeKind button')) {
   b.addEventListener('click', () => {
     editor.treeKind = b.dataset.kind as typeof editor.treeKind;
@@ -300,7 +331,7 @@ document.addEventListener('pointerdown', (e) => {
 });
 
 const HINTS: Record<Tool, string> = {
-  select: 'Drag joints to reshape · drag a wall to move it · drag doors/windows along walls · Delete removes',
+  select: 'Drag joints to reshape · drag a wall to move it · drag doors/windows along walls · click again to pick what is underneath · Delete removes',
   wall: 'Click to start a wall, click again for each corner · type a length + Enter · click the start, double-click or Esc to finish',
   door: 'Click on a wall to place a door',
   window: 'Click on a wall to place a window',
@@ -309,10 +340,12 @@ const HINTS: Record<Tool, string> = {
   stair: 'Click where the stair starts (its bottom step), then click in the direction it goes up',
   roof: 'Click a roof to select it · click an edge of the selected roof to switch eave / gable end',
   garage: 'Click on a wall to place a garage roller door (2.5 m wide; change it in the panel)',
+  glazed: 'Click on a wall to place floor-to-ceiling glass doors (French, sliding or bi-fold: choose in the panel)',
   pillar: 'Click to place a pillar; it rises to the roof above it',
   chimney: 'Click on the roof to place a chimney stack (on the floor whose roof it goes through)',
   solar: 'Click on a roof slope to lay a solar array on it (on the floor the roof belongs to)',
   rooflight: 'Click on a roof: a flat roof gets a rooflight box, a sloping roof a window in the slope',
+  furniture: 'Click to place it (near a wall it backs onto the wall) · [ and ] turn it · Esc when done',
   tree: 'Click to plant a tree; drag it to move it, set its size in the panel',
   patio: 'Click the corners of the patio (snaps to walls; the house is cut out) · click the first corner, double-click or Enter to finish',
 };
@@ -329,6 +362,7 @@ function syncToolbar() {
   for (const b of $$('#treeKind button')) b.classList.toggle('on', b.dataset.kind === editor.treeKind);
   $('#sun').classList.toggle('on', sunPanel.open);
   $('#dims').classList.toggle('on', editor.showDims);
+  $('#furnitureBtn').classList.toggle('on', editor.tool === 'furniture');
   for (const b of $$('#patioSurface button')) b.classList.toggle('on', b.dataset.surface === editor.patioSurface);
   $('#stairShape').hidden = editor.tool !== 'stair';
   $('#roofMode').hidden = editor.tool !== 'roof';

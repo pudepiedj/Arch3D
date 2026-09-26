@@ -377,6 +377,12 @@ button.danger {
   font-size: 13px;
 }
 
+.menu-items .version {
+  padding: 4px 10px 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .menu-items hr {
   border: 0;
   border-top: 1px solid var(--line);
@@ -419,6 +425,66 @@ button.danger {
   min-height: 0;
   padding: 5px 9px;
   font-size: 13px;
+}
+
+#catalogueDialog {
+  width: min(620px, calc(100vw - 32px));
+  max-height: min(80vh, 680px);
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bar);
+  color: var(--fg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+#catalogueDialog::backdrop {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+#catalogueDialog h2 {
+  font-size: 16px;
+  margin: 0 0 4px;
+}
+
+#catalogueDialog h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 12px 0 6px;
+}
+
+#catalogueDialog .note {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 6px;
+}
+
+#catalogueList {
+  max-height: 58vh;
+  overflow: auto;
+  margin-bottom: 12px;
+}
+
+#catalogueList .items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+}
+
+#catalogueList button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  white-space: normal;
+}
+
+#catalogueList button span {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 #drawingsDialog {

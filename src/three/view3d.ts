@@ -310,7 +310,9 @@ export class View3D {
     const rooms = this.plan ? detectRooms(this.plan) : [];
     rooms.sort((a, b) => b.area - a.area);
     const b = this.plan && planBounds(this.plan);
-    const start = rooms[0]?.centroid ?? (b ? { x: (b.min.x + b.max.x) / 2, y: b.max.y + 3 } : { x: 0, y: 0 });
+    let start = rooms[0]?.centroid ?? (b ? { x: (b.min.x + b.max.x) / 2, y: b.max.y + 3 } : { x: 0, y: 0 });
+    // Not inside the piano (or anything else) standing in the middle of the room.
+    if (this.world) start = this.world.clearSpot(start, this.floorY);
     this.foot = this.world ? this.world.groundAt(start, this.floorY) : this.floorY;
     this.eyeY = this.foot + EYE;
     this.walkLevelId = this.activeId;

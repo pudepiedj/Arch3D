@@ -7,12 +7,13 @@ import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
 import { PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
 import { TREE_DEFAULTS } from '../model/trees';
+import { GRAND_MODELS, catalogueItem } from '../model/furniture';
 import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { stairGeometry } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
 import { deleteNode, deleteOpening, deleteWall, finishNodeMove, moveNode, normalize, setWallLength, splitWallAt } from '../model/plan';
-import { DEFAULTS, type OpeningKind, type PatioSurface, type Pillar, type TreeKind, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
+import { DEFAULTS, type OpeningKind, type GlazedStyle, type PatioSurface, type Pillar, type TreeKind, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
 import type { Editor2D } from './editor2d';
 import type { Store } from './store';
 
@@ -77,6 +78,7 @@ export class Panel {
     if (sel.kind === 'rooflight') return this.renderRooflight(sel.id);
     if (sel.kind === 'patio') return this.renderPatio(sel.id);
     if (sel.kind === 'tree') return this.renderTree(sel.id);
+    if (sel.kind === 'furniture') return this.renderFurniture(sel.id);
 
     if (sel.kind === 'node') {
       const n = plan.nodes[sel.id];
@@ -104,10 +106,11 @@ export class Panel {
     if (!o) return;
     const fps = computeFootprints(plan);
     const fp = fps.get(o.wallId);
-    this.title(o.kind === 'door' ? 'Door' : o.kind === 'garage' ? 'Garage door' : 'Window');
+    this.title(o.kind === 'door' ? 'Door' : o.kind === 'garage' ? 'Garage door' : o.kind === 'glazed' ? 'Glass doors' : 'Window');
     this.select('Type', o.kind, [
       ['door', 'Door'],
       ['window', 'Window'],
+      ['glazed', 'Glass doors'],
       ['garage', 'Garage roller door'],
     ], (v) => {
       const k = v as OpeningKind;
@@ -130,6 +133,16 @@ export class Panel {
       o.height = v;
       this.done();
     }, 'm');
+    if (o.kind === 'glazed') {
+      this.select('Style', o.style ?? 'french', [
+        ['french', 'French doors'],
+        ['sliding', 'Sliding doors'],
+        ['bifold', 'Bi-fold doors'],
+      ], (v) => {
+        o.style = v as GlazedStyle;
+        this.done();
+      });
+    }
     if (o.kind === 'window') {
       this.number('Sill height', o.sill, 0.01, 0, 10, (v) => {
         o.sill = v;
@@ -172,6 +185,31 @@ export class Panel {
         o.swingFlip = !o.swingFlip;
         this.done();
       }]);
+    }
+    if (o.kind === 'glazed') {
+      btns.push([o.open ? 'Show shut' : 'Show open', () => {
+        o.open = !o.open || undefined;
+        this.done();
+      }]);
+      const ceiling = ceilingHeight(this.store.building, plan);
+      if (Math.abs(o.sill + o.height - ceiling) > 0.005) {
+        btns.push(['Full height', () => {
+          o.sill = 0;
+          o.height = ceiling;
+          this.done();
+        }]);
+      }
+      btns.push([(o.style ?? 'french') === 'sliding' ? 'Slide other way' : 'Open to other side', () => {
+        if ((o.style ?? 'french') === 'sliding') o.hingeFlip = !o.hingeFlip || undefined;
+        else o.swingFlip = !o.swingFlip || undefined;
+        this.done();
+      }]);
+      if (o.style === 'bifold') {
+        btns.push(['Fold to other end', () => {
+          o.hingeFlip = !o.hingeFlip || undefined;
+          this.done();
+        }]);
+      }
     }
     if (o.kind === 'door') {
       btns.push([o.shut ? 'Show open' : 'Show shut', () => {
@@ -352,6 +390,7 @@ export class Panel {
     if (!c) return;
     const geo = chimneyGeometry(this.store.building, level, c);
     this.title('Chimney stack');
+    this.position(c);
     this.select('Pots', String(c.pots), [
       ['1', '1 pot'],
       ['2', '2 pots'],
@@ -388,6 +427,79 @@ export class Panel {
         this.store.commit();
       }, true],
     ]);
+  }
+
+  private renderFurniture(id: string) {
+    const level = this.store.plan;
+    const f = level.furniture?.[id];
+    if (!f) return;
+    const c = catalogueItem(f.kind);
+    this.title(c?.name ?? 'Furniture');
+    if (f.kind === 'grand') {
+      const model = GRAND_MODELS.find((m) => Math.abs(m.depth - f.depth) < 0.005 && Math.abs(m.width - f.width) < 0.005);
+      this.select('Size', model?.name ?? 'custom', [
+        ...GRAND_MODELS.map((m): [string, string] => [m.name, m.name]),
+        ...(model ? [] : [['custom', 'Custom size'] as [string, string]]),
+      ], (v) => {
+        const m = GRAND_MODELS.find((g) => g.name === v);
+        if (!m) return;
+        f.width = m.width;
+        f.depth = m.depth;
+        this.done();
+      });
+    }
+    if (c?.finishes) {
+      this.select('Finish', f.finish ?? c.finishes[0], c.finishes.map((v): [string, string] => [v, v[0].toUpperCase() + v.slice(1)]), (v) => {
+        f.finish = v;
+        this.done();
+      });
+    }
+    this.number('Width', f.width, 0.01, 0.2, 6, (v) => {
+      f.width = v;
+      this.done();
+    }, 'm');
+    this.number(f.kind === 'grand' ? 'Length' : 'Depth', f.depth, 0.01, 0.2, 6, (v) => {
+      f.depth = v;
+      this.done();
+    }, 'm');
+    if (!c?.flat && f.kind !== 'grand') {
+      this.number('Height', f.height, 0.01, 0.2, 3, (v) => {
+        f.height = v;
+        this.done();
+      }, 'm');
+    }
+    const deg = ((Math.round((f.angle * 180) / Math.PI) % 360) + 360) % 360;
+    this.number('Turned', deg, 5, 0, 359, (v) => {
+      f.angle = (v * Math.PI) / 180;
+      this.done();
+    }, '°');
+    this.note(
+      f.kind === 'grand'
+        ? 'The keyboard end is the front. The dashed box in front is the stool. Drag to move; [ and ] turn it.'
+        : 'Drag to move; it keeps tight to a wall it is square to. [ and ] turn it; Ctrl/⌘+D puts a copy alongside.',
+    );
+    const btns: [string, () => void, boolean?][] = [];
+    if (f.kind === 'grand') {
+      btns.push([f.open ? 'Close lid' : 'Open lid', () => {
+        f.open = !f.open;
+        this.done();
+      }]);
+      btns.push([f.stool ? 'No stool' : 'Stool', () => {
+        f.stool = !f.stool;
+        this.done();
+      }]);
+    }
+    btns.push(['Turn 90°', () => {
+      f.angle = (f.angle + Math.PI / 2) % (Math.PI * 2);
+      this.done();
+    }]);
+    btns.push(['Duplicate', () => this.editor.duplicateSelection()]);
+    btns.push(['Delete', () => {
+      delete level.furniture![id];
+      this.editor.select(null);
+      this.store.commit();
+    }, true]);
+    this.buttons(btns);
   }
 
   private renderTree(id: string) {
@@ -480,6 +592,7 @@ export class Panel {
     if (!r) return;
     const geo = rooflightGeometry(this.store.building, level, r);
     this.title(geo?.kind === 'kerb' ? 'Rooflight box' : 'Roof window');
+    this.position(r);
     this.number('Windows', r.count, 1, 1, 12, (v) => {
       r.count = Math.round(v);
       this.done();
@@ -543,6 +656,7 @@ export class Panel {
     if (!sa) return;
     const geo = solarGeometry(this.store.building, level, sa);
     this.title('Solar panels');
+    this.position(sa);
     this.number('Rows', sa.rows, 1, 1, 20, (v) => {
       sa.rows = Math.round(v);
       this.done();
@@ -611,6 +725,14 @@ export class Panel {
     this.select(label, roof.kind, kinds, (v) => set({ kind: v as RoofKind }));
     if (roof.kind === 'gable' || roof.kind === 'hip') {
       this.number('Roof pitch', roof.pitch, 1, 5, 70, (v) => set({ pitch: v }), '°');
+      this.select('Ceiling', roof.vaulted ? 'vaulted' : 'flat', [
+        ['flat', 'Flat ceiling'],
+        ['vaulted', 'Vaulted (open to the roof)'],
+      ], (v) => set({ vaulted: v === 'vaulted' || undefined }));
+      this.select('Gable ends', roof.glazedGables ? 'glazed' : 'wall', [
+        ['wall', 'Solid wall'],
+        ['glazed', 'Glazed (triangular window)'],
+      ], (v) => set({ glazedGables: v === 'glazed' || undefined }));
     }
     if (roof.kind !== 'none') {
       this.number('Overhang', roof.overhang, 0.05, 0, 1.5, (v) => set({ overhang: v }), 'm', 'How far the eaves project past the walls');
@@ -632,6 +754,18 @@ export class Panel {
       ed.onToolChange?.();
     }, 'm');
     this.note(`Walls run the full ${this.store.plan.height} m floor-to-floor height of ${this.store.plan.name.toLowerCase()}.`);
+  }
+
+  /** X and Y of a roof item's centre: type the same number as another to line them up. */
+  private position(item: { x: number; y: number }) {
+    this.number('X (across)', item.x, 0.01, -1000, 1000, (v) => {
+      item.x = v;
+      this.done();
+    }, 'm', 'Distance across the plan; give two items the same X to line them up');
+    this.number('Y (up/down)', item.y, 0.01, -1000, 1000, (v) => {
+      item.y = v;
+      this.done();
+    }, 'm', 'Distance down the plan; give two items the same Y to line them up');
   }
 
   private done() {

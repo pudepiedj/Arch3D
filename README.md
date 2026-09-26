@@ -25,10 +25,11 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 
 | Tool | What it does |
 | --- | --- |
-| **Select** (V) | Drag a **joint** to reshape every wall attached to it; drop it on another joint or wall to connect. Drag a **wall** to move it sideways (connected walls stretch). Drag a **door/window** along its wall, or onto another wall. Delete/Backspace removes the selection. |
+| **Select** (V) | Drag a **joint** to reshape every wall attached to it; drop it on another joint or wall to connect. Drag a **wall** to move it sideways (connected walls stretch). Drag a **door/window** along its wall, or onto another wall. Delete/Backspace removes the selection. What stands on the floor is picked before what is on the roof above it (solar panels, chimneys, rooflights); **click again** in the same place to pick the next thing underneath. |
 | **Wall** (W) | Click to start, click for each corner. Snaps to joints, onto existing walls (making a T-junction), to 45° directions and to alignment with other joints. Type a length (e.g. `3.5`) and press Enter for an exact wall. Click the start point, double-click, or press Esc to finish. **Ortho** locks to 45° steps. |
 | **Door** (D) / **Window** (N) | Click on a wall to place one. It fits itself between corners and other openings. |
 | **Stair** (S) | Choose Straight, L-shape or U-shape, click where the bottom step goes, then click in the direction it climbs (snaps to right angles; Ortho forces them). The stair always rises to the next floor. |
+| **Glass door** (K) | Click on a wall to place floor-to-ceiling glass doors: French doors, sliding doors or bi-folds (choose in the panel). |
 | **Garage** (G) | Click on a wall to place a garage roller door (2.5 m wide; set any width in the panel). |
 | **Pillar** (P) | Click to place a pillar (post). It rises to the underside of the roof above it, or to the wall height if there is none. Drag to move. |
 | **Chimney** (C) | Click on the roof to place a chimney stack (on the floor whose roof it goes through). |
@@ -36,7 +37,23 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 | **Rooflight** | Click on a roof. A flat roof gets a rooflight box; a sloping roof gets a window lying in the slope. |
 | **Patio** (T) | Choose Paving, Decking or Gravel, then click the corners of the area. Click the first corner, double-click or press Enter to finish. |
 | **Tree** (E) | Choose Broadleaf or Conifer, then click to plant one. Drag the trunk to move it; set the height and crown spread in the panel. |
+| **Furniture** (F) | Opens the catalogue. Pick a piece, then click to place it: near a wall it turns its back to the wall and sits tight against it. [ and ] turn it in 15° steps. Esc when done. |
 | **Split** (X) | Click on a wall to add a joint, which is then selected so you can drag it (to make a bay, a nib or a step in the wall). |
+
+**Furniture:** about 50 pieces in nine groups:
+- **Music:** grand piano, upright piano, music stand.
+- **Living:** sofas, armchair, coffee table, TV, bookcase, lamp, rug.
+- **Heating:** fireplace with mantelpiece and a lit fire (stone, white, marble or oak surround), wood-burning stove on a slate hearth with its flue to the ceiling, and panel or column radiators. Like everything else, they back onto the nearest wall; radiators are fixed 15 cm above the floor.
+- **Dining:** table with 6 chairs, round table with 4 chairs, chair, sideboard.
+- **Office:** desk with computer and chair, desk with two monitors, corner desk with computer, office desk, swivel office chair, filing cabinet. The computer sets have a monitor (or two, turned in), keyboard and mouse on the desk and a PC tower under it.
+- **Bedroom:** beds, bedside table, wardrobe, chest of drawers, desk.
+- **Kitchen:** base, sink, hob and oven, tall units, fridge, island.
+- **Bathroom:** bath, shower, WC, basin.
+- **Garden:** table and chairs, lounger, bench, parasol, barbecue, planter, and a 2 m timber pergola (four posts, beams, cross-rafters, battens for climbers, knee braces), with or without a climber growing over it. You can walk under a pergola in walk mode.
+
+Select a piece to change its finish, width, depth and height, or to turn, duplicate or delete it. **Ctrl/⌘+D** puts a copy alongside, which is handy for a run of kitchen units. Pieces stand on patios and decks at the right height, and in walk mode you walk round them (except rugs).
+
+**The grand piano** is modelled properly: the curved case with its straight bass side and bentside, rim, soundboard, gilt iron frame and strings, 88 keys, music desk, lyre and pedals, and the stool. The **Size** list has Blüthner's models (11, 10, 6, 4, 2 and 1, from 154 to 280 cm long). The widths are approximate, so check yours with a tape. The lid can be shown open on its stick or closed, the stool on or off, and the finish black, walnut, mahogany or white.
 
 **Room dimensions:** the **Dimensions** button (or M) writes every room's inside measurements along its walls, face to face of the plaster line. The setting is remembered on each device.
 
@@ -47,9 +64,18 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 - **Duplicate** (Ctrl/⌘+D) puts a copy right beside the selected one.
 - **Match copied** resizes an existing door or window to the copied one.
 
+**Glass doors:** full-height glazing in slim anthracite frames, 2.4 m wide and 2.4 m high to start with.
+- **Style:** **French doors** (two leaves swinging from the jambs), **Sliding doors** (two panels on two tracks) or **Bi-fold doors** (leaves of about 80 cm).
+- **Show open** swings the leaves out, slides the moving panel behind the fixed one, or folds the bi-folds into a stack at one end. You can walk through when they are shown open.
+- **Full height** takes them up to the ceiling. **Open to other side**, **Slide other way** and **Fold to other end** change the direction.
+
 **Garage roller doors:** drawn with horizontal slats running in guides, and a roller casing above the opening on the inside. In the panel:
 - **Show open** shows the door rolled up (and lets you walk or drive through in walk mode). **Show shut** puts it back down.
 - **Casing to other side** puts the guides and casing on the other face of the wall.
+
+**Vaulted ceilings:** select a sloping roof and set **Ceiling** to **Vaulted (open to the roof)**. The rooms under it lose their flat ceiling and are open up to the plastered underside of the slopes, with the gable walls rising to the ridge. Windows lying in a slope are cut right through it, so from the room you look up through them to the sky.
+
+**Glazed gables:** set a sloping roof's **Gable ends** to **Glazed (triangular window)**. Each of its gable triangles above the wall plate is filled with glass in a slim anthracite frame, with upright glazing bars about every 80 cm, and the gable wall behind is cut away. Combined with a vaulted ceiling, the room gets light through the top of the gable.
 
 **Roofs on pillars (verandas, terraces, carports):** draw the roof with the Roof tool's **Add section** over the open area. It snaps to the house wall, and its edge there rests on the wall. Set its type and **Eaves height**, then press **Add pillars**. Pillars go at every corner not resting on a wall, and along open edges so that no span is longer than 3.5 m. Their outer faces line up with the roof edge. Pillars are square or round, can be resized, and are solid in walk mode.
 
@@ -67,6 +93,7 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 - **On a flat roof:** a raised box (kerb) with a sloping top holding a row of opening roof windows. The ceiling and roof below are opened up into a lined light well, so from the room you look up into the box and out through the glass.
 - **On a sloping roof:** the windows lie in the slope.
 - **Panel settings:** the number of windows, window width and length, box slope and kerb height, and rotating the box by 90°.
+- **Lining up:** while you place or drag a rooflight (or a solar array or chimney), it snaps into line, across or up and down the plan, with the other roof items on that floor and with the centres of its doors and windows. A dashed blue guide, with a ring on the other item, shows what it has lined up with, so a row of roof windows sits at one height up the slope, or a roof window sits directly over the window below. The guides stay on while the item is selected. The panel also has its exact **X** and **Y**: give two items the same number to line them up.
 - **Show open** tilts the windows out at the bottom, **Blinds down** draws the blinds, and **Solar motor** adds or removes the little solar strip on each frame.
 
 **Sun and shadows (the Sun button):** puts the sun where it really is for a date, a time and the house's location, with shadows.
@@ -157,7 +184,6 @@ Everything visible is *derived* from that data on every change, so there is no s
 
 - Dormers.
 - A sun-hours map: how many hours of direct sun each part of a patio gets on a given day.
-- Furniture.
 - Textures and materials per room.
 - Curved walls.
 - Snapping openings to exact positions from a room's inside corner on either side.

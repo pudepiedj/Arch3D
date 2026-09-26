@@ -12,6 +12,7 @@ import { computeFootprints, type Footprint } from './joints';
 import { openingsOf } from './openings';
 import { patioShapes } from './patios';
 import { trunkRadius } from './trees';
+import { catalogueItem, footprint, standingHeight } from './furniture';
 import { detectRooms } from './rooms';
 import { stairGeometry, stairwells } from './stairs';
 import type { Building, Plan } from './types';
@@ -62,6 +63,13 @@ export class WalkWorld {
         r: q.shape === 'round' ? q.size / 2 : (q.size / 2) * Math.SQRT2,
       }));
       for (const t of Object.values(level.trees ?? {})) posts.push({ x: t.x, y: t.y, r: trunkRadius(t) });
+      // Furniture is in the way (except rugs); you walk round it.
+      for (const f of Object.values(level.furniture ?? {})) {
+        const c = catalogueItem(f.kind);
+        if (c?.flat || c?.walkUnder) continue;
+        const base = elevation + standingHeight(level, f);
+        this.blocks.push({ poly: footprint(f), bottom: base, top: base + Math.max(f.height, STEP_UP + 0.05) });
+      }
       this.levels.push({ id: level.id, elevation, colliders: buildColliders(level), posts });
       const below = b.levels[i - 1];
       const holes = below ? stairwells(below).map((shape) => shape[0]) : [];
@@ -114,6 +122,37 @@ export class WalkWorld {
     );
   }
 
+  /** True if a walker standing at p (feet at `foot`) would overlap a wall, post or piece of furniture. */
+  private obstructed(p: Vec2, foot: number): boolean {
+    // The walker's whole body, not just the centre, must be clear of furniture and steps.
+    for (let i = 0; i <= 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const r = i === 8 ? 0 : RADIUS;
+      if (this.blocked({ x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r }, foot)) return true;
+    }
+    const here = this.levels.find((l) => l.id === this.levelAt(foot));
+    for (const c of here?.colliders ?? []) {
+      const t = { ...p };
+      pushOut(t, c);
+      if (Math.hypot(t.x - p.x, t.y - p.y) > 1e-6) return true;
+    }
+    return (here?.posts ?? []).some((q) => Math.hypot(p.x - q.x, p.y - q.y) < RADIUS + q.r);
+  }
+
+  /** The nearest spot to p (searching outwards) where a walker can stand clear of everything. */
+  clearSpot(p: Vec2, foot: number): Vec2 {
+    if (!this.obstructed(p, foot)) return p;
+    for (let r = 0.1; r <= 4; r += 0.1) {
+      const n = Math.max(8, Math.round((2 * Math.PI * r) / 0.1));
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const q = { x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r };
+        if (!this.obstructed(q, foot)) return q;
+      }
+    }
+    return p;
+  }
+
   /** Move from p by d, sliding along walls and stair sides; returns the new position and foot height. */
   move(p: Vec2, foot: number, d: Vec2): { p: Vec2; foot: number } {
     const steps = Math.max(1, Math.ceil(Math.hypot(d.x, d.y) / 0.05));
@@ -140,7 +179,8 @@ export class WalkWorld {
             }
           }
         }
-        if (this.blocked(t, foot)) continue;
+        // Blocked, unless already inside the obstacle (so a walker placed there can step out).
+        if (this.blocked(t, foot) && !this.blocked(cur, foot)) continue;
         const ground = this.groundAt(t, foot);
         if (ground < foot - STEP_DOWN) continue;
         cur = t;
@@ -160,8 +200,8 @@ function buildColliders(plan: Plan): Collider[] {
     const u1 = Math.max(fp.uL1, fp.uR1);
     let cursor = u0;
     for (const o of openingsOf(plan, fp.wallId)) {
-      // Doors and open garage doors can be walked through.
-      if (o.kind !== 'door' && !(o.kind === 'garage' && o.open)) continue;
+      // Doors, and garage and glazed doors shown open, can be walked through.
+      if (o.kind !== 'door' && !((o.kind === 'garage' || o.kind === 'glazed') && o.open)) continue;
       out.push({ fp, u0: cursor, u1: o.offset - o.width / 2 });
       cursor = o.offset + o.width / 2;
     }

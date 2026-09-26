@@ -17,9 +17,11 @@ import {
 } from '../model/geom';
 import { getLevel, levelBelow } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
-import { addPatio, patioAt, patioShapes } from '../model/patios';
+import { addPatio, patioShapes } from '../model/patios';
 import { addTree, treeAt, trunkRadius } from '../model/trees';
 import { siteOf } from '../model/sun';
+import { addFurniture, againstWall, catalogueItem, footprint } from '../model/furniture';
+import { drawFurnitureSymbol } from './furniture2d';
 import { addChimney, addRooflight, addSolarArray, chimneyFootprint, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { roofSurfaceAt } from '../model/roof';
 import { DEFAULT_ROOF, type LevelRoof, levelRoofs, roofAreaRings, setAreaRoof, toggleEdge } from '../model/roof';
@@ -46,12 +48,12 @@ import {
   splitWallAt,
 } from '../model/plan';
 import { detectRooms } from '../model/rooms';
-import type { Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind } from '../model/types';
+import type { Furniture, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree';
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture';
 export type Selection = {
-  kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree';
+  kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture';
   id: string;
 } | null;
 
@@ -63,6 +65,7 @@ type Gesture =
   | { kind: 'dragOpening'; id: string }
   | { kind: 'dragStair'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'dragPillar'; id: string }
+  | { kind: 'dragFurniture'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'dragPatio'; id: string; start: Vec2; pts0: Vec2[] }
   | { kind: 'dragRoofItem'; what: 'chimney' | 'solar' | 'rooflight' | 'tree'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'click' };
@@ -96,6 +99,9 @@ export class Editor2D {
   patioSurface: PatioSurface = 'paving';
   /** Kind of tree the Tree tool plants. */
   treeKind: TreeKind = 'deciduous';
+  /** Catalogue entry the Furniture tool places, and the angle it is placed at. */
+  furnitureKind = 'grand';
+  furnitureAngle = 0;
   /** A copied door or window: its exact type and size. */
   clipboard: OpeningTemplate | null = null;
   ortho = false;
@@ -105,9 +111,12 @@ export class Editor2D {
   onSelectionChange?: () => void;
   onToolChange?: () => void;
   onDimsChange?: () => void;
+  onOpenCatalogue?: () => void;
   shortcutsEnabled: () => boolean = () => true;
 
   private pointers = new Map<number, Vec2>();
+  /** What a click (without dragging) on the current selection moves on to. */
+  private cycle: Selection = null;
   private gesture: Gesture | null = null;
   private downAt: Vec2 | null = null;
   private dragging = false;
@@ -331,51 +340,61 @@ export class Editor2D {
 
   // ---------------------------------------------------------------- hit testing
 
-  private hitTest(s: Vec2): Selection {
+  /**
+   * Everything under the pointer, most specific first: joints, doors and windows, then what
+   * stands on this floor (trunks, pillars, stairs, furniture, walls), and only then what is on
+   * the roof over it (chimneys, rooflights, solar panels), tree crowns and patios.
+   */
+  private hitAll(s: Vec2): NonNullable<Selection>[] {
     const w = this.toWorld(s);
     const tol = 8 / this.view.scale;
     const plan = this.plan;
-    let best: Selection = null;
+    const out: NonNullable<Selection>[] = [];
+    let node: string | null = null;
     let bestD = 12 / this.view.scale;
     for (const n of Object.values(plan.nodes)) {
       const d = dist(n, w);
       if (d < bestD) {
         bestD = d;
-        best = { kind: 'node', id: n.id };
+        node = n.id;
       }
     }
-    if (best) return best;
+    if (node) out.push({ kind: 'node', id: node });
     for (const o of Object.values(plan.openings)) {
       const fp = this.fps.get(o.wallId);
       if (!fp) continue;
       const { u, v } = local(fp, w);
-      if (Math.abs(u - o.offset) <= o.width / 2 + tol && Math.abs(v) <= fp.thickness / 2 + tol) {
-        return { kind: 'opening', id: o.id };
-      }
+      if (Math.abs(u - o.offset) <= o.width / 2 + tol && Math.abs(v) <= fp.thickness / 2 + tol) out.push({ kind: 'opening', id: o.id });
     }
-    const trunk = treeAt(this.plan, w, 6 / this.view.scale, false);
-    if (trunk) return { kind: 'tree', id: trunk };
-    for (const c of Object.values(this.plan.chimneys ?? {})) {
-      if (pointInPolygon(w, chimneyFootprint(c))) return { kind: 'chimney', id: c.id };
-    }
-    for (const r of Object.values(this.plan.rooflights ?? {})) {
-      const g = rooflightGeometry(this.store.building, this.plan, r);
-      if (g && pointInPolygon(w, g.footprint)) return { kind: 'rooflight', id: r.id };
-    }
-    for (const sa of Object.values(this.plan.solar ?? {})) {
-      const g = solarGeometry(this.store.building, this.plan, sa);
-      if (g && pointInPolygon(w, g.outline)) return { kind: 'solar', id: sa.id };
-    }
-    const pillar = pillarAt(this.plan, w, 4 / this.view.scale);
-    if (pillar) return { kind: 'pillar', id: pillar };
-    const stair = stairAt(this.plan, w);
-    if (stair) return { kind: 'stair', id: stair };
+    const trunk = treeAt(plan, w, 6 / this.view.scale, false);
+    if (trunk) out.push({ kind: 'tree', id: trunk });
+    const pillar = pillarAt(plan, w, 4 / this.view.scale);
+    if (pillar) out.push({ kind: 'pillar', id: pillar });
+    const stair = stairAt(plan, w);
+    if (stair) out.push({ kind: 'stair', id: stair });
+    const pieces = Object.values(plan.furniture ?? {}).filter((f) => pointInPolygon(w, footprint(f)));
+    pieces.sort((a, b) => a.width * a.depth - b.width * b.depth);
+    for (const f of pieces) out.push({ kind: 'furniture', id: f.id });
     const wall = this.wallAt(w, tol);
-    if (wall) return { kind: 'wall', id: wall.wallId };
-    const crown = treeAt(this.plan, w, 0);
-    if (crown) return { kind: 'tree', id: crown };
-    const patio = patioAt(this.plan, w);
-    return patio ? { kind: 'patio', id: patio } : null;
+    if (wall) out.push({ kind: 'wall', id: wall.wallId });
+    for (const c of Object.values(plan.chimneys ?? {})) {
+      if (pointInPolygon(w, chimneyFootprint(c))) out.push({ kind: 'chimney', id: c.id });
+    }
+    for (const r of Object.values(plan.rooflights ?? {})) {
+      const g = rooflightGeometry(this.store.building, plan, r);
+      if (g && pointInPolygon(w, g.footprint)) out.push({ kind: 'rooflight', id: r.id });
+    }
+    for (const sa of Object.values(plan.solar ?? {})) {
+      const g = solarGeometry(this.store.building, plan, sa);
+      if (g && pointInPolygon(w, g.outline)) out.push({ kind: 'solar', id: sa.id });
+    }
+    for (const t of Object.values(plan.trees ?? {})) {
+      if (t.id !== trunk && dist(t, w) <= t.spread / 2) out.push({ kind: 'tree', id: t.id });
+    }
+    const patios = Object.values(plan.patios ?? {}).filter((pt) => pointInPolygon(w, pt.points));
+    patios.sort((a, b) => b.height - a.height);
+    for (const pt of patios) out.push({ kind: 'patio', id: pt.id });
+    return out;
   }
 
   private wallAt(w: Vec2, tol: number): Footprint | null {
@@ -422,7 +441,13 @@ export class Editor2D {
     }
 
     if (this.tool === 'select') {
-      const hit = this.hitTest(s);
+      // Pressing on what is already selected keeps it (to drag it); clicking it again without
+      // dragging then moves on to the next thing underneath (see onUp).
+      const hits = this.hitAll(s);
+      const cur = this.selection;
+      const again = cur ? hits.findIndex((h) => h.kind === cur.kind && h.id === cur.id) : -1;
+      const hit = again >= 0 ? hits[again] : (hits[0] ?? null);
+      this.cycle = again >= 0 && hits.length > 1 ? hits[(again + 1) % hits.length] : null;
       this.select(hit);
       if (hit?.kind === 'node') this.gesture = { kind: 'dragNode', id: hit.id };
       else if (hit?.kind === 'pillar') this.gesture = { kind: 'dragPillar', id: hit.id };
@@ -435,6 +460,10 @@ export class Editor2D {
         this.gesture = { kind: 'dragStair', id: hit.id, start: this.toWorld(s), x0: st.x, y0: st.y };
       }
       else if (hit?.kind === 'opening') this.gesture = { kind: 'dragOpening', id: hit.id };
+      else if (hit?.kind === 'furniture') {
+        const f = this.plan.furniture![hit.id];
+        this.gesture = { kind: 'dragFurniture', id: hit.id, start: this.toWorld(s), x0: f.x, y0: f.y };
+      }
       else if (hit?.kind === 'patio') {
         const pts0 = this.plan.patios![hit.id].points.map((p) => ({ ...p }));
         this.gesture = { kind: 'dragPatio', id: hit.id, start: this.toWorld(s), pts0 };
@@ -516,6 +545,12 @@ export class Editor2D {
         const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
         item.x = cur.x0 + snapTo(w.x - cur.start.x);
         item.y = cur.y0 + snapTo(w.y - cur.start.y);
+        if (cur.what !== 'tree') {
+          const aligned = this.alignRoofItem(item, cur.id);
+          item.x = aligned.p.x;
+          item.y = aligned.p.y;
+          this.lastGuides = aligned.guides;
+        }
         this.store.changed();
         break;
       }
@@ -526,6 +561,21 @@ export class Editor2D {
         const dx = snapTo(w.x - cur.start.x);
         const dy = snapTo(w.y - cur.start.y);
         pt.points = cur.pts0.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+        this.store.changed();
+        break;
+      }
+      case 'dragFurniture': {
+        const f = plan.furniture?.[cur.id];
+        if (!f) break;
+        const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
+        f.x = cur.x0 + snapTo(w.x - cur.start.x);
+        f.y = cur.y0 + snapTo(w.y - cur.start.y);
+        // Keep it tight against a wall it is square to and near.
+        const wall = againstWall(this.fps.values(), f, f.depth, 0.12);
+        if (wall && Math.abs(Math.sin(wall.angle - f.angle)) < 1e-3 && Math.cos(wall.angle - f.angle) > 0) {
+          f.x = wall.at.x;
+          f.y = wall.at.y;
+        }
         this.store.changed();
         break;
       }
@@ -602,12 +652,16 @@ export class Editor2D {
       case 'dragPillar':
       case 'dragRoofItem':
       case 'dragPatio':
+      case 'dragFurniture':
         if (this.dragging) this.store.commit();
         break;
       case 'click':
         if (!this.dragging) this.click(this.toWorld(this.eventPoint(e)));
         break;
     }
+    // A click (no drag) on the selected thing: select the next thing under it.
+    if (!this.dragging && this.cycle) this.select(this.cycle);
+    this.cycle = null;
     this.dragging = false;
     this.downAt = null;
   }
@@ -619,6 +673,75 @@ export class Editor2D {
     if (what === 'solar') return p.solar?.[id];
     if (what === 'rooflight') return p.rooflights?.[id];
     return p.trees?.[id];
+  }
+
+  /** Where the Furniture tool would put its piece for the pointer at w: back to a nearby wall, or free. */
+  private furniturePlacement(w: Vec2): { at: Vec2; angle: number } | null {
+    const c = catalogueItem(this.furnitureKind);
+    if (!c) return null;
+    const wall = c.flat ? null : againstWall(this.fps.values(), w, c.depth);
+    if (wall) return wall;
+    const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
+    return { at: { x: snapTo(w.x), y: snapTo(w.y) }, angle: this.furnitureAngle };
+  }
+
+  /**
+   * Line a roof item (rooflight, solar array, chimney) up with the others on this floor and
+   * with the centres of the doors and windows below: across or up and down the plan, within
+   * a few pixels, with a guide line to what it lined up with.
+   */
+  /** What a roof item lines up with: the other roof items, and door and window centres. */
+  private alignTargets(selfId: string): Vec2[] {
+    const plan = this.plan;
+    const targets: Vec2[] = [];
+    for (const list of [plan.rooflights, plan.solar, plan.chimneys]) {
+      for (const it of Object.values(list ?? {})) if (it.id !== selfId) targets.push({ x: it.x, y: it.y });
+    }
+    for (const o of Object.values(plan.openings)) {
+      const fp = this.fps.get(o.wallId);
+      if (fp) targets.push(wallPoint(fp, o.offset, 0));
+    }
+    return targets;
+  }
+
+  /** Guides from a selected roof item to everything it is exactly in line with. */
+  private alignedGuides(p: Vec2, selfId: string): Snap['guides'] {
+    const guides: Snap['guides'] = [];
+    for (const t of this.alignTargets(selfId)) {
+      if (Math.abs(t.x - p.x) < 0.005 || Math.abs(t.y - p.y) < 0.005) guides.push({ from: t, to: p });
+    }
+    return guides;
+  }
+
+  private alignRoofItem(p: Vec2, selfId: string): { p: Vec2; guides: Snap['guides'] } {
+    const targets = this.alignTargets(selfId);
+    const tol = 16 / this.view.scale;
+    const out = { x: p.x, y: p.y };
+    const guides: Snap['guides'] = [];
+    let bx: Vec2 | null = null;
+    let by: Vec2 | null = null;
+    for (const t of targets) {
+      if (Math.abs(t.x - p.x) < tol && (!bx || Math.abs(t.x - p.x) < Math.abs(bx.x - p.x))) bx = t;
+      if (Math.abs(t.y - p.y) < tol && (!by || Math.abs(t.y - p.y) < Math.abs(by.y - p.y))) by = t;
+    }
+    if (bx) out.x = bx.x;
+    if (by) out.y = by.y;
+    if (bx) guides.push({ from: bx, to: out });
+    if (by) guides.push({ from: by, to: out });
+    return { p: out, guides };
+  }
+
+  /** Turn the selected piece (or the one about to be placed) by a step. */
+  rotateFurniture(step: number) {
+    const s = this.selection;
+    const f = s?.kind === 'furniture' ? this.plan.furniture?.[s.id] : undefined;
+    if (f) {
+      f.angle = normAngle(f.angle + step);
+      this.store.commit();
+    } else if (this.tool === 'furniture') {
+      this.furnitureAngle = normAngle(this.furnitureAngle + step);
+      this.requestRender();
+    }
   }
 
   private click(w: Vec2) {
@@ -640,7 +763,7 @@ export class Editor2D {
           this.flash('No roof here on this floor: switch to the floor the roof belongs to', w);
           break;
         }
-        const rl = addRooflight(plan, w);
+        const rl = addRooflight(plan, this.alignRoofItem(w, '').p);
         this.store.commit();
         this.select({ kind: 'rooflight', id: rl.id });
         break;
@@ -650,7 +773,7 @@ export class Editor2D {
           this.flash('No roof here on this floor: switch to the floor the roof belongs to', w);
           break;
         }
-        const sa = addSolarArray(plan, w);
+        const sa = addSolarArray(plan, this.alignRoofItem(w, '').p);
         this.store.commit();
         this.select({ kind: 'solar', id: sa.id });
         break;
@@ -664,6 +787,7 @@ export class Editor2D {
       case 'door':
       case 'window':
       case 'garage':
+      case 'glazed':
       case 'paste': {
         const fp = this.wallAt(w, 10 / this.view.scale);
         const spec = this.openingSpec();
@@ -681,6 +805,14 @@ export class Editor2D {
       case 'patio':
         this.outlineClick(w);
         break;
+      case 'furniture': {
+        const at = this.furniturePlacement(w);
+        if (!at) break;
+        const f = addFurniture(plan, this.furnitureKind, at.at, at.angle);
+        this.store.commit();
+        this.select({ kind: 'furniture', id: f.id });
+        break;
+      }
       case 'tree': {
         const t = addTree(plan, this.snap(w).p, this.treeKind);
         this.store.commit();
@@ -783,6 +915,10 @@ export class Editor2D {
       }
       return;
     }
+    if (!mod && (e.key === '[' || e.key === ']')) {
+      this.rotateFurniture(((e.key === ']' ? 1 : -1) * Math.PI) / 12);
+      return;
+    }
     if (mod && e.key.toLowerCase() === 'd') {
       e.preventDefault();
       this.duplicateSelection();
@@ -871,6 +1007,12 @@ export class Editor2D {
       case 'm':
         this.toggleDims();
         break;
+      case 'k':
+        this.setTool('glazed');
+        break;
+      case 'f':
+        this.onOpenCatalogue?.();
+        break;
       case 'o':
         this.ortho = !this.ortho;
         this.onToolChange?.();
@@ -880,7 +1022,7 @@ export class Editor2D {
 
   /** What a click with the current tool places: a default door/window, or the copied one. */
   private openingSpec(): OpeningKind | OpeningTemplate | null {
-    if (this.tool === 'door' || this.tool === 'window' || this.tool === 'garage') return this.tool;
+    if (this.tool === 'door' || this.tool === 'window' || this.tool === 'garage' || this.tool === 'glazed') return this.tool;
     if (this.tool === 'paste') return this.clipboard;
     return null;
   }
@@ -898,6 +1040,18 @@ export class Editor2D {
   /** Put an identical copy of the selected door or window next to it. */
   duplicateSelection(): boolean {
     const s = this.selection;
+    if (s?.kind === 'furniture') {
+      const f = this.plan.furniture?.[s.id];
+      if (!f) return false;
+      // Side by side, to its right: handy for a run of kitchen units.
+      const copy: Furniture = { ...f, id: `f${this.plan.nextId++}` };
+      copy.x = f.x + Math.cos(f.angle) * f.width;
+      copy.y = f.y + Math.sin(f.angle) * f.width;
+      this.plan.furniture![copy.id] = copy;
+      this.store.commit();
+      this.select({ kind: 'furniture', id: copy.id });
+      return true;
+    }
     if (s?.kind !== 'opening') return false;
     const copy = duplicateOpening(this.plan, s.id);
     if (!copy) return false;
@@ -1223,6 +1377,29 @@ export class Editor2D {
     ctx.restore();
   }
 
+  private drawFurniture(C: Record<string, string>) {
+    // Largest first, so a rug lies under the table on it.
+    const list = Object.values(this.plan.furniture ?? {}).sort((a, b) => b.width * b.depth - a.width * a.depth);
+    for (const f of list) {
+      const sel = this.selection?.kind === 'furniture' && this.selection.id === f.id;
+      this.drawPiece(f, sel ? C.accent : C.ink, sel ? hexAlpha(C.accent, 0.18) : hexAlpha(C.opening, 0.92));
+    }
+  }
+
+  private drawPiece(f: Furniture, ink: string, fill: string) {
+    const ctx = this.ctx;
+    const k = this.view.scale;
+    const s = this.toScreen(f);
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate(f.angle);
+    ctx.scale(k, k);
+    ctx.lineWidth = 1 / k;
+    ctx.strokeStyle = ink;
+    drawFurnitureSymbol(ctx, f, fill);
+    ctx.restore();
+  }
+
   /** Trees, seen from above: a translucent crown, and the trunk. */
   private drawTrees(C: Record<string, string>) {
     const ctx = this.ctx;
@@ -1302,6 +1479,7 @@ export class Editor2D {
     else if (s.kind === 'rooflight') delete this.plan.rooflights?.[s.id];
     else if (s.kind === 'patio') delete this.plan.patios?.[s.id];
     else if (s.kind === 'tree') delete this.plan.trees?.[s.id];
+    else if (s.kind === 'furniture') delete this.plan.furniture?.[s.id];
     else if (s.kind === 'roof') {
       if (s.id.startsWith('section:')) delete this.plan.roofSections?.[s.id.slice(8)];
       else {
@@ -1328,7 +1506,8 @@ export class Editor2D {
       (s.kind === 'solar' && p.solar?.[s.id]) ||
       (s.kind === 'rooflight' && p.rooflights?.[s.id]) ||
       (s.kind === 'patio' && p.patios?.[s.id]) ||
-      (s.kind === 'tree' && p.trees?.[s.id]);
+      (s.kind === 'tree' && p.trees?.[s.id]) ||
+      (s.kind === 'furniture' && p.furniture?.[s.id]);
     if (!exists) this.select(null);
   }
 
@@ -1394,6 +1573,8 @@ export class Editor2D {
       ctx.fillStyle = C.room;
       ctx.fill();
     }
+
+    this.drawFurniture(C);
 
     // The floor below, faintly, as a guide for placing walls above it.
     const below = this.below();
@@ -1531,6 +1712,11 @@ export class Editor2D {
     this.drawToolPreview(C);
 
     for (const g of this.lastGuides) this.guide(g.from, g.to, C.accent);
+    const sel = this.selection;
+    if (sel && !this.lastGuides.length && (sel.kind === 'rooflight' || sel.kind === 'solar' || sel.kind === 'chimney')) {
+      const item = this.roofItem(sel.kind, sel.id);
+      if (item) for (const g of this.alignedGuides(item, sel.id)) this.guide(g.from, g.to, C.accent);
+    }
   }
 
   private drawToolPreview(C: Record<string, string>) {
@@ -1562,7 +1748,7 @@ export class Editor2D {
         ctx.lineWidth = 2;
         ctx.stroke();
       }
-    } else if ((this.tool === 'door' || this.tool === 'window' || this.tool === 'garage' || this.tool === 'paste') && h) {
+    } else if ((this.tool === 'door' || this.tool === 'window' || this.tool === 'garage' || this.tool === 'glazed' || this.tool === 'paste') && h) {
       const fp = this.wallAt(h, 10 / this.view.scale);
       const spec = this.openingSpec();
       if (fp && spec) {
@@ -1602,6 +1788,16 @@ export class Editor2D {
           ctx.fillStyle = C.accent;
           ctx.fillRect(q.x - 3, q.y - 3, 6, 6);
         }
+      }
+    } else if (this.tool === 'furniture' && h) {
+      const at = this.furniturePlacement(h);
+      const c = catalogueItem(this.furnitureKind);
+      if (at && c) {
+        const ghost: Furniture = { id: '', kind: c.kind, x: at.at.x, y: at.at.y, angle: at.angle, width: c.width, depth: c.depth, height: c.height, open: true, stool: true };
+        ctx.save();
+        ctx.globalAlpha = 0.6;
+        this.drawPiece(ghost, C.accent, hexAlpha(C.accent, 0.15));
+        ctx.restore();
       }
     } else if (this.tool === 'stair' && h) {
       const start = this.stairStart;
@@ -1663,6 +1859,8 @@ export class Editor2D {
       ctx.lineWidth = 1;
       this.line(wallPoint(fp, lo - 0.1, side * (half + 0.34)), wallPoint(fp, hi + 0.1, side * (half + 0.34)));
       ctx.setLineDash([]);
+    } else if (o.kind === 'glazed') {
+      this.drawGlazed(fp, o, half);
     } else if (o.kind === 'window') {
       this.line(wallPoint(fp, lo, half * 0.25), wallPoint(fp, hi, half * 0.25));
       this.line(wallPoint(fp, lo, -half * 0.25), wallPoint(fp, hi, -half * 0.25));
@@ -1689,6 +1887,75 @@ export class Editor2D {
       ctx.stroke();
       ctx.setLineDash([]);
     }
+  }
+
+  /** Glazed doors: the glass line(s), and the leaves' swing, slide or fold. */
+  private drawGlazed(fp: Footprint, o: Opening, half: number) {
+    const ctx = this.ctx;
+    const lo = o.offset - o.width / 2;
+    const hi = o.offset + o.width / 2;
+    const side = o.swingFlip ? -1 : 1;
+    const style = o.style ?? 'french';
+    const thin = () => {
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+    };
+    if (style === 'sliding') {
+      // Two panes on two tracks, overlapping in the middle.
+      const mid = o.offset;
+      const a = 0.18 * half;
+      this.line(wallPoint(fp, lo, a), wallPoint(fp, mid + 0.05, a));
+      this.line(wallPoint(fp, mid - 0.05, -a), wallPoint(fp, hi, -a));
+      // The arrow on the moving pane.
+      const movesToLo = !o.hingeFlip;
+      const from = movesToLo ? mid + (hi - mid) * 0.7 : mid - (mid - lo) * 0.7;
+      const to = movesToLo ? mid + (hi - mid) * 0.2 : mid - (mid - lo) * 0.2;
+      const y = movesToLo ? -a - half * 0.5 : a + half * 0.5;
+      thin();
+      this.line(wallPoint(fp, from, y), wallPoint(fp, to, y));
+      ctx.setLineDash([]);
+      const tip = wallPoint(fp, to, y);
+      const back = movesToLo ? 0.12 : -0.12;
+      this.line(tip, wallPoint(fp, to + back, y + 0.06));
+      this.line(tip, wallPoint(fp, to + back, y - 0.06));
+      return;
+    }
+    this.line(wallPoint(fp, lo, 0), wallPoint(fp, hi, 0));
+    thin();
+    if (style === 'french') {
+      // Two leaves, each swinging from its jamb.
+      const w = o.width / 2;
+      for (const [hingeU, otherU] of [[lo, o.offset], [hi, o.offset]]) {
+        const hinge = wallPoint(fp, hingeU, side * half);
+        const leafEnd = add(hinge, scale(fp.n, side * w));
+        ctx.setLineDash([]);
+        this.line(hinge, leafEnd);
+        ctx.setLineDash([3, 3]);
+        const hs = this.toScreen(hinge);
+        const closed = wallPoint(fp, otherU, side * half);
+        const a1 = Math.atan2(leafEnd.y - hinge.y, leafEnd.x - hinge.x);
+        const a2 = Math.atan2(closed.y - hinge.y, closed.x - hinge.x);
+        let delta = a2 - a1;
+        while (delta > Math.PI) delta -= 2 * Math.PI;
+        while (delta < -Math.PI) delta += 2 * Math.PI;
+        ctx.beginPath();
+        ctx.arc(hs.x, hs.y, w * this.view.scale, a1, a2, delta < 0);
+        ctx.stroke();
+      }
+    } else {
+      // Bi-fold: a zigzag of leaves folding out to one side.
+      const n = Math.max(2, Math.round((o.width - 0.12) / 0.8));
+      const w = o.width / n;
+      const depth = Math.min(w * 0.45, 0.35);
+      ctx.beginPath();
+      for (let k = 0; k <= n; k++) {
+        const p = this.toScreen(wallPoint(fp, lo + k * w, side * (half + (k % 2 ? depth : 0))));
+        if (k) ctx.lineTo(p.x, p.y);
+        else ctx.moveTo(p.x, p.y);
+      }
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
   }
 
   private drawGrid(W: number, H: number, minor: string, major: string) {
@@ -1747,11 +2014,16 @@ export class Editor2D {
 
   private guide(a: Vec2, b: Vec2, color: string) {
     const ctx = this.ctx;
-    ctx.strokeStyle = hexAlpha(color, 0.6);
-    ctx.setLineDash([2, 4]);
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = hexAlpha(color, 0.9);
+    ctx.setLineDash([6, 4]);
+    ctx.lineWidth = 1.5;
     this.line(a, b);
     ctx.setLineDash([]);
+    // A small ring on what it lines up with.
+    const q = this.toScreen(a);
+    ctx.beginPath();
+    ctx.arc(q.x, q.y, 4, 0, Math.PI * 2);
+    ctx.stroke();
   }
 
   private path(pts: Vec2[]) {
@@ -1784,6 +2056,11 @@ function levelBelowOf(store: Store): Level {
 function local(fp: Footprint, p: Vec2) {
   const r = sub(p, fp.a);
   return { u: dot(r, fp.dir), v: dot(r, fp.n) };
+}
+
+function normAngle(a: number): number {
+  const t = a % (Math.PI * 2);
+  return t < 0 ? t + Math.PI * 2 : t;
 }
 
 function hexAlpha(color: string, a: number): string {

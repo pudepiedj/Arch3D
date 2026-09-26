@@ -11,8 +11,8 @@ import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import { openingsOf } from '../model/openings';
 import { detectRooms } from '../model/rooms';
 import { ceilingHeight, levelElevation } from '../model/building';
-import { type Shape, subtract } from '../model/clip';
-import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs } from '../model/roof';
+import { type Shape, intersectAll, subtract } from '../model/clip';
+import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs, planeOf } from '../model/roof';
 import { type StairGeometry, stairGeometry, stairSurfaceAt, stairwells } from '../model/stairs';
 import { type RailLine, againstWall, buildRails, onSegment } from './rails';
 import { pillarHeight } from '../model/pillars';
@@ -26,7 +26,9 @@ import {
 } from '../model/roofitems';
 import { patioShapes } from '../model/patios';
 import { crownBase, trunkRadius } from '../model/trees';
-import type { Building, Opening, Patio, Pillar, Plan, Tree } from '../model/types';
+import { standingHeight } from '../model/furniture';
+import { buildFurniture } from './furniture3d';
+import type { Building, Furniture, Opening, Patio, Pillar, Plan, Tree } from '../model/types';
 
 export interface Materials {
   wall: THREE.Material;
@@ -286,7 +288,8 @@ export interface LevelOptions {
   /** Stairs standing on this floor. */
   stairs?: StairGeometry[];
   /** The roofs over this floor (none when it is cut away). */
-  roofs?: RoofGeometry[];
+  /** Roofs, each flagged if it is vaulted (open to the room below, lined with plaster). */
+  roofs?: (RoofGeometry & { vaulted?: boolean; glazedGables?: boolean })[];
   /** Chimney stacks and solar arrays on this floor's roofs (none when cut away). */
   chimneys?: ChimneyGeometry[];
   solar?: SolarGeometry[];
@@ -296,6 +299,8 @@ export interface LevelOptions {
   /** Patios, decks and gravel, with their outlines less the house. */
   patios?: { patio: Patio; shapes: Shape[] }[];
   trees?: Tree[];
+  /** Furniture, each with the height of what it stands on (floor, patio or deck). */
+  furniture?: (Furniture & { base: number })[];
   /** How leafy the broad-leaved trees are: 1 summer, 0 bare; `autumn` colours them. */
   season?: Season;
 }
@@ -324,20 +329,24 @@ export function buildBuildingObject(
     const rooflights =
       i === cut ? [] : Object.values(level.rooflights ?? {}).flatMap((r) => rooflightGeometry(b, level, r) ?? []);
     const kerbs = rooflights.filter((r) => r.kind === 'kerb');
+    const roofs = i === cut ? [] : levelRoofs(b, level);
+    // Vaulted roofs have no flat ceiling under them: cut their outline out of the ceilings.
+    const vaults = roofs.filter((r) => r.roof.vaulted && r.roof.kind !== 'flat' && r.geometry).map((r) => [r.ring]);
     const obj = buildPlanObject(level, mats, {
       ceiling: i === cut ? null : ceilingHeight(b, level),
       floorHoles: below ? stairwells(below) : [],
       wellExits: below ? Object.values(below.stairs ?? {}).map((st) => stairGeometry(st, below.height).path.at(-1)!) : [],
-      ceilingHoles: [...stairwells(level), ...kerbs.map((r) => [r.footprint])],
+      ceilingHoles: [...stairwells(level), ...kerbs.map((r) => [r.footprint]), ...vaults],
       slab: level.slab,
       stairs: Object.values(level.stairs ?? {}).map((st) => stairGeometry(st, level.height)),
       pillars: Object.values(level.pillars ?? {}).map((q) => ({ ...q, height: pillarHeight(b, level, q) })),
       chimneys: i === cut ? [] : Object.values(level.chimneys ?? {}).map((c) => chimneyGeometry(b, level, c)),
       solar: i === cut ? [] : Object.values(level.solar ?? {}).flatMap((sa) => solarGeometry(b, level, sa) ?? []),
       rooflights,
-      roofs: i === cut ? [] : levelRoofs(b, level).flatMap((r) => (r.geometry ? [r.geometry] : [])),
+      roofs: roofs.flatMap((r) => (r.geometry ? [{ ...r.geometry, vaulted: !!r.roof.vaulted && r.roof.kind !== 'flat', glazedGables: !!r.roof.glazedGables && r.roof.kind !== 'flat' }] : [])),
       patios: Object.values(level.patios ?? {}).map((patio) => ({ patio, shapes: patioShapes(level, patio) })),
       trees: Object.values(level.trees ?? {}),
+      furniture: Object.values(level.furniture ?? {}).map((f) => ({ ...f, base: standingHeight(level, f) })),
       season,
     });
     obj.position.y = levelElevation(b, level.id);
@@ -413,7 +422,10 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   }
 
   const wells = (opts.rooflights ?? []).filter((r) => r.kind === 'kerb').map((r) => r.footprint);
-  for (const r of opts.roofs ?? []) group.add(buildRoofObject(r, mats, wells));
+  // Windows lying in a slope get their openings cut through the roof, so a vaulted room
+  // (or the loft) sees the sky through them.
+  const slopeHoles = (opts.rooflights ?? []).filter((r) => r.kind === 'slope').flatMap((r) => r.windows.map((w) => w.frame.map((p) => ({ x: p.x, y: p.y }))));
+  for (const r of opts.roofs ?? []) group.add(buildRoofObject(r, mats, wells, slopeHoles));
   if (opts.rooflights?.length) group.add(buildRooflights(opts.rooflights, opts.ceiling ?? 0, mats));
   for (const c of opts.chimneys ?? []) group.add(buildChimney(c, mats));
   if (opts.solar?.length) group.add(buildSolar(opts.solar, mats));
@@ -431,6 +443,13 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
 
   if (opts.patios?.length) group.add(buildPatios(opts.patios, mats));
   for (const t of opts.trees ?? []) group.add(buildTree(t, mats, opts.season ?? { leaf: 1, autumn: false }));
+  for (const f of opts.furniture ?? []) {
+    const obj = buildFurniture(f);
+    // Just above the floor, so a piece never fights with it.
+    obj.position.set(f.x, f.base + 0.006, f.y);
+    obj.rotation.y = -f.angle;
+    group.add(obj);
+  }
 
   const wallMesh = new THREE.Mesh(sides.geometry(), mats.wall);
   wallMesh.castShadow = wallMesh.receiveShadow = true;
@@ -631,6 +650,100 @@ function buildTree(t: Tree, mats: Materials, season: Season): THREE.Group {
   return g;
 }
 
+/**
+ * A window filling a gable triangle, in the gable's own plane (x along the wall, y up): the
+ * opening (the gable less a margin, above a band over the wall plate), the glass inside a
+ * slim frame, and upright glazing bars about every 80 cm. Null if the gable is too small.
+ */
+function gableWindow(face: Vec2[]): { opening: Vec2[]; glass: Vec2[]; bars: Vec2[][] } | null {
+  const MARGIN = 0.15;
+  const FRAME_W = 0.06;
+  let ring = face.filter((p, i) => {
+    const a = face[(i - 1 + face.length) % face.length];
+    const b = face[(i + 1) % face.length];
+    return Math.abs((p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x)) > 1e-9;
+  });
+  if (ring.length < 3) return null;
+  if (polygonSign(ring) < 0) ring = [...ring].reverse();
+  const base = Math.min(...ring.map((p) => p.y));
+  const inset = insetConvex(ring, MARGIN);
+  if (!inset) return null;
+  // Keep clear of the wall plate: nothing lower than a band above it.
+  const band: Vec2[] = [
+    { x: -1e4, y: base + MARGIN + 0.05 },
+    { x: 1e4, y: base + MARGIN + 0.05 },
+    { x: 1e4, y: 1e4 },
+    { x: -1e4, y: 1e4 },
+  ];
+  const opening = intersectAll(inset, band)[0]?.[0];
+  if (!opening || Math.abs(polygonSign(opening) * areaOf(opening)) < 0.15) return null;
+  const glass = insetConvex(polygonSign(opening) < 0 ? [...opening].reverse() : opening, FRAME_W);
+  if (!glass) return null;
+  // Glazing bars: upright, from the bottom of the glass to its sloping top.
+  const xs = glass.map((p) => p.x);
+  const x0 = Math.min(...xs);
+  const x1 = Math.max(...xs);
+  const n = Math.max(0, Math.round((x1 - x0) / 0.8) - 1);
+  const bars: Vec2[][] = [];
+  const bottom = Math.min(...glass.map((p) => p.y));
+  for (let i = 1; i <= n; i++) {
+    const x = x0 + ((x1 - x0) * i) / (n + 1);
+    const top = Math.min(topAt(glass, x - 0.02), topAt(glass, x + 0.02));
+    if (top - bottom > 0.1) {
+      bars.push([
+        { x: x - 0.02, y: bottom },
+        { x: x + 0.02, y: bottom },
+        { x: x + 0.02, y: top },
+        { x: x - 0.02, y: top },
+      ]);
+    }
+  }
+  return { opening, glass, bars };
+}
+
+/** A convex, counter-clockwise polygon moved inwards by d (null if it vanishes). */
+function insetConvex(ring: Vec2[], d: number): Vec2[] | null {
+  const n = ring.length;
+  const lines = ring.map((a, i) => {
+    const b = ring[(i + 1) % n];
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const dir = { x: (b.x - a.x) / len, y: (b.y - a.y) / len };
+    const inward = { x: -dir.y, y: dir.x };
+    return { p: { x: a.x + inward.x * d, y: a.y + inward.y * d }, dir };
+  });
+  const out: Vec2[] = [];
+  for (let i = 0; i < n; i++) {
+    const l1 = lines[(i - 1 + n) % n];
+    const l2 = lines[i];
+    const den = l1.dir.x * l2.dir.y - l1.dir.y * l2.dir.x;
+    if (Math.abs(den) < 1e-9) continue;
+    const t = ((l2.p.x - l1.p.x) * l2.dir.y - (l2.p.y - l1.p.y) * l2.dir.x) / den;
+    out.push({ x: l1.p.x + l1.dir.x * t, y: l1.p.y + l1.dir.y * t });
+  }
+  if (out.length < 3 || polygonSign(out) < 0 || areaOf(out) < 0.01) return null;
+  return out;
+}
+
+function areaOf(ring: Vec2[]): number {
+  let a = 0;
+  ring.forEach((p, k) => {
+    const q = ring[(k + 1) % ring.length];
+    a += p.x * q.y - q.x * p.y;
+  });
+  return Math.abs(a) / 2;
+}
+
+/** The highest point of a polygon's outline at x. */
+function topAt(ring: Vec2[], x: number): number {
+  let top = -Infinity;
+  ring.forEach((a, k) => {
+    const b = ring[(k + 1) % ring.length];
+    if ((a.x - x) * (b.x - x) > 0 || a.x === b.x) return;
+    top = Math.max(top, a.y + ((x - a.x) / (b.x - a.x)) * (b.y - a.y));
+  });
+  return top;
+}
+
 /** +1 for a counter-clockwise ring (in plan coordinates), -1 for clockwise. */
 function polygonSign(ring: Vec2[]): number {
   let a = 0;
@@ -793,10 +906,20 @@ function buildSolar(arrays: SolarGeometry[], mats: Materials): THREE.Group {
 }
 
 /** Roof slopes, gable walls, fascia boards along the eaves, or a flat slab. */
-function buildRoofObject(r: RoofGeometry, mats: Materials, holes: Vec2[][] = []): THREE.Group {
+function buildRoofObject(
+  r: RoofGeometry & { vaulted?: boolean; glazedGables?: boolean },
+  mats: Materials,
+  holes: Vec2[][] = [],
+  slopeHoles: Vec2[][] = [],
+): THREE.Group {
   const g = new THREE.Group();
   g.name = 'roof';
   const covering = new Mesher();
+  const lining = new Mesher();
+  const gableFrames = new Mesher();
+  const gableGlass = new Mesher();
+  /** Plaster under a vaulted roof: just below the covering, seen from the room. */
+  const LINING = 0.03;
   const flatTop = new Mesher();
   const gableWalls = new Mesher();
   const trim = new Mesher();
@@ -811,9 +934,29 @@ function buildRoofObject(r: RoofGeometry, mats: Materials, holes: Vec2[][] = [])
       const ux = (far.x - o.x) / len;
       const uy = (far.y - o.y) / len;
       const flat = f.pts.map((p) => new THREE.Vector2((p.x - o.x) * ux + (p.y - o.y) * uy, p.z));
-      for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(flat, [])) {
-        gableWalls.tri(v(f.pts[i]), v(f.pts[j]), v(f.pts[k]), new THREE.Vector3(0, 0, 0));
+      const glazing = r.glazedGables ? gableWindow(flat.map((q) => ({ x: q.x, y: q.y }))) : null;
+      if (!glazing) {
+        for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(flat, [])) {
+          gableWalls.tri(v(f.pts[i]), v(f.pts[j]), v(f.pts[k]), new THREE.Vector3(0, 0, 0));
+        }
+        continue;
       }
+      // The gable wall with the window's opening in it, then the frame, glass and glazing bars.
+      const at = (q: Vec2, off = 0) => new THREE.Vector3(o.x + q.x * ux - uy * off, q.y, o.y + q.x * uy + ux * off);
+      const none = new THREE.Vector3(0, 0, 0);
+      const fill = (m: Mesher, outer: Vec2[], holesIn: Vec2[][], off = 0) => {
+        const all = [outer, ...holesIn].flat();
+        const tris = THREE.ShapeUtils.triangulateShape(
+          outer.map((q) => new THREE.Vector2(q.x, q.y)),
+          holesIn.map((h) => h.map((q) => new THREE.Vector2(q.x, q.y))),
+        );
+        for (const [i, j, k] of tris) m.tri(at(all[i], off), at(all[j], off), at(all[k], off), none);
+      };
+      const face = flat.map((q) => ({ x: q.x, y: q.y }));
+      fill(gableWalls, face, [glazing.opening]);
+      fill(gableFrames, glazing.opening, [glazing.glass]);
+      fill(gableGlass, glazing.glass, []);
+      for (const bar of glazing.bars) for (const off of [-0.012, 0.012]) fill(gableFrames, bar, [], off);
       continue;
     }
     if (f.kind === 'flat' && holes.some((h) => h.some((p) => pointInPolygon(p, f.pts)))) {
@@ -824,6 +967,33 @@ function buildRoofObject(r: RoofGeometry, mats: Materials, holes: Vec2[][] = [])
         flatTop.hshape(piece, top - FLAT_THICKNESS, false);
       }
       continue;
+    }
+    if (f.kind !== 'flat' && (r.vaulted || slopeHoles.some((h) => h.some((p) => pointInPolygon(p, f.pts))))) {
+      // A slope with roof-window openings cut through it, and (vaulted) its plaster lining.
+      const plane = planeOf(f.pts);
+      if (plane) {
+        const cut = slopeHoles.filter((h) => h.some((p) => pointInPolygon(p, f.pts)));
+        for (const [outer, ...inner] of cut.length ? subtract(f.pts, cut.map((h) => [h])) : [[f.pts.map((p) => ({ x: p.x, y: p.y }))]]) {
+          const all = [outer, ...inner].flat();
+          const tris = THREE.ShapeUtils.triangulateShape(
+            outer.map((p) => new THREE.Vector2(p.x, p.y)),
+            inner.map((h) => h.map((p) => new THREE.Vector2(p.x, p.y))),
+          );
+          for (const [i, j, k] of tris) {
+            const [a, b2, c] = [all[i], all[j], all[k]];
+            covering.tri(v({ ...a, z: plane(a) }), v({ ...b2, z: plane(b2) }), v({ ...c, z: plane(c) }), up);
+            if (r.vaulted) {
+              lining.tri(
+                v({ ...a, z: plane(a) - LINING }),
+                v({ ...b2, z: plane(b2) - LINING }),
+                v({ ...c, z: plane(c) - LINING }),
+                up.clone().negate(),
+              );
+            }
+          }
+        }
+        continue;
+      }
     }
     // Slopes and flat tops are never vertical, so they can be triangulated in plan.
     const tris = THREE.ShapeUtils.triangulateShape(f.pts.map((p) => new THREE.Vector2(p.x, p.y)), []);
@@ -842,6 +1012,9 @@ function buildRoofObject(r: RoofGeometry, mats: Materials, holes: Vec2[][] = [])
     [flatTop, mats.flatRoof],
     [gableWalls, mats.wall],
     [trim, mats.frame],
+    [lining, mats.ceiling],
+    [gableFrames, mats.darkFrame],
+    [gableGlass, mats.glass],
   ] as const) {
     const mesh = new THREE.Mesh(m.geometry(), mat);
     mesh.castShadow = mesh.receiveShadow = true;
@@ -958,6 +1131,8 @@ function buildOpeningObject(fp: Footprint, o: Opening, mats: Materials): THREE.O
       // Rolled up: only the bottom rail shows, tucked under the casing.
       box(o.width - 0.04, 0.05, 0.04, o.offset, top - 0.03, face, mats.garage);
     }
+  } else if (o.kind === 'glazed') {
+    buildGlazed(g, o, t, mats);
   } else {
     // Door lining covers the reveals.
     const depth = t + 0.01;
@@ -988,6 +1163,87 @@ function buildOpeningObject(fp: Footprint, o: Opening, mats: Materials): THREE.O
     g.add(pivot);
   }
   return g;
+}
+
+/**
+ * A floor-to-ceiling glazed door in the wall's local frame (u along, y up, v across): a slim
+ * outer frame, and glass leaves that swing (French), slide (one behind the other) or fold
+ * back into a stack at one end (bi-fold) when shown open.
+ */
+function buildGlazed(g: THREE.Group, o: Opening, t: number, mats: Materials) {
+  const lo = o.offset - o.width / 2;
+  const hi = o.offset + o.width / 2;
+  const top = o.sill + o.height;
+  const F = 0.06; // outer frame
+  const S = 0.05; // leaf frame (sash)
+  const depth = Math.min(0.1, t);
+  const box = (w: number, h: number, d: number, x: number, y: number, z: number, parent: THREE.Object3D, mat = mats.darkFrame) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    parent.add(m);
+  };
+  box(F, o.height, depth, lo + F / 2, o.sill + o.height / 2, 0, g);
+  box(F, o.height, depth, hi - F / 2, o.sill + o.height / 2, 0, g);
+  box(o.width, F, depth, o.offset, top - F / 2, 0, g);
+  box(o.width, 0.02, depth + 0.04, o.offset, o.sill + 0.01, 0, g); // threshold
+
+  const clearW = o.width - 2 * F;
+  const leafH = o.height - F - 0.02;
+  /** A glass leaf, `w` wide, running from its pivot at x = 0 towards +x (or -x if `dir` is -1). */
+  const leaf = (w: number, dir: number) => {
+    const p = new THREE.Group();
+    const cx = (dir * w) / 2;
+    box(S, leafH, 0.05, dir * (S / 2), leafH / 2, 0, p);
+    box(S, leafH, 0.05, dir * (w - S / 2), leafH / 2, 0, p);
+    box(w, S, 0.05, cx, leafH - S / 2, 0, p);
+    box(w, S * 1.4, 0.05, cx, (S * 1.4) / 2, 0, p);
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(w - 2 * S, leafH - S * 2.4), mats.glass);
+    glass.position.set(cx, S * 1.4 + (leafH - S * 2.4) / 2, 0);
+    p.add(glass);
+    p.position.y = o.sill + 0.02;
+    g.add(p);
+    return p;
+  };
+  const side = o.swingFlip ? -1 : 1; // which face the leaves open towards
+  const style = o.style ?? 'french';
+  if (style === 'french') {
+    const w = clearW / 2;
+    const a = o.open ? THREE.MathUtils.degToRad(85) : 0;
+    const l = leaf(w, 1);
+    l.position.set(lo + F, l.position.y, side * (depth / 2 - 0.025));
+    l.rotation.y = -side * a;
+    const r = leaf(w, -1);
+    r.position.set(hi - F, r.position.y, side * (depth / 2 - 0.025));
+    r.rotation.y = side * a;
+  } else if (style === 'sliding') {
+    // Two leaves on two tracks; open, the moving one sits behind the fixed one.
+    const w = clearW / 2 + 0.03;
+    const fixedAtLo = !o.hingeFlip;
+    const fixed = leaf(w, 1);
+    fixed.position.set(fixedAtLo ? lo + F : hi - F - w, fixed.position.y, 0.028);
+    const moving = leaf(w, 1);
+    const shut = fixedAtLo ? hi - F - w : lo + F;
+    const open = fixedAtLo ? lo + F + 0.02 : hi - F - w - 0.02;
+    moving.position.set(o.open ? open : shut, moving.position.y, -0.028);
+  } else {
+    // Bi-fold: n leaves; open, they fold into a stack at one end.
+    const n = Math.max(2, Math.round(clearW / 0.8));
+    const w = clearW / n;
+    const atLo = !o.hingeFlip;
+    for (let k = 0; k < n; k++) {
+      const dir = atLo ? 1 : -1;
+      if (!o.open) {
+        const l = leaf(w, dir);
+        l.position.set(atLo ? lo + F + k * w : hi - F - k * w, l.position.y, 0);
+      } else {
+        const l = leaf(w, 1);
+        const u = atLo ? lo + F + 0.03 + k * 0.06 : hi - F - 0.03 - k * 0.06;
+        l.position.set(u, l.position.y, side * (depth / 2));
+        l.rotation.y = -side * (Math.PI / 2);
+      }
+    }
+  }
 }
 
 export function disposeObject(obj: THREE.Object3D) {

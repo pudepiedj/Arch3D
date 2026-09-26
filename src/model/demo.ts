@@ -2,6 +2,8 @@ import { addLevelOnTop, createBuilding } from './building';
 import { addPillar, pillarsForSection } from './pillars';
 import { addPatio } from './patios';
 import { addTree } from './trees';
+import { addFurniture, againstWall } from './furniture';
+import { computeFootprints } from './joints';
 import { addChimney, addRooflight, addSolarArray } from './roofitems';
 import { addStair } from './stairs';
 import { addWall, deleteWall, findWallInterior } from './plan';
@@ -30,7 +32,7 @@ export function demoBuilding(): Building {
   };
   const at = (p: Plan, x: number, y: number, kind: OpeningKind) => {
     const hit = findWallInterior(p, { x, y }, 0.01);
-    if (hit) placeOpening(p, hit.wallId, hit.u, kind);
+    return hit ? placeOpening(p, hit.wallId, hit.u, kind) : null;
   };
   /** A window bay on the front: its three walls, with the house wall across it removed. */
   const bay = (level: Level) => {
@@ -75,7 +77,8 @@ export function demoBuilding(): Building {
     [9.5, 10.5],
     [9.5, 8],
   ], false);
-  ground.roofAreas = [{ x: 8, y: 9.25, roof: { kind: 'gable', pitch: 35, overhang: 0.3 } }];
+  // Its ceiling is vaulted: open up to the slopes, with a roof window in one of them.
+  ground.roofAreas = [{ x: 8, y: 9.25, roof: { kind: 'gable', pitch: 35, overhang: 0.3, vaulted: true, glazedGables: true } }];
 
   at(ground, 4.6, 0, 'door');
   at(ground, 8, 0, 'window');
@@ -91,6 +94,9 @@ export function demoBuilding(): Building {
   at(ground, 8, 8, 'door');
   at(ground, 8, 10.5, 'window');
   at(ground, 6.5, 9.25, 'window');
+  // French doors from the garden room out onto the deck, shown open.
+  const french = at(ground, 9.5, 9.25, 'glazed');
+  if (french) Object.assign(french, { width: 1.8, open: true });
 
   // A covered terrace behind the bedroom: a flat roof on pillars, against the house wall.
   ground.roofSections = {
@@ -122,6 +128,9 @@ export function demoBuilding(): Building {
   const box = addRooflight(ground, { x: 11.5, y: 2.75 });
   Object.assign(box, { count: 3, angle: Math.PI, blinds: true, width: 0.55, length: 0.98 });
 
+  const velux = addRooflight(ground, { x: 7.35, y: 9.4 });
+  Object.assign(velux, { count: 1, width: 0.78, length: 1.18, blinds: false });
+
   // A straight stair along the back wall of the bedroom, rising towards the left.
   addStair(ground, 4.9, 7.4, Math.PI, 'straight');
 
@@ -146,9 +155,43 @@ export function demoBuilding(): Building {
   at(first, 7, 5, 'door');
   // Main roof: gabled, with a cross gable over the bay (its front edge set to a gable end).
   first.roof = { kind: 'gable', pitch: 35, overhang: 0.3, edges: [{ x: 2.4, y: -1.15, type: 'gable' }] };
+  // Bedrooms and bathroom.
+  furnish(first, 'double', 0.5, 6.2);
+  furnish(first, 'radiator', 0.25, 4.0);
+  furnish(first, 'wardrobe', 3.0, 7.6);
+  furnish(first, 'bedside', 0.3, 7.3);
+  furnish(first, 'single', 9.7, 1.2);
+  furnish(first, 'workstation', 8.8, 4.6);
+  furnish(first, 'bath', 9.7, 6.5);
+  furnish(first, 'basin', 8.6, 5.3);
+  furnish(first, 'wc', 9.4, 5.3);
+
   // A chimney stack astride the ridge, and solar panels on the back slope.
   const chimney = addChimney(first, { x: 8.6, y: 4 });
   chimney.pots = 2;
   addSolarArray(first, { x: 4.6, y: 6.3 });
+  // Downstairs: the grand piano in the living room, dining, kitchen, and the terrace.
+  addFurniture(ground, 'grand', { x: 3.3, y: 2.1 }, 0);
+  furnish(ground, 'sofa3', 0.4, 2.3);
+  addFurniture(ground, 'rug', { x: 1.9, y: 2.3 }, Math.PI / 2);
+  addFurniture(ground, 'dining6', { x: 2.6, y: 5.7 }, 0);
+  furnish(ground, 'fireplace', 4.6, 3.9);
+  furnish(ground, 'woodburner', 5.5, 5.4);
+  furnish(ground, 'radiator', 8.0, 10.25);
+  furnish(ground, 'sideboard', 0.4, 5.9);
+  for (const [kind, x] of [['base', 6.55], ['base', 7.15], ['sink', 7.95], ['hob', 8.75], ['base', 9.35]] as const) furnish(ground, kind, x, 0.3);
+  furnish(ground, 'fridge', 9.7, 4.2);
+  addFurniture(ground, 'dininground', { x: 7.9, y: 3.0 }, 0);
+  addFurniture(ground, 'gardenset', { x: 2.2, y: 9.7 }, 0);
+  addFurniture(ground, 'parasol', { x: 2.2, y: 9.7 }, 0);
+  addFurniture(ground, 'lounger', { x: 11.2, y: 8.6 }, 0);
+  addFurniture(ground, 'bench', { x: 5.0, y: 10.9 }, Math.PI);
   return b;
+}
+
+/** Place a piece with its back against the wall nearest to (x, y). */
+function furnish(level: Level, kind: string, x: number, y: number) {
+  const f = addFurniture(level, kind, { x, y });
+  const wall = againstWall(computeFootprints(level).values(), { x, y }, f.depth, 1);
+  if (wall) Object.assign(f, { x: wall.at.x, y: wall.at.y, angle: wall.angle });
 }
