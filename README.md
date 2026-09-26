@@ -35,6 +35,7 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 | **Solar** | Click on a roof slope to lay a solar panel array on it. |
 | **Rooflight** | Click on a roof. A flat roof gets a rooflight box; a sloping roof gets a window lying in the slope. |
 | **Patio** (T) | Choose Paving, Decking or Gravel, then click the corners of the area. Click the first corner, double-click or press Enter to finish. |
+| **Tree** (E) | Choose Broadleaf or Conifer, then click to plant one. Drag the trunk to move it; set the height and crown spread in the panel. |
 | **Split** (X) | Click on a wall to add a joint, which is then selected so you can drag it (to make a bay, a nib or a step in the wall). |
 
 **Copying doors and windows exactly:** select one and press **Copy** in the panel (Ctrl/⌘+C).
@@ -63,6 +64,13 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 - **On a sloping roof:** the windows lie in the slope.
 - **Panel settings:** the number of windows, window width and length, box slope and kerb height, and rotating the box by 90°.
 - **Show open** tilts the windows out at the bottom, **Blinds down** draws the blinds, and **Solar motor** adds or removes the little solar strip on each frame.
+
+**Sun and shadows (the Sun button):** puts the sun where it really is for a date, a time and the house's location, with shadows.
+- **Date** slider covering the whole year, with buttons for the equinoxes and solstices and **Now**. **Time** slider in 5-minute steps, in this device's clock time (so summer time is included). **Play the day** runs from sunrise to sunset.
+- The panel shows the sun's height and compass direction, and sunrise and sunset.
+- **Location and orientation:** latitude and longitude (from any online map, or **Use this device's location**, which works only over https or on the computer itself), and the compass direction the top of the plan faces. The plan shows a north arrow. These are saved with the drawing.
+- Floors hidden by Cutaway still cast their shadows during a sun study. Broad-leaved trees are in leaf from May to October, turn in autumn and are bare in winter.
+- With the Sun button off, a fixed light is used that shows the model well at any hour.
 
 **Patios, decks and gravel:**
 - Draw them right up to the house; they are cut back to the outside face of the walls.
@@ -143,7 +151,7 @@ Everything visible is *derived* from that data on every change, so there is no s
 ## Not done yet
 
 - Dormers.
-- A real sun position from date, time, location and the house's orientation. For now the sun is fixed, up and to one side of the house.
+- A sun-hours map: how many hours of direct sun each part of a patio gets on a given day.
 - Furniture.
 - Textures and materials per room.
 - Curved walls.

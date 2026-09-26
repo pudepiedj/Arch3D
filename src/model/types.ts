@@ -108,6 +108,19 @@ export interface Patio {
   module: number;
 }
 
+export type TreeKind = 'deciduous' | 'conifer';
+
+/** A tree in the garden: shade in summer, and (if deciduous) far less in winter. */
+export interface Tree {
+  id: string;
+  x: number;
+  y: number;
+  kind: TreeKind;
+  height: number;
+  /** Diameter of the crown. */
+  spread: number;
+}
+
 /** A free-standing post, e.g. holding up a veranda or carport roof. */
 export interface Pillar {
   id: string;
@@ -211,6 +224,18 @@ export interface Level extends Plan {
   rooflights?: Record<string, Rooflight>;
   /** Patios, decks and gravelled areas. */
   patios?: Record<string, Patio>;
+  /** Trees (normally on the ground floor's plan). */
+  trees?: Record<string, Tree>;
+}
+
+/** Where the house is, for the sun. */
+export interface Site {
+  /** Degrees, north positive. */
+  latitude: number;
+  /** Degrees, east positive. */
+  longitude: number;
+  /** Compass direction the top of the plan faces, degrees clockwise from true north (0: north is up). */
+  north: number;
 }
 
 /** A building is a stack of levels, listed from the bottom up. */
@@ -218,6 +243,8 @@ export interface Building {
   version: 2;
   levels: Level[];
   nextId: number;
+  /** Location and orientation, for the sun. */
+  site?: Site;
 }
 
 export const DEFAULTS = {

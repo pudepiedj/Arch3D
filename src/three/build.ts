@@ -25,7 +25,8 @@ import {
   solarGeometry,
 } from '../model/roofitems';
 import { patioShapes } from '../model/patios';
-import type { Building, Opening, Patio, Pillar, Plan } from '../model/types';
+import { crownBase, trunkRadius } from '../model/trees';
+import type { Building, Opening, Patio, Pillar, Plan, Tree } from '../model/types';
 
 export interface Materials {
   wall: THREE.Material;
@@ -48,6 +49,10 @@ export interface Materials {
   gravel: THREE.Material;
   paveEdge: THREE.Material;
   deckEdge: THREE.Material;
+  bark: THREE.Material;
+  leaves: THREE.Material;
+  autumn: THREE.Material;
+  needles: THREE.Material;
 }
 
 export function createMaterials(): Materials {
@@ -80,6 +85,10 @@ export function createMaterials(): Materials {
     gravel: new THREE.MeshStandardMaterial({ color: 0xffffff, map: gravelTexture(), roughness: 1 }),
     paveEdge: new THREE.MeshStandardMaterial({ color: 0xb9b3a8, roughness: 0.9 }),
     deckEdge: new THREE.MeshStandardMaterial({ color: 0x8a6446, roughness: 0.75 }),
+    bark: new THREE.MeshStandardMaterial({ color: 0x5a4a3c, roughness: 1 }),
+    leaves: new THREE.MeshStandardMaterial({ color: 0x5f8f3e, roughness: 0.9, flatShading: true }),
+    autumn: new THREE.MeshStandardMaterial({ color: 0xb8742e, roughness: 0.9, flatShading: true }),
+    needles: new THREE.MeshStandardMaterial({ color: 0x2f5a36, roughness: 0.9, flatShading: true }),
   };
 }
 
@@ -286,13 +295,26 @@ export interface LevelOptions {
   pillars?: (Pillar & { height: number })[];
   /** Patios, decks and gravel, with their outlines less the house. */
   patios?: { patio: Patio; shapes: Shape[] }[];
+  trees?: Tree[];
+  /** How leafy the broad-leaved trees are: 1 summer, 0 bare; `autumn` colours them. */
+  season?: Season;
+}
+
+export interface Season {
+  leaf: number;
+  autumn: boolean;
 }
 
 /**
  * The whole building: each level built in its own coordinates and lifted to its elevation.
  * `upTo` hides the levels above it (a doll's-house cutaway) and that level's ceilings.
  */
-export function buildBuildingObject(b: Building, mats: Materials, upTo?: string): THREE.Group {
+export function buildBuildingObject(
+  b: Building,
+  mats: Materials,
+  upTo?: string,
+  season: Season = { leaf: 1, autumn: false },
+): THREE.Group {
   const group = new THREE.Group();
   const cut = upTo ? b.levels.findIndex((l) => l.id === upTo) : -1;
   b.levels.forEach((level, i) => {
@@ -315,6 +337,8 @@ export function buildBuildingObject(b: Building, mats: Materials, upTo?: string)
       rooflights,
       roofs: i === cut ? [] : levelRoofs(b, level).flatMap((r) => (r.geometry ? [r.geometry] : [])),
       patios: Object.values(level.patios ?? {}).map((patio) => ({ patio, shapes: patioShapes(level, patio) })),
+      trees: Object.values(level.trees ?? {}),
+      season,
     });
     obj.position.y = levelElevation(b, level.id);
     obj.name = `level:${level.id}`;
@@ -406,6 +430,7 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   }
 
   if (opts.patios?.length) group.add(buildPatios(opts.patios, mats));
+  for (const t of opts.trees ?? []) group.add(buildTree(t, mats, opts.season ?? { leaf: 1, autumn: false }));
 
   const wallMesh = new THREE.Mesh(sides.geometry(), mats.wall);
   wallMesh.castShadow = wallMesh.receiveShadow = true;
@@ -522,6 +547,86 @@ function buildPatios(list: { patio: Patio; shapes: Shape[] }[], mats: Materials)
     const side = new THREE.Mesh(edges.geometry(), patio.surface === 'decking' ? mats.deckEdge : mats.paveEdge);
     side.receiveShadow = side.castShadow = true;
     g.add(top, side);
+  }
+  return g;
+}
+
+/**
+ * A tree. Broad-leaved: a trunk forking into branches, under a crown of leafy clumps that
+ * thins in spring and autumn and is gone in winter (so its winter shadow is just twigs).
+ * Conifer: a trunk under tiers of cones, the same all year.
+ */
+function buildTree(t: Tree, mats: Materials, season: Season): THREE.Group {
+  const g = new THREE.Group();
+  g.name = `tree:${t.id}`;
+  g.position.set(t.x, 0, t.y);
+  const r = trunkRadius(t);
+  const base = crownBase(t);
+  const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.castShadow = m.receiveShadow = true;
+    g.add(m);
+    return m;
+  };
+  if (t.kind === 'conifer') {
+    add(new THREE.CylinderGeometry(r * 0.5, r, t.height * 0.9, 8), mats.bark, 0, t.height * 0.45, 0);
+    const tiers = 4;
+    const span = t.height - base;
+    for (let i = 0; i < tiers; i++) {
+      const bottom = base + (span * i) / tiers * 0.8;
+      const h = span - (bottom - base);
+      const radius = (t.spread / 2) * (1 - i / (tiers + 0.5));
+      add(new THREE.ConeGeometry(radius, h * 0.7, 10), mats.needles, 0, bottom + h * 0.35, 0);
+    }
+    return g;
+  }
+
+  // Pseudo-random but fixed for this tree, so it looks the same on every rebuild.
+  let seed = [...t.id].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) >>> 0;
+  const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const R = t.spread / 2;
+  const top = t.height;
+  const crownMid = (base + top) / 2;
+  const Rv = (top - base) / 2;
+  const fork = base + (top - base) * 0.15;
+  add(new THREE.CylinderGeometry(r * 0.7, r, fork, 8), mats.bark, 0, fork / 2, 0);
+
+  // Main branches from the fork out towards the crown, each with two twigs.
+  const limb = (a: THREE.Vector3, b: THREE.Vector3, r0: number, r1: number) => {
+    const d = new THREE.Vector3().subVectors(b, a);
+    const m = add(new THREE.CylinderGeometry(r1, r0, d.length(), 6), mats.bark, (a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+  };
+  const n = 5;
+  const forkPt = new THREE.Vector3(0, fork, 0);
+  for (let i = 0; i < n; i++) {
+    const a = ((i + rand() * 0.6) / n) * Math.PI * 2;
+    const end = new THREE.Vector3(Math.cos(a) * R * 0.6, crownMid + Rv * (0.2 + rand() * 0.4), Math.sin(a) * R * 0.6);
+    limb(forkPt, end, r * 0.6, r * 0.25);
+    for (let k = 0; k < 2; k++) {
+      const b = a + (k ? 0.5 : -0.5) + (rand() - 0.5) * 0.3;
+      const tip = new THREE.Vector3(Math.cos(b) * R * 0.95, end.y + Rv * (0.2 + rand() * 0.45), Math.sin(b) * R * 0.95);
+      limb(end, tip, r * 0.25, r * 0.08);
+    }
+  }
+
+  if (season.leaf > 0.05) {
+    // Clumps of leaves: one in the middle and a ring round it, in an ellipsoid the crown's size.
+    const mat = season.autumn ? mats.autumn : mats.leaves;
+    const s = 0.45 + 0.55 * season.leaf;
+    const clump = (x: number, y: number, z: number, size: number) => {
+      const m = add(new THREE.IcosahedronGeometry(size * s, 1), mat, x, y, z);
+      m.scale.set(1, Rv / R, 1);
+    };
+    clump(0, crownMid, 0, R * 0.62);
+    const ring = 7;
+    for (let i = 0; i < ring; i++) {
+      const a = ((i + rand() * 0.5) / ring) * Math.PI * 2;
+      const up = (rand() - 0.35) * Rv * 0.8;
+      clump(Math.cos(a) * R * 0.52, crownMid + up, Math.sin(a) * R * 0.52, R * (0.4 + rand() * 0.1));
+    }
+    clump(0, crownMid + Rv * 0.5, 0, R * 0.45);
   }
   return g;
 }

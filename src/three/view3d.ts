@@ -6,7 +6,8 @@ import { WalkWorld } from '../model/walk';
 import { detectRooms } from '../model/rooms';
 import { getLevel, levelElevation } from '../model/building';
 import type { Building, Level } from '../model/types';
-import { buildBuildingObject, createMaterials, disposeObject } from './build';
+import { type SunPosition, seasonAt, siteOf, sunDirection, sunPosition } from '../model/sun';
+import { type Season, buildBuildingObject, createMaterials, disposeObject } from './build';
 
 export type ViewMode = 'orbit' | 'walk';
 
@@ -22,6 +23,15 @@ export class View3D {
   private mats = createMaterials();
   private planObj: THREE.Object3D | null = null;
   private sun: THREE.DirectionalLight;
+  private hemi: THREE.HemisphereLight;
+  private ambient: THREE.AmbientLight;
+  /** The floors hidden by the cutaway, kept only to cast their shadows during a sun study. */
+  private shadowObj: THREE.Object3D | null = null;
+  private shadowOnly = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+  /** Sun study: the sun where it really is at `sunTime`; otherwise a fixed, flattering light. */
+  sunStudy = false;
+  sunTime = new Date();
+  private season: Season = { leaf: 1, autumn: false };
   private world: WalkWorld | null = null;
   /** Height of the walker's feet, and the smoothed eye height that follows it. */
   private foot = 0;
@@ -59,9 +69,10 @@ export class View3D {
 
     this.scene.background = new THREE.Color(0xcfe3f3);
     this.scene.fog = new THREE.Fog(0xcfe3f3, 60, 180);
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xb9b2a6, 1.4));
+    this.hemi = new THREE.HemisphereLight(0xffffff, 0xb9b2a6, 1.4);
     // Fill light so ceilings and rooms away from windows are not gloomy.
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+    this.ambient = new THREE.AmbientLight(0xffffff, 0.9);
+    this.scene.add(this.hemi, this.ambient);
     this.sun = new THREE.DirectionalLight(0xffffff, 2.2);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
@@ -129,37 +140,130 @@ export class View3D {
     this.rebuild();
   }
 
+  /** Turn the sun study on or off. */
+  setSunStudy(on: boolean) {
+    this.sunStudy = on;
+    // Sharper shadows for studying them.
+    this.sun.shadow.mapSize.set(on ? 4096 : 2048, on ? 4096 : 2048);
+    this.sun.shadow.map?.dispose();
+    this.sun.shadow.map = null;
+    this.rebuild();
+  }
+
+  /** Move the sun (and the seasons) to a moment. */
+  setSunTime(t: Date) {
+    this.sunTime = t;
+    const b = this.building;
+    const next = b ? seasonAt(t, siteOf(b).latitude) : this.season;
+    const leafChanged = Math.round(next.leaf * 10) !== Math.round(this.season.leaf * 10) || next.autumn !== this.season.autumn;
+    if (leafChanged) this.rebuild();
+    else this.placeSun();
+  }
+
+  /** The sun's position now, for the read-out. */
+  sunNow(): SunPosition | null {
+    if (!this.building) return null;
+    const site = siteOf(this.building);
+    return sunPosition(this.sunTime, site.latitude, site.longitude);
+  }
+
   private rebuild() {
     const b = this.building;
     if (!b) return;
-    if (this.planObj) {
-      this.scene.remove(this.planObj);
-      disposeObject(this.planObj);
+    for (const o of [this.planObj, this.shadowObj]) {
+      if (!o) continue;
+      this.scene.remove(o);
+      disposeObject(o);
     }
+    this.shadowObj = null;
+    this.season = seasonAt(this.sunTime, siteOf(b).latitude);
     const cut = this.mode === 'orbit' && this.cutaway ? this.activeId : undefined;
-    this.planObj = buildBuildingObject(b, this.mats, cut);
+    this.planObj = buildBuildingObject(b, this.mats, cut, this.season);
     this.scene.add(this.planObj);
-    this.world = new WalkWorld(b);
-
-    const bounds = buildingBounds(b);
-    if (bounds) {
-      const cx = (bounds.min.x + bounds.max.x) / 2;
-      const cy = (bounds.min.y + bounds.max.y) / 2;
-      const top = b.levels.reduce((z, l) => z + l.height, 0);
-      const r = Math.max(bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y, top) / 2 + 4;
-      this.sun.position.set(cx + r * 0.8, r * 1.6, cy + r * 0.5);
-      this.sun.target.position.set(cx, 0, cy);
-      const cam = this.sun.shadow.camera;
-      cam.left = cam.bottom = -r * 1.3;
-      cam.right = cam.top = r * 1.3;
-      cam.near = 0.5;
-      cam.far = r * 5;
-      cam.updateProjectionMatrix();
-      if (!this.framed) {
-        this.frame();
-        this.framed = true;
-      }
+    // The floors the cutaway hides still shade the garden in a sun study: keep them as
+    // invisible shadow casters.
+    if (cut && this.sunStudy) {
+      this.shadowObj = buildBuildingObject(b, this.mats, undefined, this.season);
+      this.shadowObj.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh) return;
+        m.material = this.shadowOnly;
+        m.castShadow = true;
+        m.receiveShadow = false;
+      });
+      this.scene.add(this.shadowObj);
     }
+    this.world = new WalkWorld(b);
+    this.placeSun();
+    if (buildingBounds(b) && !this.framed) {
+      this.frame();
+      this.framed = true;
+    }
+  }
+
+  /**
+   * Point the sun and fit its shadow camera tightly round everything that casts or catches
+   * a shadow (house, trees, patios, plus a margin of garden), seen from the sun.
+   */
+  private placeSun() {
+    const b = this.building;
+    const obj = this.shadowObj ?? this.planObj;
+    if (!b || !obj) return;
+    const box = new THREE.Box3().setFromObject(obj);
+    if (box.isEmpty()) return;
+    box.min.y = 0;
+    box.expandByVector(new THREE.Vector3(4, 0, 4));
+    const centre = box.getCenter(new THREE.Vector3());
+
+    let dir: THREE.Vector3;
+    let up = 1;
+    if (this.sunStudy) {
+      const site = siteOf(b);
+      const pos = sunPosition(this.sunTime, site.latitude, site.longitude);
+      const d = sunDirection(pos, site.north);
+      dir = new THREE.Vector3(d.x, d.z, d.y);
+      // Fade out through sunset; a low sun is warmer.
+      up = THREE.MathUtils.smoothstep(Math.sin(pos.elevation), -0.01, 0.08);
+      const warm = THREE.MathUtils.smoothstep(Math.sin(pos.elevation), 0, 0.35);
+      this.sun.color.setRGB(1, 0.72 + 0.28 * warm, 0.5 + 0.5 * warm);
+      this.sun.intensity = 2.8 * up;
+      this.hemi.intensity = 0.35 + 0.75 * up;
+      this.ambient.intensity = 0.25 + 0.3 * up;
+    } else {
+      dir = new THREE.Vector3(0.8, 1.6, 0.5).normalize();
+      this.sun.color.setRGB(1, 1, 1);
+      this.sun.intensity = 2.2;
+      this.hemi.intensity = 1.4;
+      this.ambient.intensity = 0.9;
+    }
+    const sky = new THREE.Color(0x1d2940).lerp(new THREE.Color(0xcfe3f3), up);
+    (this.scene.background as THREE.Color).copy(sky);
+    this.scene.fog!.color.copy(sky);
+    this.sun.castShadow = up > 0.01;
+
+    const size = box.getSize(new THREE.Vector3()).length();
+    const at = centre.clone().addScaledVector(dir.normalize(), size);
+    this.sun.position.copy(at);
+    this.sun.target.position.copy(centre);
+    this.sun.target.updateMatrixWorld();
+    // The box's corners in the sun's view give the shadow camera's extent.
+    const view = new THREE.Matrix4().lookAt(at, centre, new THREE.Vector3(0, 1, 0)).setPosition(at).invert();
+    const lo = new THREE.Vector3(Infinity, Infinity, Infinity);
+    const hi = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+    for (let i = 0; i < 8; i++) {
+      const c = new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z);
+      c.applyMatrix4(view);
+      lo.min(c);
+      hi.max(c);
+    }
+    const cam = this.sun.shadow.camera;
+    cam.left = lo.x;
+    cam.right = hi.x;
+    cam.bottom = lo.y;
+    cam.top = hi.y;
+    cam.near = Math.max(0.1, -hi.z - 1);
+    cam.far = -lo.z + 1;
+    cam.updateProjectionMatrix();
   }
 
   /** Orbit camera looking at the whole plan. */

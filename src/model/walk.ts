@@ -11,6 +11,7 @@ import { Vec2, pointInPolygon } from './geom';
 import { computeFootprints, type Footprint } from './joints';
 import { openingsOf } from './openings';
 import { patioShapes } from './patios';
+import { trunkRadius } from './trees';
 import { detectRooms } from './rooms';
 import { stairGeometry, stairwells } from './stairs';
 import type { Building, Plan } from './types';
@@ -60,6 +61,7 @@ export class WalkWorld {
         // A square post is treated as the circle round it.
         r: q.shape === 'round' ? q.size / 2 : (q.size / 2) * Math.SQRT2,
       }));
+      for (const t of Object.values(level.trees ?? {})) posts.push({ x: t.x, y: t.y, r: trunkRadius(t) });
       this.levels.push({ id: level.id, elevation, colliders: buildColliders(level), posts });
       const below = b.levels[i - 1];
       const holes = below ? stairwells(below).map((shape) => shape[0]) : [];

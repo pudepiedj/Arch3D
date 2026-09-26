@@ -378,6 +378,44 @@ button.danger {
   margin: 4px 2px;
 }
 
+.sunpanel {
+  width: 272px;
+}
+
+.panel .slider {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 2px;
+}
+
+.panel .slider input {
+  padding: 0;
+  border: 0;
+  background: none;
+  accent-color: var(--accent);
+}
+
+.panel .readout {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+.panel .readout span:first-child {
+  font-weight: 600;
+}
+
+.panel details summary {
+  display: block;
+  min-height: 0;
+  padding: 5px 9px;
+  font-size: 13px;
+}
+
 #drawingsDialog {
   width: min(460px, calc(100vw - 32px));
   max-height: min(70vh, 560px);

@@ -4,6 +4,7 @@ import type { Building } from './model/types';
 import { View3D, type ViewMode } from './three/view3d';
 import { Editor2D, type Tool } from './ui/editor2d';
 import { Panel } from './ui/panel';
+import { SunPanel } from './ui/sunpanel';
 import { Store } from './ui/store';
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
@@ -13,6 +14,7 @@ const store = new Store(Store.loadSaved() ?? demoBuilding());
 const editor = new Editor2D($('#planPane'), store);
 const view = new View3D($('#viewPane'));
 const panel = new Panel($('#panel'), editor, store);
+const sunPanel = new SunPanel($('#sunPanel'), view, store);
 
 // Rebuild the 3D model at most once per frame while things are being dragged.
 let rebuildQueued = false;
@@ -60,6 +62,18 @@ for (const b of $$('#patioSurface button')) {
     editor.setTool('patio');
   });
 }
+for (const b of $$('#treeKind button')) {
+  b.addEventListener('click', () => {
+    editor.treeKind = b.dataset.kind as typeof editor.treeKind;
+    editor.setTool('tree');
+  });
+}
+$('#sun').addEventListener('click', () => {
+  sunPanel.show(!sunPanel.open);
+  // The sun needs the 3D view.
+  if (sunPanel.open && layout === 'plan') setLayout('split');
+  syncToolbar();
+});
 for (const b of $$('#stairShape button')) {
   b.addEventListener('click', () => {
     editor.stairShape = b.dataset.shape as typeof editor.stairShape;
@@ -285,6 +299,7 @@ const HINTS: Record<Tool, string> = {
   chimney: 'Click on the roof to place a chimney stack (on the floor whose roof it goes through)',
   solar: 'Click on a roof slope to lay a solar array on it (on the floor the roof belongs to)',
   rooflight: 'Click on a roof: a flat roof gets a rooflight box, a sloping roof a window in the slope',
+  tree: 'Click to plant a tree; drag it to move it, set its size in the panel',
   patio: 'Click the corners of the patio (snaps to walls; the house is cut out) · click the first corner, double-click or Enter to finish',
 };
 
@@ -296,6 +311,9 @@ function syncToolbar() {
   $('#wallType').hidden = editor.tool !== 'wall';
   $('#ortho').hidden = editor.tool !== 'wall' && editor.tool !== 'stair' && editor.tool !== 'patio';
   $('#patioSurface').hidden = editor.tool !== 'patio';
+  $('#treeKind').hidden = editor.tool !== 'tree';
+  for (const b of $$('#treeKind button')) b.classList.toggle('on', b.dataset.kind === editor.treeKind);
+  $('#sun').classList.toggle('on', sunPanel.open);
   for (const b of $$('#patioSurface button')) b.classList.toggle('on', b.dataset.surface === editor.patioSurface);
   $('#stairShape').hidden = editor.tool !== 'stair';
   $('#roofMode').hidden = editor.tool !== 'roof';

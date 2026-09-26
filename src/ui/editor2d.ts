@@ -18,6 +18,8 @@ import {
 import { getLevel, levelBelow } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
 import { addPatio, patioAt, patioShapes } from '../model/patios';
+import { addTree, treeAt, trunkRadius } from '../model/trees';
+import { siteOf } from '../model/sun';
 import { addChimney, addRooflight, addSolarArray, chimneyFootprint, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { roofSurfaceAt } from '../model/roof';
 import { DEFAULT_ROOF, type LevelRoof, levelRoofs, roofAreaRings, setAreaRoof, toggleEdge } from '../model/roof';
@@ -44,12 +46,12 @@ import {
   splitWallAt,
 } from '../model/plan';
 import { detectRooms } from '../model/rooms';
-import type { Level, Opening, OpeningKind, PatioSurface, Plan, StairShape } from '../model/types';
+import type { Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio';
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree';
 export type Selection = {
-  kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio';
+  kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree';
   id: string;
 } | null;
 
@@ -62,7 +64,7 @@ type Gesture =
   | { kind: 'dragStair'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'dragPillar'; id: string }
   | { kind: 'dragPatio'; id: string; start: Vec2; pts0: Vec2[] }
-  | { kind: 'dragRoofItem'; what: 'chimney' | 'solar' | 'rooflight'; id: string; start: Vec2; x0: number; y0: number }
+  | { kind: 'dragRoofItem'; what: 'chimney' | 'solar' | 'rooflight' | 'tree'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'click' };
 
 interface Snap {
@@ -92,6 +94,8 @@ export class Editor2D {
   private sectionPts: Vec2[] = [];
   /** Surface for new patios. */
   patioSurface: PatioSurface = 'paving';
+  /** Kind of tree the Tree tool plants. */
+  treeKind: TreeKind = 'deciduous';
   /** A copied door or window: its exact type and size. */
   clipboard: OpeningTemplate | null = null;
   ortho = false;
@@ -340,6 +344,8 @@ export class Editor2D {
         return { kind: 'opening', id: o.id };
       }
     }
+    const trunk = treeAt(this.plan, w, 6 / this.view.scale, false);
+    if (trunk) return { kind: 'tree', id: trunk };
     for (const c of Object.values(this.plan.chimneys ?? {})) {
       if (pointInPolygon(w, chimneyFootprint(c))) return { kind: 'chimney', id: c.id };
     }
@@ -357,6 +363,8 @@ export class Editor2D {
     if (stair) return { kind: 'stair', id: stair };
     const wall = this.wallAt(w, tol);
     if (wall) return { kind: 'wall', id: wall.wallId };
+    const crown = treeAt(this.plan, w, 0);
+    if (crown) return { kind: 'tree', id: crown };
     const patio = patioAt(this.plan, w);
     return patio ? { kind: 'patio', id: patio } : null;
   }
@@ -409,9 +417,8 @@ export class Editor2D {
       this.select(hit);
       if (hit?.kind === 'node') this.gesture = { kind: 'dragNode', id: hit.id };
       else if (hit?.kind === 'pillar') this.gesture = { kind: 'dragPillar', id: hit.id };
-      else if (hit?.kind === 'chimney' || hit?.kind === 'solar' || hit?.kind === 'rooflight') {
-        const item =
-          hit.kind === 'chimney' ? this.plan.chimneys![hit.id] : hit.kind === 'solar' ? this.plan.solar![hit.id] : this.plan.rooflights![hit.id];
+      else if (hit?.kind === 'chimney' || hit?.kind === 'solar' || hit?.kind === 'rooflight' || hit?.kind === 'tree') {
+        const item = this.roofItem(hit.kind, hit.id)!;
         this.gesture = { kind: 'dragRoofItem', what: hit.kind, id: hit.id, start: this.toWorld(s), x0: item.x, y0: item.y };
       }
       else if (hit?.kind === 'stair') {
@@ -495,8 +502,7 @@ export class Editor2D {
         break;
       }
       case 'dragRoofItem': {
-        const item =
-          cur.what === 'chimney' ? plan.chimneys?.[cur.id] : cur.what === 'solar' ? plan.solar?.[cur.id] : plan.rooflights?.[cur.id];
+        const item = this.roofItem(cur.what, cur.id);
         if (!item) break;
         const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
         item.x = cur.x0 + snapTo(w.x - cur.start.x);
@@ -597,6 +603,15 @@ export class Editor2D {
     this.downAt = null;
   }
 
+  /** A chimney, solar array, rooflight or tree: things placed by a point and dragged about. */
+  private roofItem(what: 'chimney' | 'solar' | 'rooflight' | 'tree', id: string): { x: number; y: number } | undefined {
+    const p = this.plan;
+    if (what === 'chimney') return p.chimneys?.[id];
+    if (what === 'solar') return p.solar?.[id];
+    if (what === 'rooflight') return p.rooflights?.[id];
+    return p.trees?.[id];
+  }
+
   private click(w: Vec2) {
     const plan = this.plan;
     switch (this.tool) {
@@ -657,6 +672,12 @@ export class Editor2D {
       case 'patio':
         this.outlineClick(w);
         break;
+      case 'tree': {
+        const t = addTree(plan, this.snap(w).p, this.treeKind);
+        this.store.commit();
+        this.select({ kind: 'tree', id: t.id });
+        break;
+      }
       case 'stair': {
         if (!this.stairStart) {
           this.stairStart = this.snap(w).p;
@@ -834,6 +855,9 @@ export class Editor2D {
         break;
       case 't':
         this.setTool('patio');
+        break;
+      case 'e':
+        this.setTool('tree');
         break;
       case 'o':
         this.ortho = !this.ortho;
@@ -1144,6 +1168,72 @@ export class Editor2D {
     }
   }
 
+  /** Trees, seen from above: a translucent crown, and the trunk. */
+  private drawTrees(C: Record<string, string>) {
+    const ctx = this.ctx;
+    for (const t of Object.values(this.plan.trees ?? {})) {
+      const sel = this.selection?.kind === 'tree' && this.selection.id === t.id;
+      const c = this.toScreen(t);
+      const R = (t.spread / 2) * this.view.scale;
+      const green = t.kind === 'conifer' ? '47, 90, 54' : '95, 143, 62';
+      ctx.beginPath();
+      // A scalloped crown for broad-leaved trees; a star-like one for conifers.
+      const lobes = t.kind === 'conifer' ? 16 : 9;
+      for (let i = 0; i <= lobes * 4; i++) {
+        const a = (i / (lobes * 4)) * Math.PI * 2;
+        const wobble = t.kind === 'conifer' ? (i % 4 === 0 ? 1 : 0.86) : 0.93 + 0.07 * Math.cos(a * lobes);
+        const x = c.x + Math.cos(a) * R * wobble;
+        const y = c.y + Math.sin(a) * R * wobble;
+        if (i) ctx.lineTo(x, y);
+        else ctx.moveTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fillStyle = sel ? hexAlpha(C.accent, 0.25) : `rgba(${green}, 0.28)`;
+      ctx.fill();
+      ctx.strokeStyle = sel ? C.accent : `rgba(${green}, 0.9)`;
+      ctx.lineWidth = sel ? 2 : 1;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, Math.max(2.5, trunkRadius(t) * this.view.scale), 0, Math.PI * 2);
+      ctx.fillStyle = sel ? C.accent : '#6b5341';
+      ctx.fill();
+    }
+  }
+
+  /** A north arrow in the corner, from the building's site orientation. */
+  private drawNorth(C: Record<string, string>, W: number, H: number) {
+    const ctx = this.ctx;
+    const site = siteOf(this.store.building);
+    // True north on the plan: turned anticlockwise by the direction the top of the plan faces.
+    const a = (-site.north * Math.PI) / 180;
+    const cx = W - 34;
+    const cy = H - 70;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.beginPath();
+    ctx.arc(0, 0, 18, 0, Math.PI * 2);
+    ctx.fillStyle = hexAlpha(C.bg.startsWith('#') ? C.bg : '#ffffff', 0.85);
+    ctx.fill();
+    ctx.strokeStyle = C.text;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.rotate(a);
+    ctx.beginPath();
+    ctx.moveTo(0, -15);
+    ctx.lineTo(6, 8);
+    ctx.lineTo(0, 4);
+    ctx.lineTo(-6, 8);
+    ctx.closePath();
+    ctx.fillStyle = C.ink;
+    ctx.fill();
+    ctx.font = '600 10px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = C.text;
+    ctx.fillText('N', 0, -25);
+    ctx.restore();
+  }
+
   deleteSelection() {
     const s = this.selection;
     if (!s) return;
@@ -1156,6 +1246,7 @@ export class Editor2D {
     else if (s.kind === 'solar') delete this.plan.solar?.[s.id];
     else if (s.kind === 'rooflight') delete this.plan.rooflights?.[s.id];
     else if (s.kind === 'patio') delete this.plan.patios?.[s.id];
+    else if (s.kind === 'tree') delete this.plan.trees?.[s.id];
     else if (s.kind === 'roof') {
       if (s.id.startsWith('section:')) delete this.plan.roofSections?.[s.id.slice(8)];
       else {
@@ -1181,7 +1272,8 @@ export class Editor2D {
       (s.kind === 'chimney' && p.chimneys?.[s.id]) ||
       (s.kind === 'solar' && p.solar?.[s.id]) ||
       (s.kind === 'rooflight' && p.rooflights?.[s.id]) ||
-      (s.kind === 'patio' && p.patios?.[s.id]);
+      (s.kind === 'patio' && p.patios?.[s.id]) ||
+      (s.kind === 'tree' && p.trees?.[s.id]);
     if (!exists) this.select(null);
   }
 
@@ -1378,6 +1470,8 @@ export class Editor2D {
       }
     }
 
+    this.drawTrees(C);
+    this.drawNorth(C, W, H);
     this.drawToolPreview(C);
 
     for (const g of this.lastGuides) this.guide(g.from, g.to, C.accent);

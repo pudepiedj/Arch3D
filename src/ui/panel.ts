@@ -6,12 +6,13 @@ import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, roofAreaRings, setAreaRoof } 
 import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
 import { PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
+import { TREE_DEFAULTS } from '../model/trees';
 import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { stairGeometry } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
 import { deleteNode, deleteOpening, deleteWall, finishNodeMove, moveNode, normalize, setWallLength, splitWallAt } from '../model/plan';
-import { DEFAULTS, type OpeningKind, type PatioSurface, type Pillar, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
+import { DEFAULTS, type OpeningKind, type PatioSurface, type Pillar, type TreeKind, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
 import type { Editor2D } from './editor2d';
 import type { Store } from './store';
 
@@ -75,6 +76,7 @@ export class Panel {
     if (sel.kind === 'solar') return this.renderSolar(sel.id);
     if (sel.kind === 'rooflight') return this.renderRooflight(sel.id);
     if (sel.kind === 'patio') return this.renderPatio(sel.id);
+    if (sel.kind === 'tree') return this.renderTree(sel.id);
 
     if (sel.kind === 'node') {
       const n = plan.nodes[sel.id];
@@ -372,6 +374,41 @@ export class Panel {
       }],
       ['Delete', () => {
         delete level.chimneys![id];
+        this.editor.select(null);
+        this.store.commit();
+      }, true],
+    ]);
+  }
+
+  private renderTree(id: string) {
+    const level = this.store.plan;
+    const t = level.trees?.[id];
+    if (!t) return;
+    this.title('Tree');
+    this.select('Kind', t.kind, [
+      ['deciduous', 'Broad-leaved'],
+      ['conifer', 'Conifer (evergreen)'],
+    ], (v) => {
+      t.kind = v as TreeKind;
+      Object.assign(t, TREE_DEFAULTS[t.kind]);
+      this.done();
+    });
+    this.number('Height', t.height, 0.5, 1, 40, (v) => {
+      t.height = v;
+      this.done();
+    }, 'm');
+    this.number('Crown spread', t.spread, 0.5, 0.5, 30, (v) => {
+      t.spread = v;
+      this.done();
+    }, 'm', 'Diameter of the crown');
+    this.note(
+      t.kind === 'deciduous'
+        ? 'In leaf from May to October, bare in winter: the Sun study shows it as it is on the chosen date. Drag the trunk to move it.'
+        : 'Evergreen: the same shade all year. Drag the trunk to move it.',
+    );
+    this.buttons([
+      ['Delete', () => {
+        delete level.trees![id];
         this.editor.select(null);
         this.store.commit();
       }, true],

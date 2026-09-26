@@ -1,6 +1,7 @@
 import { addLevelOnTop, createBuilding } from './building';
 import { addPillar, pillarsForSection } from './pillars';
 import { addPatio } from './patios';
+import { addTree } from './trees';
 import { addChimney, addRooflight, addSolarArray } from './roofitems';
 import { addStair } from './stairs';
 import { addWall, deleteWall, findWallInterior } from './plan';
@@ -111,6 +112,11 @@ export function demoBuilding(): Building {
   addPatio(ground, [{ x: -0.5, y: 8 }, { x: 6.3, y: 8 }, { x: 6.3, y: 11.3 }, { x: -0.5, y: 11.3 }], 'paving');
   addPatio(ground, [{ x: 9.5, y: 6.5 }, { x: 12.5, y: 6.5 }, { x: 12.5, y: 10.5 }, { x: 9.5, y: 10.5 }], 'decking').angle = Math.PI / 2;
   addPatio(ground, [{ x: 13, y: 0.5 }, { x: 18, y: 0.5 }, { x: 18, y: 5 }, { x: 13, y: 5 }], 'gravel');
+
+  // Trees down the garden: an oak off the terrace corner and a conifer by the deck.
+  addTree(ground, { x: -2.5, y: 15 }, 'deciduous');
+  const pine = addTree(ground, { x: 14.5, y: 12 }, 'conifer');
+  pine.height = 9;
 
   // A rooflight box on the garage's flat roof: three windows with blinds and solar motors.
   const box = addRooflight(ground, { x: 11.5, y: 2.75 });

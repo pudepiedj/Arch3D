@@ -26,6 +26,7 @@
         <button data-tool="solar" title="Lay solar panels on a roof slope">Solar</button>
         <button data-tool="rooflight" title="Roof windows, or a rooflight box on a flat roof">Rooflight</button>
         <button data-tool="patio" title="Draw a paved patio, a deck or a gravelled area (T)">Patio</button>
+        <button data-tool="tree" title="Plant a tree (E)">Tree</button>
         <button data-tool="paste" id="pasteTool" title="Place exact copies of the copied door/window (Ctrl/⌘+V)" hidden>Paste</button>
       </div>
 
@@ -47,6 +48,10 @@
         <button data-surface="decking" title="Timber decking, one step up">Decking</button>
         <button data-surface="gravel" title="Gravel">Gravel</button>
       </div>
+      <div class="group" id="treeKind" aria-label="Tree">
+        <button data-kind="deciduous" title="Broad-leaved: bare in winter">Broadleaf</button>
+        <button data-kind="conifer" title="Evergreen conifer">Conifer</button>
+      </div>
       <button id="ortho" class="toggle" title="Lock wall directions to 45° steps (O)">Ortho</button>
       <button id="finish" hidden>Finish wall</button>
 
@@ -66,6 +71,7 @@
         <button data-mode="orbit" title="Orbit around the model">Orbit</button>
         <button data-mode="walk" title="Walk through at eye level">Walk</button>
       </div>
+      <button id="sun" class="toggle" title="Sun study: the real sun for a date, time and place, with shadows">Sun</button>
       <button id="cutaway" class="toggle on" title="In orbit view, hide the floors above the one you are editing">Cutaway</button>
       <details class="menu">
         <summary>File</summary>
@@ -89,6 +95,7 @@
         <div class="hint" id="hint"></div>
       </section>
       <section class="pane" id="viewPane">
+        <aside class="panel sunpanel" id="sunPanel" hidden></aside>
         <div class="overlay" id="walkHint" hidden></div>
       </section>
     </main>
