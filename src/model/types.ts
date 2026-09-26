@@ -39,6 +39,33 @@ export interface Opening {
   open?: boolean;
 }
 
+/** A chimney stack rising through the roof, with 1-3 pots. */
+export interface Chimney {
+  id: string;
+  /** Centre of the stack. */
+  x: number;
+  y: number;
+  width: number;
+  depth: number;
+  /** Rotation of the stack in radians. */
+  angle: number;
+  pots: 1 | 2 | 3;
+  /** How far the stack rises above the highest point of the roof it passes through. */
+  above: number;
+}
+
+/** A grid of solar panels laid on a roof slope. */
+export interface SolarArray {
+  id: string;
+  /** Centre of the array, in plan. */
+  x: number;
+  y: number;
+  rows: number;
+  cols: number;
+  /** Panels with their long side running up the slope. */
+  portrait: boolean;
+}
+
 /** A free-standing post, e.g. holding up a veranda or carport roof. */
 export interface Pillar {
   id: string;
@@ -134,6 +161,10 @@ export interface Level extends Plan {
   roofSections?: Record<string, RoofSection>;
   /** Free-standing pillars. They rise to the roof above them (or the floor's wall height). */
   pillars?: Record<string, Pillar>;
+  /** Chimney stacks through this floor's roofs. */
+  chimneys?: Record<string, Chimney>;
+  /** Solar panel arrays on this floor's roofs. */
+  solar?: Record<string, SolarArray>;
 }
 
 /** A building is a stack of levels, listed from the bottom up. */

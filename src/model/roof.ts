@@ -554,3 +554,66 @@ export function roofHeightAt(b: Building, level: Level, p: Vec2): number | null 
   }
   return best;
 }
+
+export interface RoofSurface {
+  face: RoofFace;
+  /** Height of the roof's top surface at a point. */
+  z: (p: Vec2) => number;
+  /** Horizontal unit vector pointing up the slope (arbitrary for a flat roof). */
+  up: Vec2;
+  /** Rise per unit of horizontal run. */
+  tan: number;
+}
+
+/** The visible (topmost) roof surface over point p on this floor, if any. */
+export function roofSurfaceAt(b: Building, level: Level, p: Vec2): RoofSurface | null {
+  let best: RoofSurface | null = null;
+  let bestZ = -Infinity;
+  for (const r of levelRoofs(b, level)) {
+    for (const f of r.geometry?.faces ?? []) {
+      if (f.kind === 'gable' || !pointInPolygon(p, f.pts)) continue;
+      let surface: RoofSurface;
+      if (f.kind === 'flat') {
+        const top = f.pts[0].z;
+        surface = { face: f, z: () => top, up: { x: 0, y: -1 }, tan: 0 };
+      } else {
+        const plane = planeOf(f.pts);
+        if (!plane) continue;
+        const gx = plane({ x: p.x + 1, y: p.y }) - plane(p);
+        const gy = plane({ x: p.x, y: p.y + 1 }) - plane(p);
+        const tan = Math.hypot(gx, gy);
+        surface = { face: f, z: plane, up: tan > 1e-9 ? { x: gx / tan, y: gy / tan } : { x: 0, y: -1 }, tan };
+      }
+      const z = surface.z(p);
+      if (z > bestZ) {
+        bestZ = z;
+        best = surface;
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * Lowest and highest roof surface over a plan area (exact: each slope is flat, so its
+ * extremes are at corners of its overlap with the area). Null if nothing roofs it.
+ */
+export function roofRangeOver(b: Building, level: Level, area: Vec2[]): { low: number; high: number } | null {
+  let low = Infinity;
+  let high = -Infinity;
+  for (const r of levelRoofs(b, level)) {
+    for (const f of r.geometry?.faces ?? []) {
+      if (f.kind === 'gable') continue;
+      const z = f.kind === 'flat' ? () => f.pts[0].z : planeOf(f.pts);
+      if (!z) continue;
+      for (const shape of intersectAll(f.pts, area)) {
+        for (const p of shape[0]) {
+          const h = z(p);
+          low = Math.min(low, h);
+          high = Math.max(high, h);
+        }
+      }
+    }
+  }
+  return high > -Infinity ? { low, high } : null;
+}

@@ -5,6 +5,7 @@ import { addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelAbove, levelE
 import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, roofAreaRings, setAreaRoof } from '../model/roof';
 import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
+import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, solarGeometry } from '../model/roofitems';
 import { stairGeometry } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
@@ -69,6 +70,8 @@ export class Panel {
     if (sel.kind === 'stair') return this.renderStair(sel.id);
     if (sel.kind === 'roof') return this.renderRoof(sel.id);
     if (sel.kind === 'pillar') return this.renderPillar(sel.id);
+    if (sel.kind === 'chimney') return this.renderChimney(sel.id);
+    if (sel.kind === 'solar') return this.renderSolar(sel.id);
 
     if (sel.kind === 'node') {
       const n = plan.nodes[sel.id];
@@ -326,6 +329,87 @@ export class Panel {
       }]);
     }
     if (btns.length) this.buttons(btns);
+  }
+
+  private renderChimney(id: string) {
+    const level = this.store.plan;
+    const c = level.chimneys?.[id];
+    if (!c) return;
+    const geo = chimneyGeometry(this.store.building, level, c);
+    this.title('Chimney stack');
+    this.select('Pots', String(c.pots), [
+      ['1', '1 pot'],
+      ['2', '2 pots'],
+      ['3', '3 pots'],
+    ], (v) => {
+      c.pots = Number(v) as 1 | 2 | 3;
+      this.done();
+    });
+    this.number('Width', c.width, 0.05, 0.3, 3, (v) => {
+      c.width = v;
+      this.done();
+    }, 'm');
+    this.number('Depth', c.depth, 0.05, 0.3, 3, (v) => {
+      c.depth = v;
+      this.done();
+    }, 'm');
+    this.number('Above roof', c.above, 0.05, 0, 5, (v) => {
+      c.above = v;
+      this.done();
+    }, 'm', 'How far the brickwork rises above the highest point of the roof it passes through');
+    this.note(
+      geo.onRoof
+        ? `Top of stack ${geo.top.toFixed(2)} m above this floor. Drag to move; it re-fits to the roof.`
+        : 'There is no roof under this chimney on this floor: place it on the floor whose roof it goes through.',
+    );
+    this.buttons([
+      ['Rotate 90°', () => {
+        c.angle += Math.PI / 2;
+        this.done();
+      }],
+      ['Delete', () => {
+        delete level.chimneys![id];
+        this.editor.select(null);
+        this.store.commit();
+      }, true],
+    ]);
+  }
+
+  private renderSolar(id: string) {
+    const level = this.store.plan;
+    const sa = level.solar?.[id];
+    if (!sa) return;
+    const geo = solarGeometry(this.store.building, level, sa);
+    this.title('Solar panels');
+    this.number('Rows', sa.rows, 1, 1, 20, (v) => {
+      sa.rows = Math.round(v);
+      this.done();
+    }, '', 'Rows of panels up the slope');
+    this.number('Columns', sa.cols, 1, 1, 40, (v) => {
+      sa.cols = Math.round(v);
+      this.done();
+    }, '', 'Panels across the slope');
+    this.select('Panels', sa.portrait ? 'portrait' : 'landscape', [
+      ['portrait', 'Portrait'],
+      ['landscape', 'Landscape'],
+    ], (v) => {
+      sa.portrait = v === 'portrait';
+      this.done();
+    });
+    const n = sa.rows * sa.cols;
+    this.note(
+      !geo
+        ? 'This array is not on a roof of this floor any more: drag it back onto one.'
+        : `${n} panels (${PANEL_LONG} × ${PANEL_SHORT} m), about ${(n * 0.4).toFixed(1)} kWp at 400 W each.` +
+            (geo.overhangs ? ' Some panels hang off this roof slope: make the array smaller or move it.' : ' Drag to move; it lines up with the slope it is on.'),
+    );
+    this.buttons([
+      ['Delete', () => {
+        delete level.solar![id];
+        this.editor.select(null);
+        this.store.commit();
+      }, true],
+    ]);
   }
 
   private renderPillar(id: string) {

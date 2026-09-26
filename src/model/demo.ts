@@ -1,5 +1,6 @@
 import { addLevelOnTop, createBuilding } from './building';
 import { addPillar, pillarsForSection } from './pillars';
+import { addChimney, addSolarArray } from './roofitems';
 import { addStair } from './stairs';
 import { addWall, deleteWall, findWallInterior } from './plan';
 import { placeOpening } from './openings';
@@ -8,7 +9,8 @@ import { DEFAULTS, type Building, type Level, type OpeningKind, type Plan } from
 /**
  * A two-storey house showing the main features: a gabled main roof with a cross gable
  * over a two-storey window bay, a flat-roofed garage with a roller door at the side, a
- * gabled garden room and a terrace roof on pillars at the back, a stair, doors and windows.
+ * gabled garden room and a terrace roof on pillars at the back, a chimney, solar panels,
+ * a stair, doors and windows.
  */
 export function demoBuilding(): Building {
   const b = createBuilding();
@@ -128,5 +130,9 @@ export function demoBuilding(): Building {
   at(first, 7, 5, 'door');
   // Main roof: gabled, with a cross gable over the bay (its front edge set to a gable end).
   first.roof = { kind: 'gable', pitch: 35, overhang: 0.3, edges: [{ x: 2.4, y: -1.15, type: 'gable' }] };
+  // A chimney stack astride the ridge, and solar panels on the back slope.
+  const chimney = addChimney(first, { x: 8.6, y: 4 });
+  chimney.pots = 2;
+  addSolarArray(first, { x: 4.6, y: 6.3 });
   return b;
 }

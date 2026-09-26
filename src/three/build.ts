@@ -16,6 +16,7 @@ import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs } from '../m
 import { type StairGeometry, stairGeometry, stairSurfaceAt, stairwells } from '../model/stairs';
 import { type RailLine, againstWall, buildRails, onSegment } from './rails';
 import { pillarHeight } from '../model/pillars';
+import { type ChimneyGeometry, type SolarGeometry, chimneyGeometry, solarGeometry } from '../model/roofitems';
 import type { Building, Opening, Pillar, Plan } from '../model/types';
 
 export interface Materials {
@@ -29,6 +30,9 @@ export interface Materials {
   roof: THREE.Material;
   flatRoof: THREE.Material;
   garage: THREE.Material;
+  brick: THREE.Material;
+  pot: THREE.Material;
+  solar: THREE.Material;
 }
 
 export function createMaterials(): Materials {
@@ -51,6 +55,9 @@ export function createMaterials(): Materials {
     roof: new THREE.MeshStandardMaterial({ color: 0x8f4b3a, roughness: 0.85, side: THREE.DoubleSide }),
     flatRoof: new THREE.MeshStandardMaterial({ color: 0x5d6066, roughness: 0.95, side: THREE.DoubleSide }),
     garage: new THREE.MeshStandardMaterial({ color: 0xcdd1d5, roughness: 0.45, metalness: 0.35 }),
+    brick: new THREE.MeshStandardMaterial({ color: 0x9a5b45, roughness: 0.9 }),
+    pot: new THREE.MeshStandardMaterial({ color: 0xb8653f, roughness: 0.8 }),
+    solar: new THREE.MeshStandardMaterial({ color: 0x1b2a4a, roughness: 0.25, metalness: 0.4, side: THREE.DoubleSide }),
   };
 }
 
@@ -128,6 +135,9 @@ export interface LevelOptions {
   stairs?: StairGeometry[];
   /** The roofs over this floor (none when it is cut away). */
   roofs?: RoofGeometry[];
+  /** Chimney stacks and solar arrays on this floor's roofs (none when cut away). */
+  chimneys?: ChimneyGeometry[];
+  solar?: SolarGeometry[];
   /** Free-standing pillars, each with the height it rises to. */
   pillars?: (Pillar & { height: number })[];
 }
@@ -150,6 +160,8 @@ export function buildBuildingObject(b: Building, mats: Materials, upTo?: string)
       slab: level.slab,
       stairs: Object.values(level.stairs ?? {}).map((st) => stairGeometry(st, level.height)),
       pillars: Object.values(level.pillars ?? {}).map((q) => ({ ...q, height: pillarHeight(b, level, q) })),
+      chimneys: i === cut ? [] : Object.values(level.chimneys ?? {}).map((c) => chimneyGeometry(b, level, c)),
+      solar: i === cut ? [] : Object.values(level.solar ?? {}).flatMap((sa) => solarGeometry(b, level, sa) ?? []),
       roofs: i === cut ? [] : levelRoofs(b, level).flatMap((r) => (r.geometry ? [r.geometry] : [])),
     });
     obj.position.y = levelElevation(b, level.id);
@@ -225,6 +237,8 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   }
 
   for (const r of opts.roofs ?? []) group.add(buildRoofObject(r, mats));
+  for (const c of opts.chimneys ?? []) group.add(buildChimney(c, mats));
+  if (opts.solar?.length) group.add(buildSolar(opts.solar, mats));
   for (const q of opts.pillars ?? []) {
     const geo =
       q.shape === 'round'
@@ -298,6 +312,74 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   floorMesh.name = 'floors';
   group.add(floorMesh);
   return group;
+}
+
+/** A brick stack with a projecting cap and terracotta pots. */
+function buildChimney(c: ChimneyGeometry, mats: Materials): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'chimney';
+  const [a, b, , d] = c.footprint;
+  const width = Math.hypot(b.x - a.x, b.y - a.y);
+  const depth = Math.hypot(d.x - a.x, d.y - a.y);
+  const angle = Math.atan2(b.y - a.y, b.x - a.x);
+  const cx = c.footprint.reduce((s, p) => s + p.x, 0) / 4;
+  const cy = c.footprint.reduce((s, p) => s + p.y, 0) / 4;
+  const add = (mesh: THREE.Mesh) => {
+    mesh.castShadow = mesh.receiveShadow = true;
+    g.add(mesh);
+  };
+  const stack = new THREE.Mesh(new THREE.BoxGeometry(width, c.top - c.base, depth), mats.brick);
+  stack.position.set(cx, (c.base + c.top) / 2, cy);
+  stack.rotation.y = -angle;
+  add(stack);
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(width + 0.1, 0.1, depth + 0.1), mats.brick);
+  cap.position.set(cx, c.top + 0.05, cy);
+  cap.rotation.y = -angle;
+  add(cap);
+  for (const p of c.pots) {
+    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.45, 16), mats.pot);
+    pot.position.set(p.x, c.top + 0.1 + 0.225, p.y);
+    add(pot);
+  }
+  return g;
+}
+
+/** Solar panels: dark glass on a thin silver frame. */
+function buildSolar(arrays: SolarGeometry[], mats: Materials): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'solar';
+  const glass = new Mesher();
+  const frame = new Mesher();
+  const v = (p: Point3, lift = 0) => new THREE.Vector3(p.x, p.z + lift, p.y);
+  const up = new THREE.Vector3(0, 1, 0);
+  for (const s of arrays) {
+    for (const [p0, p1, p2, p3] of s.panels) {
+      frame.quad(v(p0), v(p1), v(p2), v(p3), up);
+      // Glass inset 3 cm from the frame edge, and just above it.
+      const inset = (p: Point3, q: Point3, r: Point3, t: number): Point3 => ({
+        x: p.x + (q.x - p.x) * t + (r.x - p.x) * t,
+        y: p.y + (q.y - p.y) * t + (r.y - p.y) * t,
+        z: p.z + (q.z - p.z) * t + (r.z - p.z) * t,
+      });
+      const k = 0.02;
+      glass.quad(
+        v(inset(p0, p1, p3, k), 0.01),
+        v(inset(p1, p0, p2, k), 0.01),
+        v(inset(p2, p3, p1, k), 0.01),
+        v(inset(p3, p2, p0, k), 0.01),
+        up,
+      );
+    }
+  }
+  for (const [m, mat] of [
+    [frame, mats.frame],
+    [glass, mats.solar],
+  ] as const) {
+    const mesh = new THREE.Mesh(m.geometry(), mat);
+    mesh.castShadow = true;
+    g.add(mesh);
+  }
+  return g;
 }
 
 /** Roof slopes, gable walls, fascia boards along the eaves, or a flat slab. */

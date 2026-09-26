@@ -17,6 +17,8 @@ import {
 } from '../model/geom';
 import { getLevel, levelBelow } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
+import { addChimney, addSolarArray, chimneyFootprint, solarGeometry } from '../model/roofitems';
+import { roofSurfaceAt } from '../model/roof';
 import { DEFAULT_ROOF, type LevelRoof, levelRoofs, roofAreaRings, setAreaRoof, toggleEdge } from '../model/roof';
 import { DEFAULT_GOING, DEFAULT_STAIR_WIDTH, type StairGeometry, addStair, stairAt, stairGeometry } from '../model/stairs';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
@@ -44,8 +46,11 @@ import { detectRooms } from '../model/rooms';
 import type { Level, Opening, OpeningKind, Plan, StairShape } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar';
-export type Selection = { kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar'; id: string } | null;
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar';
+export type Selection = {
+  kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar';
+  id: string;
+} | null;
 
 type Gesture =
   | { kind: 'pan'; last: Vec2 }
@@ -55,6 +60,7 @@ type Gesture =
   | { kind: 'dragOpening'; id: string }
   | { kind: 'dragStair'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'dragPillar'; id: string }
+  | { kind: 'dragRoofItem'; what: 'chimney' | 'solar'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'click' };
 
 interface Snap {
@@ -330,6 +336,13 @@ export class Editor2D {
         return { kind: 'opening', id: o.id };
       }
     }
+    for (const c of Object.values(this.plan.chimneys ?? {})) {
+      if (pointInPolygon(w, chimneyFootprint(c))) return { kind: 'chimney', id: c.id };
+    }
+    for (const sa of Object.values(this.plan.solar ?? {})) {
+      const g = solarGeometry(this.store.building, this.plan, sa);
+      if (g && pointInPolygon(w, g.outline)) return { kind: 'solar', id: sa.id };
+    }
     const pillar = pillarAt(this.plan, w, 4 / this.view.scale);
     if (pillar) return { kind: 'pillar', id: pillar };
     const stair = stairAt(this.plan, w);
@@ -386,6 +399,10 @@ export class Editor2D {
       this.select(hit);
       if (hit?.kind === 'node') this.gesture = { kind: 'dragNode', id: hit.id };
       else if (hit?.kind === 'pillar') this.gesture = { kind: 'dragPillar', id: hit.id };
+      else if (hit?.kind === 'chimney' || hit?.kind === 'solar') {
+        const item = hit.kind === 'chimney' ? this.plan.chimneys![hit.id] : this.plan.solar![hit.id];
+        this.gesture = { kind: 'dragRoofItem', what: hit.kind, id: hit.id, start: this.toWorld(s), x0: item.x, y0: item.y };
+      }
       else if (hit?.kind === 'stair') {
         const st = this.plan.stairs[hit.id];
         this.gesture = { kind: 'dragStair', id: hit.id, start: this.toWorld(s), x0: st.x, y0: st.y };
@@ -462,6 +479,15 @@ export class Editor2D {
         this.store.changed();
         break;
       }
+      case 'dragRoofItem': {
+        const item = cur.what === 'chimney' ? plan.chimneys?.[cur.id] : plan.solar?.[cur.id];
+        if (!item) break;
+        const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
+        item.x = cur.x0 + snapTo(w.x - cur.start.x);
+        item.y = cur.y0 + snapTo(w.y - cur.start.y);
+        this.store.changed();
+        break;
+      }
       case 'dragPillar': {
         const q = plan.pillars?.[cur.id];
         if (!q) break;
@@ -533,6 +559,7 @@ export class Editor2D {
       case 'dragOpening':
       case 'dragStair':
       case 'dragPillar':
+      case 'dragRoofItem':
         if (this.dragging) this.store.commit();
         break;
       case 'click':
@@ -549,6 +576,22 @@ export class Editor2D {
       case 'wall': {
         const s = this.snap(w, { from: this.drawStart });
         this.placeWallPoint(s.p);
+        break;
+      }
+      case 'chimney': {
+        const c = addChimney(plan, this.snap(w).p);
+        this.store.commit();
+        this.select({ kind: 'chimney', id: c.id });
+        break;
+      }
+      case 'solar': {
+        if (!roofSurfaceAt(this.store.building, plan, w)) {
+          this.flash('No roof here on this floor: switch to the floor the roof belongs to', w);
+          break;
+        }
+        const sa = addSolarArray(plan, w);
+        this.store.commit();
+        this.select({ kind: 'solar', id: sa.id });
         break;
       }
       case 'pillar': {
@@ -746,6 +789,9 @@ export class Editor2D {
       case 'p':
         this.setTool('pillar');
         break;
+      case 'c':
+        this.setTool('chimney');
+        break;
       case 'o':
         this.ortho = !this.ortho;
         this.onToolChange?.();
@@ -861,6 +907,15 @@ export class Editor2D {
     ctx.fillText('UP', pts[0].x - 14 * Math.cos(a0), pts[0].y - 14 * Math.sin(a0));
   }
 
+  private flashMsg: { text: string; at: Vec2; until: number } | null = null;
+
+  /** Show a short message by the pointer for a couple of seconds. */
+  private flash(text: string, at: Vec2) {
+    this.flashMsg = { text, at, until: performance.now() + 2500 };
+    this.requestRender();
+    setTimeout(() => this.requestRender(), 2600);
+  }
+
   /** The roofs of the floor being edited (areas with a roof, and drawn sections). */
   roofs(): LevelRoof[] {
     return levelRoofs(this.store.building, this.plan);
@@ -965,6 +1020,8 @@ export class Editor2D {
     else if (s.kind === 'opening') deleteOpening(this.plan, s.id);
     else if (s.kind === 'stair') delete this.plan.stairs[s.id];
     else if (s.kind === 'pillar') delete this.plan.pillars?.[s.id];
+    else if (s.kind === 'chimney') delete this.plan.chimneys?.[s.id];
+    else if (s.kind === 'solar') delete this.plan.solar?.[s.id];
     else if (s.kind === 'roof') {
       if (s.id.startsWith('section:')) delete this.plan.roofSections?.[s.id.slice(8)];
       else {
@@ -986,7 +1043,9 @@ export class Editor2D {
       (s.kind === 'wall' && p.walls[s.id]) || (s.kind === 'node' && p.nodes[s.id]) || (s.kind === 'opening' && p.openings[s.id]) ||
       (s.kind === 'stair' && p.stairs?.[s.id]) ||
       (s.kind === 'roof' && this.roofExists(s.id)) ||
-      (s.kind === 'pillar' && p.pillars?.[s.id]);
+      (s.kind === 'pillar' && p.pillars?.[s.id]) ||
+      (s.kind === 'chimney' && p.chimneys?.[s.id]) ||
+      (s.kind === 'solar' && p.solar?.[s.id]);
     if (!exists) this.select(null);
   }
 
@@ -1088,6 +1147,39 @@ export class Editor2D {
     }
 
     this.drawRoofs(C);
+
+    // Solar arrays: the panels, blue; chimney stacks: brick-red with a cross.
+    for (const sa of Object.values(plan.solar ?? {})) {
+      const g = solarGeometry(this.store.building, plan, sa);
+      if (!g) continue;
+      const sel = this.selection?.kind === 'solar' && this.selection.id === sa.id;
+      for (const quad of g.panels) {
+        this.path(quad);
+        ctx.fillStyle = sel ? hexAlpha(C.accent, 0.45) : 'rgba(40, 64, 120, 0.55)';
+        ctx.fill();
+        ctx.strokeStyle = sel ? C.accent : 'rgba(40, 64, 120, 0.9)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+    for (const c of Object.values(plan.chimneys ?? {})) {
+      const f = chimneyFootprint(c);
+      const sel = this.selection?.kind === 'chimney' && this.selection.id === c.id;
+      this.path(f);
+      ctx.fillStyle = sel ? C.accent : '#9a5b45';
+      ctx.fill();
+      ctx.strokeStyle = C.bg;
+      ctx.lineWidth = 1;
+      this.line(f[0], f[2]);
+      this.line(f[1], f[3]);
+    }
+    if (this.flashMsg && performance.now() < this.flashMsg.until) {
+      const q = this.toScreen(this.flashMsg.at);
+      ctx.font = '600 12px system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = C.danger;
+      ctx.fillText(this.flashMsg.text, q.x + 12, q.y - 12);
+    }
 
     // Pillars: solid squares or circles.
     for (const q of Object.values(plan.pillars ?? {})) {

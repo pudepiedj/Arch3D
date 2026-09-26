@@ -22,6 +22,8 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 | **Stair** (S) | Choose Straight, L-shape or U-shape, click where the bottom step goes, then click in the direction it climbs (snaps to right angles; Ortho forces them). The stair always rises to the next floor. |
 | **Garage** (G) | Click on a wall to place a garage roller door (2.5 m wide; set any width in the panel). |
 | **Pillar** (P) | Click to place a pillar (post). It rises to the underside of the roof above it, or to the wall height if there is none. Drag to move. |
+| **Chimney** (C) | Click on the roof to place a chimney stack (on the floor whose roof it goes through). |
+| **Solar** | Click on a roof slope to lay a solar panel array on it. |
 | **Split** (X) | Click on a wall to add a joint, which is then selected so you can drag it (to make a bay, a nib or a step in the wall). |
 
 **Copying doors and windows exactly:** select one and press **Copy** in the panel (Ctrl/⌘+C).
@@ -34,6 +36,16 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 - **Casing to other side** puts the guides and casing on the other face of the wall.
 
 **Roofs on pillars (verandas, terraces, carports):** draw the roof with the Roof tool's **Add section** over the open area. It snaps to the house wall, and its edge there rests on the wall. Set its type and **Eaves height**, then press **Add pillars**. Pillars go at every corner not resting on a wall, and along open edges so that no span is longer than 3.5 m. Their outer faces line up with the roof edge. Pillars are square or round, can be resized, and are solid in walk mode.
+
+**Chimneys:** a brick stack with a projecting cap and 1, 2 or 3 terracotta pots.
+- It rises from just under the roof to a set height (60 cm by default) above the highest point of the roof it passes through, so it clears the ridge when it straddles it.
+- Set the pots, width, depth and height above the roof in the panel, and rotate it by 90°. Drag it to move it; it re-fits to the roof wherever it goes.
+
+**Solar panels:** click a roof slope with the **Solar** tool to lay a grid of panels on it.
+- Panels are 1.72 × 1.13 m, sit 8 cm above the covering, and line up with the eaves.
+- Set the rows (up the slope), columns (across) and portrait or landscape. The panel shows the panel count and a rough output at 400 W per panel.
+- It warns you if any panels hang off the slope. On a flat roof the panels lie flat.
+- Drag the array to move it, even onto another slope; it re-aligns to whichever slope it's on.
 
 **Stairs:**
 - The number of steps and their height come from the floor-to-floor height: the fewest steps that keep each one under 19 cm, e.g. 16 steps of 18.1 cm for 2.9 m.
