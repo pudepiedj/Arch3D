@@ -19,7 +19,8 @@ const plain = (color: number, roughness = 0.7, metalness = 0) =>
   mat(`p${color}-${roughness}-${metalness}`, () => new THREE.MeshStandardMaterial({ color, roughness, metalness }));
 /** Polished like a piano: a clear lacquer over the colour. */
 const lacquer = (color: number) =>
-  mat(`l${color}`, () => new THREE.MeshPhysicalMaterial({ color, roughness: 0.25, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.06 }));
+  // Two-sided: the inside of a piano's rim is seen as well as the outside.
+  mat(`l${color}`, () => new THREE.MeshPhysicalMaterial({ color, roughness: 0.25, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.06, side: THREE.DoubleSide }));
 const glass = () =>
   mat('glass', () => new THREE.MeshPhysicalMaterial({ color: 0xd8ecf4, roughness: 0.05, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false }));
 
