@@ -329,7 +329,7 @@ document.addEventListener('pointerdown', (e) => {
 });
 
 const HINTS: Record<Tool, string> = {
-  select: 'Drag joints to reshape · drag a wall to move it · drag doors/windows along walls · Delete removes',
+  select: 'Drag joints to reshape · drag a wall to move it · drag doors/windows along walls · click again to pick what is underneath · Delete removes',
   wall: 'Click to start a wall, click again for each corner · type a length + Enter · click the start, double-click or Esc to finish',
   door: 'Click on a wall to place a door',
   window: 'Click on a wall to place a window',

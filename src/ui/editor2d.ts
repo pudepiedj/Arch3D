@@ -17,10 +17,10 @@ import {
 } from '../model/geom';
 import { getLevel, levelBelow } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
-import { addPatio, patioAt, patioShapes } from '../model/patios';
+import { addPatio, patioShapes } from '../model/patios';
 import { addTree, treeAt, trunkRadius } from '../model/trees';
 import { siteOf } from '../model/sun';
-import { addFurniture, againstWall, catalogueItem, furnitureAt } from '../model/furniture';
+import { addFurniture, againstWall, catalogueItem, footprint } from '../model/furniture';
 import { drawFurnitureSymbol } from './furniture2d';
 import { addChimney, addRooflight, addSolarArray, chimneyFootprint, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { roofSurfaceAt } from '../model/roof';
@@ -115,6 +115,8 @@ export class Editor2D {
   shortcutsEnabled: () => boolean = () => true;
 
   private pointers = new Map<number, Vec2>();
+  /** What a click (without dragging) on the current selection moves on to. */
+  private cycle: Selection = null;
   private gesture: Gesture | null = null;
   private downAt: Vec2 | null = null;
   private dragging = false;
@@ -338,53 +340,61 @@ export class Editor2D {
 
   // ---------------------------------------------------------------- hit testing
 
-  private hitTest(s: Vec2): Selection {
+  /**
+   * Everything under the pointer, most specific first: joints, doors and windows, then what
+   * stands on this floor (trunks, pillars, stairs, furniture, walls), and only then what is on
+   * the roof over it (chimneys, rooflights, solar panels), tree crowns and patios.
+   */
+  private hitAll(s: Vec2): NonNullable<Selection>[] {
     const w = this.toWorld(s);
     const tol = 8 / this.view.scale;
     const plan = this.plan;
-    let best: Selection = null;
+    const out: NonNullable<Selection>[] = [];
+    let node: string | null = null;
     let bestD = 12 / this.view.scale;
     for (const n of Object.values(plan.nodes)) {
       const d = dist(n, w);
       if (d < bestD) {
         bestD = d;
-        best = { kind: 'node', id: n.id };
+        node = n.id;
       }
     }
-    if (best) return best;
+    if (node) out.push({ kind: 'node', id: node });
     for (const o of Object.values(plan.openings)) {
       const fp = this.fps.get(o.wallId);
       if (!fp) continue;
       const { u, v } = local(fp, w);
-      if (Math.abs(u - o.offset) <= o.width / 2 + tol && Math.abs(v) <= fp.thickness / 2 + tol) {
-        return { kind: 'opening', id: o.id };
-      }
+      if (Math.abs(u - o.offset) <= o.width / 2 + tol && Math.abs(v) <= fp.thickness / 2 + tol) out.push({ kind: 'opening', id: o.id });
     }
-    const trunk = treeAt(this.plan, w, 6 / this.view.scale, false);
-    if (trunk) return { kind: 'tree', id: trunk };
-    for (const c of Object.values(this.plan.chimneys ?? {})) {
-      if (pointInPolygon(w, chimneyFootprint(c))) return { kind: 'chimney', id: c.id };
-    }
-    for (const r of Object.values(this.plan.rooflights ?? {})) {
-      const g = rooflightGeometry(this.store.building, this.plan, r);
-      if (g && pointInPolygon(w, g.footprint)) return { kind: 'rooflight', id: r.id };
-    }
-    for (const sa of Object.values(this.plan.solar ?? {})) {
-      const g = solarGeometry(this.store.building, this.plan, sa);
-      if (g && pointInPolygon(w, g.outline)) return { kind: 'solar', id: sa.id };
-    }
-    const pillar = pillarAt(this.plan, w, 4 / this.view.scale);
-    if (pillar) return { kind: 'pillar', id: pillar };
-    const stair = stairAt(this.plan, w);
-    if (stair) return { kind: 'stair', id: stair };
-    const piece = furnitureAt(this.plan, w);
-    if (piece) return { kind: 'furniture', id: piece };
+    const trunk = treeAt(plan, w, 6 / this.view.scale, false);
+    if (trunk) out.push({ kind: 'tree', id: trunk });
+    const pillar = pillarAt(plan, w, 4 / this.view.scale);
+    if (pillar) out.push({ kind: 'pillar', id: pillar });
+    const stair = stairAt(plan, w);
+    if (stair) out.push({ kind: 'stair', id: stair });
+    const pieces = Object.values(plan.furniture ?? {}).filter((f) => pointInPolygon(w, footprint(f)));
+    pieces.sort((a, b) => a.width * a.depth - b.width * b.depth);
+    for (const f of pieces) out.push({ kind: 'furniture', id: f.id });
     const wall = this.wallAt(w, tol);
-    if (wall) return { kind: 'wall', id: wall.wallId };
-    const crown = treeAt(this.plan, w, 0);
-    if (crown) return { kind: 'tree', id: crown };
-    const patio = patioAt(this.plan, w);
-    return patio ? { kind: 'patio', id: patio } : null;
+    if (wall) out.push({ kind: 'wall', id: wall.wallId });
+    for (const c of Object.values(plan.chimneys ?? {})) {
+      if (pointInPolygon(w, chimneyFootprint(c))) out.push({ kind: 'chimney', id: c.id });
+    }
+    for (const r of Object.values(plan.rooflights ?? {})) {
+      const g = rooflightGeometry(this.store.building, plan, r);
+      if (g && pointInPolygon(w, g.footprint)) out.push({ kind: 'rooflight', id: r.id });
+    }
+    for (const sa of Object.values(plan.solar ?? {})) {
+      const g = solarGeometry(this.store.building, plan, sa);
+      if (g && pointInPolygon(w, g.outline)) out.push({ kind: 'solar', id: sa.id });
+    }
+    for (const t of Object.values(plan.trees ?? {})) {
+      if (t.id !== trunk && dist(t, w) <= t.spread / 2) out.push({ kind: 'tree', id: t.id });
+    }
+    const patios = Object.values(plan.patios ?? {}).filter((pt) => pointInPolygon(w, pt.points));
+    patios.sort((a, b) => b.height - a.height);
+    for (const pt of patios) out.push({ kind: 'patio', id: pt.id });
+    return out;
   }
 
   private wallAt(w: Vec2, tol: number): Footprint | null {
@@ -431,7 +441,13 @@ export class Editor2D {
     }
 
     if (this.tool === 'select') {
-      const hit = this.hitTest(s);
+      // Pressing on what is already selected keeps it (to drag it); clicking it again without
+      // dragging then moves on to the next thing underneath (see onUp).
+      const hits = this.hitAll(s);
+      const cur = this.selection;
+      const again = cur ? hits.findIndex((h) => h.kind === cur.kind && h.id === cur.id) : -1;
+      const hit = again >= 0 ? hits[again] : (hits[0] ?? null);
+      this.cycle = again >= 0 && hits.length > 1 ? hits[(again + 1) % hits.length] : null;
       this.select(hit);
       if (hit?.kind === 'node') this.gesture = { kind: 'dragNode', id: hit.id };
       else if (hit?.kind === 'pillar') this.gesture = { kind: 'dragPillar', id: hit.id };
@@ -637,6 +653,9 @@ export class Editor2D {
         if (!this.dragging) this.click(this.toWorld(this.eventPoint(e)));
         break;
     }
+    // A click (no drag) on the selected thing: select the next thing under it.
+    if (!this.dragging && this.cycle) this.select(this.cycle);
+    this.cycle = null;
     this.dragging = false;
     this.downAt = null;
   }
