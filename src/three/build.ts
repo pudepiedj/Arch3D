@@ -12,7 +12,7 @@ import { openingsOf } from '../model/openings';
 import { detectRooms } from '../model/rooms';
 import { ceilingHeight, levelElevation } from '../model/building';
 import { type Shape, subtract } from '../model/clip';
-import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs } from '../model/roof';
+import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs, planeOf } from '../model/roof';
 import { type StairGeometry, stairGeometry, stairSurfaceAt, stairwells } from '../model/stairs';
 import { type RailLine, againstWall, buildRails, onSegment } from './rails';
 import { pillarHeight } from '../model/pillars';
@@ -288,7 +288,8 @@ export interface LevelOptions {
   /** Stairs standing on this floor. */
   stairs?: StairGeometry[];
   /** The roofs over this floor (none when it is cut away). */
-  roofs?: RoofGeometry[];
+  /** Roofs, each flagged if it is vaulted (open to the room below, lined with plaster). */
+  roofs?: (RoofGeometry & { vaulted?: boolean })[];
   /** Chimney stacks and solar arrays on this floor's roofs (none when cut away). */
   chimneys?: ChimneyGeometry[];
   solar?: SolarGeometry[];
@@ -328,18 +329,21 @@ export function buildBuildingObject(
     const rooflights =
       i === cut ? [] : Object.values(level.rooflights ?? {}).flatMap((r) => rooflightGeometry(b, level, r) ?? []);
     const kerbs = rooflights.filter((r) => r.kind === 'kerb');
+    const roofs = i === cut ? [] : levelRoofs(b, level);
+    // Vaulted roofs have no flat ceiling under them: cut their outline out of the ceilings.
+    const vaults = roofs.filter((r) => r.roof.vaulted && r.roof.kind !== 'flat' && r.geometry).map((r) => [r.ring]);
     const obj = buildPlanObject(level, mats, {
       ceiling: i === cut ? null : ceilingHeight(b, level),
       floorHoles: below ? stairwells(below) : [],
       wellExits: below ? Object.values(below.stairs ?? {}).map((st) => stairGeometry(st, below.height).path.at(-1)!) : [],
-      ceilingHoles: [...stairwells(level), ...kerbs.map((r) => [r.footprint])],
+      ceilingHoles: [...stairwells(level), ...kerbs.map((r) => [r.footprint]), ...vaults],
       slab: level.slab,
       stairs: Object.values(level.stairs ?? {}).map((st) => stairGeometry(st, level.height)),
       pillars: Object.values(level.pillars ?? {}).map((q) => ({ ...q, height: pillarHeight(b, level, q) })),
       chimneys: i === cut ? [] : Object.values(level.chimneys ?? {}).map((c) => chimneyGeometry(b, level, c)),
       solar: i === cut ? [] : Object.values(level.solar ?? {}).flatMap((sa) => solarGeometry(b, level, sa) ?? []),
       rooflights,
-      roofs: i === cut ? [] : levelRoofs(b, level).flatMap((r) => (r.geometry ? [r.geometry] : [])),
+      roofs: roofs.flatMap((r) => (r.geometry ? [{ ...r.geometry, vaulted: !!r.roof.vaulted && r.roof.kind !== 'flat' }] : [])),
       patios: Object.values(level.patios ?? {}).map((patio) => ({ patio, shapes: patioShapes(level, patio) })),
       trees: Object.values(level.trees ?? {}),
       furniture: Object.values(level.furniture ?? {}).map((f) => ({ ...f, base: standingHeight(level, f) })),
@@ -418,7 +422,10 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   }
 
   const wells = (opts.rooflights ?? []).filter((r) => r.kind === 'kerb').map((r) => r.footprint);
-  for (const r of opts.roofs ?? []) group.add(buildRoofObject(r, mats, wells));
+  // Windows lying in a slope get their openings cut through the roof, so a vaulted room
+  // (or the loft) sees the sky through them.
+  const slopeHoles = (opts.rooflights ?? []).filter((r) => r.kind === 'slope').flatMap((r) => r.windows.map((w) => w.frame.map((p) => ({ x: p.x, y: p.y }))));
+  for (const r of opts.roofs ?? []) group.add(buildRoofObject(r, mats, wells, slopeHoles));
   if (opts.rooflights?.length) group.add(buildRooflights(opts.rooflights, opts.ceiling ?? 0, mats));
   for (const c of opts.chimneys ?? []) group.add(buildChimney(c, mats));
   if (opts.solar?.length) group.add(buildSolar(opts.solar, mats));
@@ -805,10 +812,18 @@ function buildSolar(arrays: SolarGeometry[], mats: Materials): THREE.Group {
 }
 
 /** Roof slopes, gable walls, fascia boards along the eaves, or a flat slab. */
-function buildRoofObject(r: RoofGeometry, mats: Materials, holes: Vec2[][] = []): THREE.Group {
+function buildRoofObject(
+  r: RoofGeometry & { vaulted?: boolean },
+  mats: Materials,
+  holes: Vec2[][] = [],
+  slopeHoles: Vec2[][] = [],
+): THREE.Group {
   const g = new THREE.Group();
   g.name = 'roof';
   const covering = new Mesher();
+  const lining = new Mesher();
+  /** Plaster under a vaulted roof: just below the covering, seen from the room. */
+  const LINING = 0.03;
   const flatTop = new Mesher();
   const gableWalls = new Mesher();
   const trim = new Mesher();
@@ -837,6 +852,33 @@ function buildRoofObject(r: RoofGeometry, mats: Materials, holes: Vec2[][] = [])
       }
       continue;
     }
+    if (f.kind !== 'flat' && (r.vaulted || slopeHoles.some((h) => h.some((p) => pointInPolygon(p, f.pts))))) {
+      // A slope with roof-window openings cut through it, and (vaulted) its plaster lining.
+      const plane = planeOf(f.pts);
+      if (plane) {
+        const cut = slopeHoles.filter((h) => h.some((p) => pointInPolygon(p, f.pts)));
+        for (const [outer, ...inner] of cut.length ? subtract(f.pts, cut.map((h) => [h])) : [[f.pts.map((p) => ({ x: p.x, y: p.y }))]]) {
+          const all = [outer, ...inner].flat();
+          const tris = THREE.ShapeUtils.triangulateShape(
+            outer.map((p) => new THREE.Vector2(p.x, p.y)),
+            inner.map((h) => h.map((p) => new THREE.Vector2(p.x, p.y))),
+          );
+          for (const [i, j, k] of tris) {
+            const [a, b2, c] = [all[i], all[j], all[k]];
+            covering.tri(v({ ...a, z: plane(a) }), v({ ...b2, z: plane(b2) }), v({ ...c, z: plane(c) }), up);
+            if (r.vaulted) {
+              lining.tri(
+                v({ ...a, z: plane(a) - LINING }),
+                v({ ...b2, z: plane(b2) - LINING }),
+                v({ ...c, z: plane(c) - LINING }),
+                up.clone().negate(),
+              );
+            }
+          }
+        }
+        continue;
+      }
+    }
     // Slopes and flat tops are never vertical, so they can be triangulated in plan.
     const tris = THREE.ShapeUtils.triangulateShape(f.pts.map((p) => new THREE.Vector2(p.x, p.y)), []);
     const m = f.kind === 'flat' ? flatTop : covering;
@@ -854,6 +896,7 @@ function buildRoofObject(r: RoofGeometry, mats: Materials, holes: Vec2[][] = [])
     [flatTop, mats.flatRoof],
     [gableWalls, mats.wall],
     [trim, mats.frame],
+    [lining, mats.ceiling],
   ] as const) {
     const mesh = new THREE.Mesh(m.geometry(), mat);
     mesh.castShadow = mesh.receiveShadow = true;

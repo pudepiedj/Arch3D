@@ -77,7 +77,8 @@ export function demoBuilding(): Building {
     [9.5, 10.5],
     [9.5, 8],
   ], false);
-  ground.roofAreas = [{ x: 8, y: 9.25, roof: { kind: 'gable', pitch: 35, overhang: 0.3 } }];
+  // Its ceiling is vaulted: open up to the slopes, with a roof window in one of them.
+  ground.roofAreas = [{ x: 8, y: 9.25, roof: { kind: 'gable', pitch: 35, overhang: 0.3, vaulted: true } }];
 
   at(ground, 4.6, 0, 'door');
   at(ground, 8, 0, 'window');
@@ -126,6 +127,9 @@ export function demoBuilding(): Building {
   // A rooflight box on the garage's flat roof: three windows with blinds and solar motors.
   const box = addRooflight(ground, { x: 11.5, y: 2.75 });
   Object.assign(box, { count: 3, angle: Math.PI, blinds: true, width: 0.55, length: 0.98 });
+
+  const velux = addRooflight(ground, { x: 7.35, y: 9.4 });
+  Object.assign(velux, { count: 1, width: 0.78, length: 1.18, blinds: false });
 
   // A straight stair along the back wall of the bedroom, rising towards the left.
   addStair(ground, 4.9, 7.4, Math.PI, 'straight');

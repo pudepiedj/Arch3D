@@ -166,6 +166,8 @@ export interface Roof {
   pitch: number;
   /** How far the eaves project beyond the outside face of the walls. */
   overhang: number;
+  /** No flat ceiling under this roof: the rooms are open to the slopes (a vaulted ceiling). */
+  vaulted?: boolean;
   /**
    * Edges set by hand to a sloping eave or a vertical gable end, identified by the
    * midpoint of the edge (so they survive small edits to the walls).

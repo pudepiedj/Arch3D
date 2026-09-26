@@ -722,6 +722,10 @@ export class Panel {
     this.select(label, roof.kind, kinds, (v) => set({ kind: v as RoofKind }));
     if (roof.kind === 'gable' || roof.kind === 'hip') {
       this.number('Roof pitch', roof.pitch, 1, 5, 70, (v) => set({ pitch: v }), '°');
+      this.select('Ceiling', roof.vaulted ? 'vaulted' : 'flat', [
+        ['flat', 'Flat ceiling'],
+        ['vaulted', 'Vaulted (open to the roof)'],
+      ], (v) => set({ vaulted: v === 'vaulted' || undefined }));
     }
     if (roof.kind !== 'none') {
       this.number('Overhang', roof.overhang, 0.05, 0, 1.5, (v) => set({ overhang: v }), 'm', 'How far the eaves project past the walls');

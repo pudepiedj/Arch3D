@@ -452,7 +452,7 @@ function gableWall(a: Vec2, b: Vec2, pieces: Point3[][]): Point3[] | null {
 }
 
 /** z = f(x, y) for the plane through a planar polygon (null if degenerate). */
-function planeOf(pts: Point3[]): ((p: Vec2) => number) | null {
+export function planeOf(pts: Point3[]): ((p: Vec2) => number) | null {
   for (let i = 0; i < pts.length; i++) {
     for (let j = i + 1; j < pts.length; j++) {
       for (let k = j + 1; k < pts.length; k++) {
