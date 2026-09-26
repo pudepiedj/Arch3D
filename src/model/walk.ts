@@ -10,6 +10,7 @@ import { levelElevation } from './building';
 import { Vec2, pointInPolygon } from './geom';
 import { computeFootprints, type Footprint } from './joints';
 import { openingsOf } from './openings';
+import { patioShapes } from './patios';
 import { detectRooms } from './rooms';
 import { stairGeometry, stairwells } from './stairs';
 import type { Building, Plan } from './types';
@@ -40,6 +41,7 @@ interface Surface {
 /** Something solid from `bottom` up to `top` (a stair step). */
 interface Block {
   poly: Vec2[];
+  holes?: Vec2[][];
   bottom: number;
   top: number;
 }
@@ -62,6 +64,13 @@ export class WalkWorld {
       const below = b.levels[i - 1];
       const holes = below ? stairwells(below).map((shape) => shape[0]) : [];
       for (const r of detectRooms(level)) this.surfaces.push({ poly: r.polygon, holes, z: elevation + 0.005 });
+      for (const pt of Object.values(level.patios ?? {})) {
+        for (const [poly, ...holes] of patioShapes(level, pt)) {
+          this.surfaces.push({ poly, holes, z: elevation + pt.height });
+          // A raised deck is solid: too high to step onto, and not to be walked through.
+          this.blocks.push({ poly, holes, bottom: elevation, top: elevation + pt.height });
+        }
+      }
       for (const s of Object.values(level.stairs ?? {})) {
         for (const t of stairGeometry(s, level.height).treads) {
           this.surfaces.push({ poly: t.poly, holes: [], z: elevation + t.top });
@@ -95,7 +104,11 @@ export class WalkWorld {
 
   private blocked(p: Vec2, foot: number): boolean {
     return this.blocks.some(
-      (b) => b.top > foot + STEP_UP && b.bottom < foot + HEAD && pointInPolygon(p, b.poly),
+      (b) =>
+        b.top > foot + STEP_UP &&
+        b.bottom < foot + HEAD &&
+        pointInPolygon(p, b.poly) &&
+        !b.holes?.some((h) => pointInPolygon(p, h)),
     );
   }
 

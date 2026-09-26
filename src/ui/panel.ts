@@ -5,12 +5,13 @@ import { addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelAbove, levelE
 import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, roofAreaRings, setAreaRoof } from '../model/roof';
 import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
+import { PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
 import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { stairGeometry } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
 import { deleteNode, deleteOpening, deleteWall, finishNodeMove, moveNode, normalize, setWallLength, splitWallAt } from '../model/plan';
-import { DEFAULTS, type OpeningKind, type Pillar, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
+import { DEFAULTS, type OpeningKind, type PatioSurface, type Pillar, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
 import type { Editor2D } from './editor2d';
 import type { Store } from './store';
 
@@ -73,6 +74,7 @@ export class Panel {
     if (sel.kind === 'chimney') return this.renderChimney(sel.id);
     if (sel.kind === 'solar') return this.renderSolar(sel.id);
     if (sel.kind === 'rooflight') return this.renderRooflight(sel.id);
+    if (sel.kind === 'patio') return this.renderPatio(sel.id);
 
     if (sel.kind === 'node') {
       const n = plan.nodes[sel.id];
@@ -370,6 +372,55 @@ export class Panel {
       }],
       ['Delete', () => {
         delete level.chimneys![id];
+        this.editor.select(null);
+        this.store.commit();
+      }, true],
+    ]);
+  }
+
+  private renderPatio(id: string) {
+    const level = this.store.plan;
+    const pt = level.patios?.[id];
+    if (!pt) return;
+    const names: Record<PatioSurface, string> = { paving: 'Patio', decking: 'Deck', gravel: 'Gravel' };
+    this.title(names[pt.surface]);
+    this.select('Surface', pt.surface, [
+      ['paving', 'Paving'],
+      ['decking', 'Decking'],
+      ['gravel', 'Gravel'],
+    ], (v) => {
+      setPatioSurface(pt, v as PatioSurface);
+      this.done();
+    });
+    this.number('Height', pt.height, 0.01, 0, 6, (v) => {
+      pt.height = v;
+      this.done();
+    }, 'm', 'Height of the top above this floor (the ground, for the ground floor)');
+    if (pt.surface !== 'gravel') {
+      const slab = pt.surface === 'paving';
+      this.number(slab ? 'Slab size' : 'Board width', pt.module, 0.005, slab ? 0.2 : 0.08, slab ? 1.2 : 0.3, (v) => {
+        pt.module = v;
+        this.done();
+      }, 'm');
+      this.number(slab ? 'Direction' : 'Boards run', ((((Math.round((pt.angle * 180) / Math.PI) % 360) + 540) % 360) - 180), 5, -180, 180, (v) => {
+        pt.angle = (v * Math.PI) / 180;
+        this.done();
+      }, '°', 'Direction of the courses or boards, from left-right on the plan');
+    }
+    const std = PATIO_DEFAULTS[pt.surface].height;
+    this.note(
+      `${patioArea(level, pt).toFixed(1)} m². ` +
+        (pt.height > std + 0.2
+          ? 'Raised: more than a step up, so it needs steps to walk onto.'
+          : 'Drag to move. Where it meets the house it stops at the walls.'),
+    );
+    this.buttons([
+      ['Turn 90°', () => {
+        pt.angle += Math.PI / 2;
+        this.done();
+      }],
+      ['Delete', () => {
+        delete level.patios![id];
         this.editor.select(null);
         this.store.commit();
       }, true],

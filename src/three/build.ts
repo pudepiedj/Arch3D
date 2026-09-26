@@ -24,7 +24,8 @@ import {
   rooflightGeometry,
   solarGeometry,
 } from '../model/roofitems';
-import type { Building, Opening, Pillar, Plan } from '../model/types';
+import { patioShapes } from '../model/patios';
+import type { Building, Opening, Patio, Pillar, Plan } from '../model/types';
 
 export interface Materials {
   wall: THREE.Material;
@@ -42,6 +43,11 @@ export interface Materials {
   solar: THREE.Material;
   darkFrame: THREE.Material;
   blind: THREE.Material;
+  paving: THREE.Material;
+  decking: THREE.Material;
+  gravel: THREE.Material;
+  paveEdge: THREE.Material;
+  deckEdge: THREE.Material;
 }
 
 export function createMaterials(): Materials {
@@ -69,7 +75,133 @@ export function createMaterials(): Materials {
     solar: new THREE.MeshStandardMaterial({ color: 0x1b2a4a, roughness: 0.25, metalness: 0.4, side: THREE.DoubleSide }),
     darkFrame: new THREE.MeshStandardMaterial({ color: 0x3b4046, roughness: 0.5, metalness: 0.3, side: THREE.DoubleSide }),
     blind: new THREE.MeshStandardMaterial({ color: 0xe8dcc2, roughness: 0.95, side: THREE.DoubleSide }),
+    paving: new THREE.MeshStandardMaterial({ color: 0xffffff, map: pavingTexture(), roughness: 0.9 }),
+    decking: new THREE.MeshStandardMaterial({ color: 0xffffff, map: deckingTexture(), roughness: 0.75 }),
+    gravel: new THREE.MeshStandardMaterial({ color: 0xffffff, map: gravelTexture(), roughness: 1 }),
+    paveEdge: new THREE.MeshStandardMaterial({ color: 0xb9b3a8, roughness: 0.9 }),
+    deckEdge: new THREE.MeshStandardMaterial({ color: 0x8a6446, roughness: 0.75 }),
   };
+}
+
+// ---------------------------------------------------------------- patio textures
+//
+// Drawn on a canvas once, then repeated. Each texture covers one "period" of the pattern
+// (see patioPeriod), so the patio's texture coordinates are just its plan coordinates,
+// turned to the patio's direction and divided by the period.
+
+/** Pseudo-random numbers from a fixed seed, so the textures look the same every time. */
+function rng(seed: number) {
+  return () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 2 ** 32;
+  };
+}
+
+function canvasTexture(w: number, h: number, draw: (ctx: CanvasRenderingContext2D) => void): THREE.Texture | null {
+  if (typeof document === 'undefined') return null;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  draw(c.getContext('2d')!);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+/** Slabs per texture period, each way. */
+const SLABS = 4;
+
+/** 4 x 4 sandstone slabs with mortar joints, each a slightly different shade. */
+function pavingTexture() {
+  return canvasTexture(512, 512, (ctx) => {
+    const r = rng(7);
+    const s = 512 / SLABS;
+    ctx.fillStyle = '#8d877d';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < SLABS; i++) {
+      for (let j = 0; j < SLABS; j++) {
+        const l = 70 + r() * 10;
+        ctx.fillStyle = `hsl(${34 + r() * 8}, ${14 + r() * 10}%, ${l}%)`;
+        ctx.fillRect(i * s + 3, j * s + 3, s - 6, s - 6);
+        // Riven texture: faint speckles.
+        for (let k = 0; k < 140; k++) {
+          ctx.fillStyle = `rgba(${r() < 0.5 ? '255,255,255' : '60,50,40'}, ${0.05 + r() * 0.08})`;
+          ctx.fillRect(i * s + 3 + r() * (s - 8), j * s + 3 + r() * (s - 8), 1 + r() * 3, 1 + r() * 3);
+        }
+      }
+    }
+  });
+}
+
+/** Boards per texture period across, and the period's length along the boards (m). */
+const BOARDS = 8;
+const BOARD_RUN = 3.6;
+const BOARD_GAP = 0.006;
+
+/** 8 boards side by side, with grain, and butt joints staggered from board to board. */
+function deckingTexture() {
+  return canvasTexture(1024, 512, (ctx) => {
+    const r = rng(11);
+    const b = 512 / BOARDS;
+    ctx.fillStyle = '#3a2a1e';
+    ctx.fillRect(0, 0, 1024, 512);
+    for (let j = 0; j < BOARDS; j++) {
+      const y = j * b + 2;
+      const h = b - 4;
+      // Each board is cut into two lengths at a different point.
+      const cut = Math.floor((0.15 + r() * 0.7) * 1024);
+      for (const [x0, x1] of [[0, cut], [cut, 1024]]) {
+        ctx.fillStyle = `hsl(${25 + r() * 5}, ${40 + r() * 8}%, ${42 + r() * 7}%)`;
+        ctx.fillRect(x0 + 1, y, x1 - x0 - 2, h);
+        // Grain: long thin streaks along the board.
+        for (let k = 0; k < 26; k++) {
+          ctx.strokeStyle = `rgba(${r() < 0.5 ? '255,230,200' : '40,20,10'}, ${0.06 + r() * 0.1})`;
+          ctx.lineWidth = 0.6 + r() * 1.2;
+          const gy = y + 2 + r() * (h - 4);
+          ctx.beginPath();
+          ctx.moveTo(x0 + 2, gy);
+          ctx.bezierCurveTo(x0 + (x1 - x0) * 0.3, gy + r() * 4 - 2, x0 + (x1 - x0) * 0.7, gy + r() * 4 - 2, x1 - 2, gy);
+          ctx.stroke();
+        }
+        // Grooves (anti-slip ribs).
+        ctx.strokeStyle = 'rgba(40, 22, 12, 0.18)';
+        ctx.lineWidth = 1;
+        for (let g = 1; g < 6; g++) {
+          ctx.beginPath();
+          ctx.moveTo(x0 + 2, y + (h * g) / 6);
+          ctx.lineTo(x1 - 2, y + (h * g) / 6);
+          ctx.stroke();
+        }
+      }
+    }
+  });
+}
+
+/** Pea gravel: a dense scatter of little stones. */
+function gravelTexture() {
+  return canvasTexture(512, 512, (ctx) => {
+    const r = rng(3);
+    ctx.fillStyle = '#a79f92';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let k = 0; k < 9000; k++) {
+      const x = r() * 512;
+      const y = r() * 512;
+      const s = 1.5 + r() * 3.5;
+      ctx.fillStyle = `hsl(${25 + r() * 20}, ${8 + r() * 14}%, ${45 + r() * 35}%)`;
+      ctx.beginPath();
+      ctx.ellipse(x, y, s, s * (0.6 + r() * 0.4), r() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
+/** Size in metres of one repeat of the texture: along the courses/boards, and across them. */
+function patioPeriod(p: Patio): { along: number; across: number } {
+  if (p.surface === 'paving') return { along: SLABS * p.module, across: SLABS * p.module };
+  if (p.surface === 'decking') return { along: BOARD_RUN, across: BOARDS * (p.module + BOARD_GAP) };
+  return { along: 1, across: 1 };
 }
 
 /** Door leaves are shown open by this angle so you can walk through. */
@@ -152,6 +284,8 @@ export interface LevelOptions {
   rooflights?: RooflightGeometry[];
   /** Free-standing pillars, each with the height it rises to. */
   pillars?: (Pillar & { height: number })[];
+  /** Patios, decks and gravel, with their outlines less the house. */
+  patios?: { patio: Patio; shapes: Shape[] }[];
 }
 
 /**
@@ -180,6 +314,7 @@ export function buildBuildingObject(b: Building, mats: Materials, upTo?: string)
       solar: i === cut ? [] : Object.values(level.solar ?? {}).flatMap((sa) => solarGeometry(b, level, sa) ?? []),
       rooflights,
       roofs: i === cut ? [] : levelRoofs(b, level).flatMap((r) => (r.geometry ? [r.geometry] : [])),
+      patios: Object.values(level.patios ?? {}).map((patio) => ({ patio, shapes: patioShapes(level, patio) })),
     });
     obj.position.y = levelElevation(b, level.id);
     obj.name = `level:${level.id}`;
@@ -270,6 +405,8 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
     group.add(m);
   }
 
+  if (opts.patios?.length) group.add(buildPatios(opts.patios, mats));
+
   const wallMesh = new THREE.Mesh(sides.geometry(), mats.wall);
   wallMesh.castShadow = wallMesh.receiveShadow = true;
   wallMesh.name = 'walls';
@@ -331,6 +468,72 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   floorMesh.name = 'floors';
   group.add(floorMesh);
   return group;
+}
+
+/**
+ * Patios: a textured top, with the pattern turned to the patio's direction, and edges down
+ * to the ground (the level's floor): stone for paving and gravel, a timber fascia for decks.
+ */
+function buildPatios(list: { patio: Patio; shapes: Shape[] }[], mats: Materials): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'patios';
+  for (const { patio, shapes } of list) {
+    const period = patioPeriod(patio);
+    const along = { x: Math.cos(patio.angle), y: Math.sin(patio.angle) };
+    const across = { x: -along.y, y: along.x };
+    const pos: number[] = [];
+    const uv: number[] = [];
+    const edges = new Mesher();
+    const z = patio.height;
+    for (const shape of shapes) {
+      const [outer, ...holes] = shape;
+      const all = shape.flat();
+      const tris = THREE.ShapeUtils.triangulateShape(
+        outer.map((p) => new THREE.Vector2(p.x, p.y)),
+        holes.map((h) => h.map((p) => new THREE.Vector2(p.x, p.y))),
+      );
+      for (const t of tris) {
+        const [a, b, c] = t.map((k) => all[k]);
+        // Facing up: in plan (x, y) -> world (x, z), that is clockwise seen from +y.
+        const ccw = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x) > 0;
+        for (const p of ccw ? [a, c, b] : [a, b, c]) {
+          pos.push(p.x, z, p.y);
+          uv.push(dot(p, along) / period.along, dot(p, across) / period.across);
+        }
+      }
+      for (const ring of shape) {
+        const inside = ring === outer ? 1 : -1;
+        const ccw = polygonSign(ring) * inside;
+        ring.forEach((p, k) => {
+          const q = ring[(k + 1) % ring.length];
+          // Outward normal of the edge p->q, for a ring running counter-clockwise.
+          const out = new THREE.Vector3(q.y - p.y, 0, p.x - q.x).multiplyScalar(ccw);
+          edges.vface(p, q, -0.01, z, out);
+        });
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.computeVertexNormals();
+    const top = new THREE.Mesh(geo, mats[patio.surface]);
+    top.receiveShadow = true;
+    top.name = `patio:${patio.id}`;
+    const side = new THREE.Mesh(edges.geometry(), patio.surface === 'decking' ? mats.deckEdge : mats.paveEdge);
+    side.receiveShadow = side.castShadow = true;
+    g.add(top, side);
+  }
+  return g;
+}
+
+/** +1 for a counter-clockwise ring (in plan coordinates), -1 for clockwise. */
+function polygonSign(ring: Vec2[]): number {
+  let a = 0;
+  ring.forEach((p, k) => {
+    const q = ring[(k + 1) % ring.length];
+    a += p.x * q.y - q.x * p.y;
+  });
+  return a >= 0 ? 1 : -1;
 }
 
 /**

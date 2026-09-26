@@ -1,5 +1,6 @@
 import { addLevelOnTop, createBuilding } from './building';
 import { addPillar, pillarsForSection } from './pillars';
+import { addPatio } from './patios';
 import { addChimney, addRooflight, addSolarArray } from './roofitems';
 import { addStair } from './stairs';
 import { addWall, deleteWall, findWallInterior } from './plan';
@@ -105,6 +106,11 @@ export function demoBuilding(): Building {
     },
   };
   for (const p of pillarsForSection(ground, 't')) addPillar(ground, p);
+
+  // Outside: paving under the terrace roof, a deck by the garden room, gravel in front of the garage.
+  addPatio(ground, [{ x: -0.5, y: 8 }, { x: 6.3, y: 8 }, { x: 6.3, y: 11.3 }, { x: -0.5, y: 11.3 }], 'paving');
+  addPatio(ground, [{ x: 9.5, y: 6.5 }, { x: 12.5, y: 6.5 }, { x: 12.5, y: 10.5 }, { x: 9.5, y: 10.5 }], 'decking').angle = Math.PI / 2;
+  addPatio(ground, [{ x: 13, y: 0.5 }, { x: 18, y: 0.5 }, { x: 18, y: 5 }, { x: 13, y: 5 }], 'gravel');
 
   // A rooflight box on the garage's flat roof: three windows with blinds and solar motors.
   const box = addRooflight(ground, { x: 11.5, y: 2.75 });

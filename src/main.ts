@@ -54,6 +54,12 @@ for (const b of $$('#roofMode button')) {
     syncToolbar();
   });
 }
+for (const b of $$('#patioSurface button')) {
+  b.addEventListener('click', () => {
+    editor.patioSurface = b.dataset.surface as typeof editor.patioSurface;
+    editor.setTool('patio');
+  });
+}
 for (const b of $$('#stairShape button')) {
   b.addEventListener('click', () => {
     editor.stairShape = b.dataset.shape as typeof editor.stairShape;
@@ -279,6 +285,7 @@ const HINTS: Record<Tool, string> = {
   chimney: 'Click on the roof to place a chimney stack (on the floor whose roof it goes through)',
   solar: 'Click on a roof slope to lay a solar array on it (on the floor the roof belongs to)',
   rooflight: 'Click on a roof: a flat roof gets a rooflight box, a sloping roof a window in the slope',
+  patio: 'Click the corners of the patio (snaps to walls; the house is cut out) · click the first corner, double-click or Enter to finish',
 };
 
 function syncToolbar() {
@@ -287,7 +294,9 @@ function syncToolbar() {
     b.classList.toggle('on', Math.abs(parseFloat(b.dataset.thickness!) - editor.wallProps.thickness) < 1e-6);
   }
   $('#wallType').hidden = editor.tool !== 'wall';
-  $('#ortho').hidden = editor.tool !== 'wall' && editor.tool !== 'stair';
+  $('#ortho').hidden = editor.tool !== 'wall' && editor.tool !== 'stair' && editor.tool !== 'patio';
+  $('#patioSurface').hidden = editor.tool !== 'patio';
+  for (const b of $$('#patioSurface button')) b.classList.toggle('on', b.dataset.surface === editor.patioSurface);
   $('#stairShape').hidden = editor.tool !== 'stair';
   $('#roofMode').hidden = editor.tool !== 'roof';
   for (const b of $$('#roofMode button')) b.classList.toggle('on', b.dataset.roofmode === editor.roofMode);

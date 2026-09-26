@@ -93,6 +93,21 @@ export interface Rooflight {
   solarMotor: boolean;
 }
 
+export type PatioSurface = 'paving' | 'decking' | 'gravel';
+
+/** A paved, decked or gravelled area outside, drawn as a polygon on a floor's plan. */
+export interface Patio {
+  id: string;
+  points: { x: number; y: number }[];
+  surface: PatioSurface;
+  /** Height of the top surface above the floor it belongs to. */
+  height: number;
+  /** Direction (radians) the paving courses or deck boards run in. */
+  angle: number;
+  /** Paving slab size (square), or deck board width. */
+  module: number;
+}
+
 /** A free-standing post, e.g. holding up a veranda or carport roof. */
 export interface Pillar {
   id: string;
@@ -194,6 +209,8 @@ export interface Level extends Plan {
   solar?: Record<string, SolarArray>;
   /** Roof windows and rooflight boxes on this floor's roofs. */
   rooflights?: Record<string, Rooflight>;
+  /** Patios, decks and gravelled areas. */
+  patios?: Record<string, Patio>;
 }
 
 /** A building is a stack of levels, listed from the bottom up. */

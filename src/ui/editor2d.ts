@@ -17,6 +17,7 @@ import {
 } from '../model/geom';
 import { getLevel, levelBelow } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
+import { addPatio, patioAt, patioShapes } from '../model/patios';
 import { addChimney, addRooflight, addSolarArray, chimneyFootprint, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { roofSurfaceAt } from '../model/roof';
 import { DEFAULT_ROOF, type LevelRoof, levelRoofs, roofAreaRings, setAreaRoof, toggleEdge } from '../model/roof';
@@ -43,12 +44,12 @@ import {
   splitWallAt,
 } from '../model/plan';
 import { detectRooms } from '../model/rooms';
-import type { Level, Opening, OpeningKind, Plan, StairShape } from '../model/types';
+import type { Level, Opening, OpeningKind, PatioSurface, Plan, StairShape } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight';
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio';
 export type Selection = {
-  kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight';
+  kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio';
   id: string;
 } | null;
 
@@ -60,6 +61,7 @@ type Gesture =
   | { kind: 'dragOpening'; id: string }
   | { kind: 'dragStair'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'dragPillar'; id: string }
+  | { kind: 'dragPatio'; id: string; start: Vec2; pts0: Vec2[] }
   | { kind: 'dragRoofItem'; what: 'chimney' | 'solar' | 'rooflight'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'click' };
 
@@ -86,8 +88,10 @@ export class Editor2D {
   private stairStart: Vec2 | null = null;
   /** Roof tool: editing existing roofs, or drawing a new roof section. */
   roofMode: 'edit' | 'draw' = 'edit';
-  /** Corners of a roof section being drawn. */
+  /** Corners of a roof section or patio being drawn. */
   private sectionPts: Vec2[] = [];
+  /** Surface for new patios. */
+  patioSurface: PatioSurface = 'paving';
   /** A copied door or window: its exact type and size. */
   clipboard: OpeningTemplate | null = null;
   ortho = false;
@@ -129,7 +133,7 @@ export class Editor2D {
     c.addEventListener('contextmenu', (e) => e.preventDefault());
     c.addEventListener('dblclick', () => {
       if (this.tool === 'wall') this.finishChain();
-      if (this.tool === 'roof' && this.roofMode === 'draw') this.finishSection();
+      if (this.drawingOutline) this.finishOutline();
     });
     window.addEventListener('keydown', (e) => this.onKey(e));
     new ResizeObserver(() => this.resize()).observe(container);
@@ -352,7 +356,9 @@ export class Editor2D {
     const stair = stairAt(this.plan, w);
     if (stair) return { kind: 'stair', id: stair };
     const wall = this.wallAt(w, tol);
-    return wall ? { kind: 'wall', id: wall.wallId } : null;
+    if (wall) return { kind: 'wall', id: wall.wallId };
+    const patio = patioAt(this.plan, w);
+    return patio ? { kind: 'patio', id: patio } : null;
   }
 
   private wallAt(w: Vec2, tol: number): Footprint | null {
@@ -413,6 +419,10 @@ export class Editor2D {
         this.gesture = { kind: 'dragStair', id: hit.id, start: this.toWorld(s), x0: st.x, y0: st.y };
       }
       else if (hit?.kind === 'opening') this.gesture = { kind: 'dragOpening', id: hit.id };
+      else if (hit?.kind === 'patio') {
+        const pts0 = this.plan.patios![hit.id].points.map((p) => ({ ...p }));
+        this.gesture = { kind: 'dragPatio', id: hit.id, start: this.toWorld(s), pts0 };
+      }
       else if (hit?.kind === 'wall') {
         const fp = this.fps.get(hit.id)!;
         const wall = this.plan.walls[hit.id];
@@ -494,6 +504,16 @@ export class Editor2D {
         this.store.changed();
         break;
       }
+      case 'dragPatio': {
+        const pt = plan.patios?.[cur.id];
+        if (!pt) break;
+        const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
+        const dx = snapTo(w.x - cur.start.x);
+        const dy = snapTo(w.y - cur.start.y);
+        pt.points = cur.pts0.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+        this.store.changed();
+        break;
+      }
       case 'dragPillar': {
         const q = plan.pillars?.[cur.id];
         if (!q) break;
@@ -566,6 +586,7 @@ export class Editor2D {
       case 'dragStair':
       case 'dragPillar':
       case 'dragRoofItem':
+      case 'dragPatio':
         if (this.dragging) this.store.commit();
         break;
       case 'click':
@@ -632,6 +653,9 @@ export class Editor2D {
       }
       case 'roof':
         this.roofClick(w);
+        break;
+      case 'patio':
+        this.outlineClick(w);
         break;
       case 'stair': {
         if (!this.stairStart) {
@@ -760,7 +784,7 @@ export class Editor2D {
     }
     switch (e.key) {
       case 'Enter':
-        if (this.sectionPts.length) this.finishSection();
+        if (this.sectionPts.length) this.finishOutline();
         break;
       case 'Escape':
         if (this.sectionPts.length) {
@@ -807,6 +831,9 @@ export class Editor2D {
         break;
       case 'c':
         this.setTool('chimney');
+        break;
+      case 't':
+        this.setTool('patio');
         break;
       case 'o':
         this.ortho = !this.ortho;
@@ -949,14 +976,7 @@ export class Editor2D {
   /** Roof tool click: switch an edge of the selected roof, select a roof, or add a section corner. */
   private roofClick(w: Vec2) {
     const plan = this.plan;
-    if (this.roofMode === 'draw') {
-      const s = this.snap(w, { from: this.sectionPts[this.sectionPts.length - 1] ?? null });
-      const first = this.sectionPts[0];
-      if (first && this.sectionPts.length >= 3 && dist(s.p, first) < 12 / this.view.scale) this.finishSection();
-      else this.sectionPts.push(s.p);
-      this.requestRender();
-      return;
-    }
+    if (this.roofMode === 'draw') return this.outlineClick(w);
     const roofs = this.roofs();
     const sel = this.selection?.kind === 'roof' ? roofs.find((r) => r.id === this.selection!.id) : undefined;
     if (sel?.geometry && sel.roof.kind !== 'flat') {
@@ -978,6 +998,34 @@ export class Editor2D {
     if (hit) return this.select({ kind: 'roof', id: hit.id });
     const area = roofAreaRings(this.store.building, plan).findIndex((ring) => pointInPolygon(w, ring));
     this.select(area >= 0 ? { kind: 'roof', id: `area:${area}` } : null);
+  }
+
+  /** True while the tool draws an outline corner by corner (a roof section or a patio). */
+  get drawingOutline(): boolean {
+    return (this.tool === 'roof' && this.roofMode === 'draw') || this.tool === 'patio';
+  }
+
+  /** Add a corner to the outline being drawn, or close it on its first corner. */
+  private outlineClick(w: Vec2) {
+    const s = this.snap(w, { from: this.sectionPts[this.sectionPts.length - 1] ?? null });
+    const first = this.sectionPts[0];
+    if (first && this.sectionPts.length >= 3 && dist(s.p, first) < 12 / this.view.scale) this.finishOutline();
+    else this.sectionPts.push(s.p);
+    this.requestRender();
+  }
+
+  finishOutline() {
+    if (this.tool === 'patio') this.finishPatio();
+    else this.finishSection();
+  }
+
+  private finishPatio() {
+    const pts = this.sectionPts;
+    this.sectionPts = [];
+    if (pts.length < 3) return this.requestRender();
+    const pt = addPatio(this.plan, pts, this.patioSurface);
+    this.store.commit();
+    this.select({ kind: 'patio', id: pt.id });
   }
 
   finishSection() {
@@ -1028,6 +1076,74 @@ export class Editor2D {
     }
   }
 
+  /** Patios: a fill in the surface's colour, with the slab joints or deck boards drawn in. */
+  private drawPatios(C: Record<string, string>) {
+    const ctx = this.ctx;
+    const plan = this.plan;
+    const fills = { paving: 'rgba(196, 184, 164, 0.55)', decking: 'rgba(170, 118, 76, 0.45)', gravel: 'rgba(170, 162, 148, 0.5)' };
+    const list = Object.values(plan.patios ?? {}).sort((a, b) => a.height - b.height);
+    for (const pt of list) {
+      const shapes = patioShapes(plan, pt);
+      const sel = this.selection?.kind === 'patio' && this.selection.id === pt.id;
+      ctx.save();
+      ctx.beginPath();
+      for (const ring of shapes.flat()) {
+        ring.forEach((p, i) => {
+          const q = this.toScreen(p);
+          if (i) ctx.lineTo(q.x, q.y);
+          else ctx.moveTo(q.x, q.y);
+        });
+        ctx.closePath();
+      }
+      ctx.fillStyle = sel ? hexAlpha(C.accent, 0.22) : fills[pt.surface];
+      ctx.fill('evenodd');
+      ctx.clip('evenodd');
+      // The pattern: lines along the boards/courses, and across them for slabs.
+      const along = { x: Math.cos(pt.angle), y: Math.sin(pt.angle) };
+      const across = { x: -along.y, y: along.x };
+      const step = pt.surface === 'decking' ? pt.module + 0.006 : pt.module;
+      if (pt.surface !== 'gravel' && step * this.view.scale > 4) {
+        const c = pt.points.reduce((a, p) => ({ x: a.x + p.x / pt.points.length, y: a.y + p.y / pt.points.length }), { x: 0, y: 0 });
+        const R = Math.max(...pt.points.map((p) => dist(p, c))) + step;
+        const n = Math.ceil(R / step);
+        ctx.strokeStyle = pt.surface === 'decking' ? 'rgba(90, 55, 30, 0.45)' : 'rgba(110, 100, 85, 0.45)';
+        ctx.lineWidth = 1;
+        const dirs = pt.surface === 'paving' ? [[along, across], [across, along]] : [[along, across]];
+        for (const [d, o] of dirs) {
+          // Lines through points on a grid anchored at the plan origin, so they don't jump as the patio is dragged.
+          const base = Math.round((c.x * o.x + c.y * o.y) / step) * step;
+          const offset = base - (c.x * o.x + c.y * o.y);
+          for (let k = -n; k <= n; k++) {
+            const m = add(c, scale(o, offset + k * step));
+            this.line(add(m, scale(d, -R)), add(m, scale(d, R)));
+          }
+        }
+      } else if (pt.surface === 'gravel') {
+        ctx.fillStyle = 'rgba(110, 100, 85, 0.5)';
+        const b = pt.points;
+        const minX = Math.min(...b.map((p) => p.x));
+        const maxX = Math.max(...b.map((p) => p.x));
+        const minY = Math.min(...b.map((p) => p.y));
+        const maxY = Math.max(...b.map((p) => p.y));
+        const g = Math.max(0.15, 6 / this.view.scale);
+        for (let x = Math.floor(minX / g) * g; x <= maxX; x += g) {
+          for (let y = Math.floor(minY / g) * g; y <= maxY; y += g) {
+            const j = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+            const q = this.toScreen({ x: x + (j - Math.floor(j)) * g * 0.6, y: y + ((j * 7) % 1) * g * 0.6 });
+            ctx.fillRect(q.x, q.y, 1.5, 1.5);
+          }
+        }
+      }
+      ctx.restore();
+      ctx.strokeStyle = sel ? C.accent : 'rgba(110, 100, 85, 0.8)';
+      ctx.lineWidth = sel ? 2 : 1;
+      for (const ring of shapes.flat()) {
+        this.path(ring);
+        ctx.stroke();
+      }
+    }
+  }
+
   deleteSelection() {
     const s = this.selection;
     if (!s) return;
@@ -1039,6 +1155,7 @@ export class Editor2D {
     else if (s.kind === 'chimney') delete this.plan.chimneys?.[s.id];
     else if (s.kind === 'solar') delete this.plan.solar?.[s.id];
     else if (s.kind === 'rooflight') delete this.plan.rooflights?.[s.id];
+    else if (s.kind === 'patio') delete this.plan.patios?.[s.id];
     else if (s.kind === 'roof') {
       if (s.id.startsWith('section:')) delete this.plan.roofSections?.[s.id.slice(8)];
       else {
@@ -1063,7 +1180,8 @@ export class Editor2D {
       (s.kind === 'pillar' && p.pillars?.[s.id]) ||
       (s.kind === 'chimney' && p.chimneys?.[s.id]) ||
       (s.kind === 'solar' && p.solar?.[s.id]) ||
-      (s.kind === 'rooflight' && p.rooflights?.[s.id]);
+      (s.kind === 'rooflight' && p.rooflights?.[s.id]) ||
+      (s.kind === 'patio' && p.patios?.[s.id]);
     if (!exists) this.select(null);
   }
 
@@ -1116,6 +1234,7 @@ export class Editor2D {
     const plan = this.plan;
     this.fps = computeFootprints(plan);
     this.drawGrid(W, H, C.grid, C.gridMajor);
+    this.drawPatios(C);
 
 
     // Rooms.
@@ -1311,7 +1430,7 @@ export class Editor2D {
           ctx.fillText('No room for an exact copy here', s.x + 12, s.y - 12);
         }
       }
-    } else if (this.tool === 'roof' && this.roofMode === 'draw') {
+    } else if (this.drawingOutline) {
       const pts = [...this.sectionPts];
       const s = h ? this.snap(h, { from: pts[pts.length - 1] ?? null }) : null;
       if (s) pts.push(s.p);

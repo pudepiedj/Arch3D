@@ -34,6 +34,7 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 | **Chimney** (C) | Click on the roof to place a chimney stack (on the floor whose roof it goes through). |
 | **Solar** | Click on a roof slope to lay a solar panel array on it. |
 | **Rooflight** | Click on a roof. A flat roof gets a rooflight box; a sloping roof gets a window lying in the slope. |
+| **Patio** (T) | Choose Paving, Decking or Gravel, then click the corners of the area. Click the first corner, double-click or press Enter to finish. |
 | **Split** (X) | Click on a wall to add a joint, which is then selected so you can drag it (to make a bay, a nib or a step in the wall). |
 
 **Copying doors and windows exactly:** select one and press **Copy** in the panel (Ctrl/⌘+C).
@@ -62,6 +63,14 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 - **On a sloping roof:** the windows lie in the slope.
 - **Panel settings:** the number of windows, window width and length, box slope and kerb height, and rotating the box by 90°.
 - **Show open** tilts the windows out at the bottom, **Blinds down** draws the blinds, and **Solar motor** adds or removes the little solar strip on each frame.
+
+**Patios, decks and gravel:**
+- Draw them right up to the house; they are cut back to the outside face of the walls.
+- **Paving:** 600 mm slabs in slightly varied sandstone shades, 4 cm above the ground.
+- **Decking:** grooved timber boards with staggered joints on a frame, 15 cm up (one step) with a timber fascia round the edge.
+- **Gravel:** a gravel scatter.
+- **Panel settings:** the surface, the height, the slab size or board width, and which way the courses or boards run (**Turn 90°**). It also shows the area.
+- Drag a patio to move it. In walk mode you step up onto it. A deck higher than a step (over 35 cm) is solid, so it needs steps to get onto it.
 
 **Stairs:**
 - The number of steps and their height come from the floor-to-floor height: the fewest steps that keep each one under 19 cm, e.g. 16 steps of 18.1 cm for 2.9 m.
@@ -129,11 +138,12 @@ Everything visible is *derived* from that data on every change, so there is no s
   - Each area, and each hand-drawn section, is roofed separately using the straight skeleton of its outline: every eave rises at the same pitch, and the slopes meet along hips, valleys and ridges. This uses the MIT-licensed `straight-skeleton` 1.1.0, pinned; newer versions wrap GPL code.
   - A gable end is an edge that doesn't slope. It is pushed far away before the skeleton is computed, so it has no influence. The roof is then trimmed back to the wall line, and the vertical profile left there becomes the gable wall. Edges against a taller wall work the same way, without a gable wall.
   - That library occasionally leaves part of a slope out, where two lined-up edges merge (the walls either side of a bay). The gap is filled with the slope whose plane matches the heights already known around it. Tests check that every roof covers its whole outline, with no tears.
-- **Rooms** (`rooms.ts`)- **Rooms** (`rooms.ts`) are the enclosed faces of the wall graph. They give the floors and the net floor area labels.
+- **Rooms** (`rooms.ts`) are the enclosed faces of the wall graph. They give the floors and the net floor area labels.
 
 ## Not done yet
 
-- Dormers and roof windows.
+- Dormers.
+- A real sun position from date, time, location and the house's orientation. For now the sun is fixed, up and to one side of the house.
 - Furniture.
 - Textures and materials per room.
 - Curved walls.
