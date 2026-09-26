@@ -91,7 +91,59 @@ function unit(ctx: Ctx, w: number, d: number, fill: string) {
   line(ctx, -w / 2, d / 2 - 0.03, w / 2, d / 2 - 0.03);
 }
 
+/** An office chair seen from above: a round seat with a curved back. */
+function officeChair(ctx: Ctx, x: number, y: number, a: number, fill: string) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(a);
+  circle(ctx, 0, 0.02, 0.24, fill);
+  ctx.beginPath();
+  ctx.arc(0, 0.02, 0.28, Math.PI * 1.15, Math.PI * 1.85);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** A monitor seen from above: a thin bar, turned by a. */
+function monitor(ctx: Ctx, x: number, y: number, a: number) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(a);
+  rect(ctx, -0.31, -0.02, 0.62, 0.04, '#333333');
+  ctx.restore();
+}
+
 const SYMBOLS: Record<string, Symbol> = {
+  officedesk: (ctx, _f, w, d, fill) => rect(ctx, -w / 2, -d / 2, w, d, fill),
+  officechair: (ctx, _f, _w, _d, fill) => officeChair(ctx, 0, 0, 0, fill),
+  workstation: (ctx, _f, w, d, fill) => {
+    officeChair(ctx, 0, -d / 2 + 0.95, Math.PI, fill);
+    rect(ctx, -w / 2, -d / 2, w, 0.8, fill);
+    monitor(ctx, 0, -d / 2 + 0.2, 0);
+    rect(ctx, -0.22, -d / 2 + 0.45, 0.44, 0.14);
+  },
+  workstation2: (ctx, _f, w, d, fill) => {
+    officeChair(ctx, 0, -d / 2 + 0.95, Math.PI, fill);
+    rect(ctx, -w / 2, -d / 2, w, 0.8, fill);
+    monitor(ctx, -0.33, -d / 2 + 0.22, -0.2);
+    monitor(ctx, 0.33, -d / 2 + 0.22, 0.2);
+    rect(ctx, -0.22, -d / 2 + 0.45, 0.44, 0.14);
+  },
+  cornerdesk: (ctx, _f, w, d, fill) => {
+    officeChair(ctx, -w / 2 + 0.95, -d / 2 + 1.05, (Math.PI * 3) / 4, fill);
+    poly(ctx, [
+      { x: -w / 2, y: -d / 2 },
+      { x: w / 2, y: -d / 2 },
+      { x: w / 2, y: -d / 2 + 0.75 },
+      { x: -w / 2 + 0.65, y: -d / 2 + 0.75 },
+      { x: -w / 2 + 0.65, y: d / 2 },
+      { x: -w / 2, y: d / 2 },
+    ], fill);
+    monitor(ctx, -w / 2 + 0.42, -d / 2 + 0.38, -Math.PI / 4);
+  },
+  filing: (ctx, _f, w, d, fill) => {
+    rect(ctx, -w / 2, -d / 2, w, d, fill);
+    line(ctx, -w / 2, d / 2 - 0.03, w / 2, d / 2 - 0.03);
+  },
   fireplace: (ctx, _f, w, d, fill) => {
     rect(ctx, -w / 2, -d / 2, w, d, 'rgba(60, 60, 64, 0.25)'); // hearth
     rect(ctx, -w / 2, -d / 2, w, 0.22, fill); // surround

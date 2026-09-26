@@ -192,7 +192,115 @@ function fire(k: Kit, x: number, y: number, z: number, w: number) {
   }
 }
 
+const DESK: Record<string, number> = { oak: 0xc49a6c, white: 0xf1efe9, walnut: 0x6b4a32, black: 0x1f2023 };
+
+/** A desk top on metal side frames, with a modesty panel at the back. */
+function officeDesk(k: Kit, f: Furniture, w: number, d: number, h: number, x = 0, y = 0) {
+  const top = plain(DESK[f.finish ?? 'oak'] ?? DESK.oak, 0.5);
+  const frame = plain(0x2a2c30, 0.4, 0.5);
+  k.box(w, d, 0.025, x, y, h - 0.025, top);
+  for (const s of [-1, 1]) {
+    k.box(0.05, d - 0.1, 0.03, x + s * (w / 2 - 0.06), y, 0, frame); // foot
+    k.box(0.05, 0.05, h - 0.055, x + s * (w / 2 - 0.06), y, 0.03, frame); // upright
+    k.box(0.05, d - 0.1, 0.03, x + s * (w / 2 - 0.06), y, h - 0.055, frame); // top rail
+  }
+  k.box(w - 0.2, 0.015, 0.35, x, y - d / 2 + 0.06, h - 0.4, frame); // modesty panel
+}
+
+/** A monitor on its stand, facing +y (towards the user), at (x, y) on a surface at height z. */
+function monitor(k: Kit, x: number, y: number, z: number, a = 0) {
+  const sub = new Kit();
+  const black = plain(0x151618, 0.35);
+  sub.box(0.22, 0.18, 0.012, 0, 0, 0, black); // foot
+  sub.box(0.04, 0.03, 0.22, 0, -0.05, 0.012, black); // neck
+  sub.box(0.62, 0.03, 0.37, 0, -0.03, 0.12, black); // bezel
+  sub.box(0.6, 0.004, 0.35, 0, -0.013, 0.13, mat('screen', () => new THREE.MeshStandardMaterial({ color: 0x1a2a3a, emissive: 0x3a5f8a, emissiveIntensity: 0.55, roughness: 0.15 })));
+  sub.g.position.set(x, z, y);
+  sub.g.rotation.y = -a;
+  k.g.add(sub.g);
+}
+
+/** Keyboard and mouse in front of the user, at (x, y) on a surface at height z. */
+function keyboard(k: Kit, x: number, y: number, z: number) {
+  k.box(0.44, 0.14, 0.02, x, y, z, plain(0x2b2c2f, 0.5));
+  k.box(0.42, 0.12, 0.004, x, y, z + 0.02, plain(0x4a4b4f, 0.6));
+  const mouse = k.sphere(0.03, x + 0.3, y + 0.01, z + 0.012, plain(0x2b2c2f, 0.4));
+  mouse.scale.set(1, 0.45, 1.6);
+}
+
+/** A PC tower standing on the floor. */
+function tower(k: Kit, x: number, y: number) {
+  k.box(0.2, 0.45, 0.45, x, y, 0, plain(0x1c1d20, 0.4, 0.3));
+  k.box(0.004, 0.02, 0.02, x + 0.05, y + 0.226, 0.4, mat('led', () => new THREE.MeshStandardMaterial({ color: 0x3aa0ff, emissive: 0x3aa0ff, emissiveIntensity: 2 })));
+}
+
+/** A swivel office chair at (x, y) whose seat faces direction a (in the piece's frame). */
+function officeChair(k: Kit, x: number, y: number, a: number, finish?: string) {
+  const sub = new Kit();
+  const fab = plain(finish === 'grey' ? 0x6f7378 : finish === 'blue' ? 0x2f4a70 : 0x1f2023, 0.9);
+  const metal = plain(0x2a2c30, 0.35, 0.6);
+  // Five-star base on castors, and the gas lift.
+  for (let i = 0; i < 5; i++) {
+    const t = (i / 5) * Math.PI * 2;
+    const arm = sub.box(0.3, 0.04, 0.03, Math.cos(t) * 0.15, Math.sin(t) * 0.15, 0.06, metal);
+    arm.rotation.y = -t;
+    sub.sphere(0.028, Math.cos(t) * 0.3, Math.sin(t) * 0.3, 0.03, plain(0x111111, 0.5));
+  }
+  sub.cyl(0.025, 0.36, 0, 0, 0.08, metal);
+  // Seat, back and arms.
+  sub.box(0.5, 0.48, 0.08, 0, 0.02, 0.44, fab);
+  sub.box(0.46, 0.05, 0.58, 0, -0.24, 0.55, fab).rotation.x = 0.1;
+  sub.box(0.06, 0.04, 0.2, 0, -0.25, 0.4, metal);
+  for (const s of [-1, 1]) {
+    sub.box(0.03, 0.03, 0.2, s * 0.25, -0.02, 0.5, metal);
+    sub.box(0.06, 0.26, 0.03, s * 0.25, 0.0, 0.69, fab);
+  }
+  sub.g.position.set(x, 0, y);
+  sub.g.rotation.y = -a;
+  k.g.add(sub.g);
+}
+
 const BUILDERS: Record<string, Builder> = {
+  officedesk: (k, f, w, d, h) => officeDesk(k, f, w, d, h),
+  officechair: (k, f) => officeChair(k, 0, 0, 0, f.finish),
+  workstation: (k, f, w, d, h) => {
+    const dd = 0.8;
+    const y = -d / 2 + dd / 2;
+    officeDesk(k, f, w, dd, h, 0, y);
+    monitor(k, 0, -d / 2 + 0.2, h);
+    keyboard(k, 0, -d / 2 + 0.52, h);
+    tower(k, w / 2 - 0.25, -d / 2 + 0.3);
+    officeChair(k, 0, -d / 2 + dd + 0.15, Math.PI);
+  },
+  workstation2: (k, f, w, d, h) => {
+    const dd = 0.8;
+    officeDesk(k, f, w, dd, h, 0, -d / 2 + dd / 2);
+    // Two monitors, turned slightly in towards the user.
+    monitor(k, -0.33, -d / 2 + 0.22, h, -0.2);
+    monitor(k, 0.33, -d / 2 + 0.22, h, 0.2);
+    keyboard(k, 0, -d / 2 + 0.52, h);
+    tower(k, w / 2 - 0.25, -d / 2 + 0.3);
+    officeChair(k, 0, -d / 2 + dd + 0.15, Math.PI);
+  },
+  cornerdesk: (k, f, w, d, h) => {
+    // Main top along the back, a return down the left side.
+    const back = 0.75;
+    const ret = 0.65;
+    officeDesk(k, f, w, back, h, 0, -d / 2 + back / 2);
+    const top = plain(DESK[f.finish ?? 'oak'] ?? DESK.oak, 0.5);
+    const frame = plain(0x2a2c30, 0.4, 0.5);
+    const rl = d - back;
+    k.box(ret, rl, 0.025, -w / 2 + ret / 2, -d / 2 + back + rl / 2, h - 0.025, top);
+    k.box(0.05, 0.05, h - 0.025, -w / 2 + ret - 0.06, d / 2 - 0.06, 0, frame);
+    k.box(0.05, 0.05, h - 0.025, -w / 2 + 0.06, d / 2 - 0.06, 0, frame);
+    // Monitor in the corner, angled to the chair.
+    monitor(k, -w / 2 + 0.42, -d / 2 + 0.38, h, -Math.PI / 4);
+    keyboard(k, -w / 2 + 0.72, -d / 2 + 0.62, h);
+    tower(k, w / 2 - 0.25, -d / 2 + 0.3);
+    officeChair(k, -w / 2 + ret + 0.3, -d / 2 + back + 0.3, (Math.PI * 3) / 4);
+  },
+  filing: (k, f, w, d, h) => cabinet(k, w, d, h, plain(METAL[f.finish ?? 'grey'] ?? 0x9a9ea3, 0.45, 0.4), 3, 1),
+
   fireplace: (k, f, w, d, h) => {
     const stone = plain(SURROUND[f.finish ?? 'stone'] ?? SURROUND.stone, f.finish === 'marble' ? 0.25 : 0.7);
     const back = 0.22; // depth of the surround against the wall

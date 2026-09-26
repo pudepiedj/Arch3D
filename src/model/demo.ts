@@ -157,7 +157,7 @@ export function demoBuilding(): Building {
   furnish(first, 'wardrobe', 3.0, 7.6);
   furnish(first, 'bedside', 0.3, 7.3);
   furnish(first, 'single', 9.7, 1.2);
-  furnish(first, 'desk', 5.8, 1.3);
+  furnish(first, 'workstation', 8.8, 4.6);
   furnish(first, 'bath', 9.7, 6.5);
   furnish(first, 'basin', 8.6, 5.3);
   furnish(first, 'wc', 9.4, 5.3);

@@ -40,11 +40,12 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 | **Furniture** (F) | Opens the catalogue. Pick a piece, then click to place it: near a wall it turns its back to the wall and sits tight against it. [ and ] turn it in 15° steps. Esc when done. |
 | **Split** (X) | Click on a wall to add a joint, which is then selected so you can drag it (to make a bay, a nib or a step in the wall). |
 
-**Furniture:** about 45 pieces in eight groups:
+**Furniture:** about 50 pieces in nine groups:
 - **Music:** grand piano, upright piano, music stand.
 - **Living:** sofas, armchair, coffee table, TV, bookcase, lamp, rug.
 - **Heating:** fireplace with mantelpiece and a lit fire (stone, white, marble or oak surround), wood-burning stove on a slate hearth with its flue to the ceiling, and panel or column radiators. Like everything else, they back onto the nearest wall; radiators are fixed 15 cm above the floor.
 - **Dining:** table with 6 chairs, round table with 4 chairs, chair, sideboard.
+- **Office:** desk with computer and chair, desk with two monitors, corner desk with computer, office desk, swivel office chair, filing cabinet. The computer sets have a monitor (or two, turned in), keyboard and mouse on the desk and a PC tower under it.
 - **Bedroom:** beds, bedside table, wardrobe, chest of drawers, desk.
 - **Kitchen:** base, sink, hob and oven, tall units, fridge, island.
 - **Bathroom:** bath, shower, WC, basin.

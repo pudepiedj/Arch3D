@@ -23,7 +23,7 @@ export interface CatalogueItem {
   flat?: boolean;
 }
 
-export const CATEGORIES = ['Music', 'Living', 'Heating', 'Dining', 'Bedroom', 'Kitchen', 'Bathroom', 'Garden'];
+export const CATEGORIES = ['Music', 'Living', 'Heating', 'Dining', 'Office', 'Bedroom', 'Kitchen', 'Bathroom', 'Garden'];
 
 const WOODS = ['oak', 'walnut', 'white'];
 const FABRICS = ['grey', 'blue', 'green', 'cream', 'rust'];
@@ -51,6 +51,12 @@ export const CATALOGUE: CatalogueItem[] = [
   { kind: 'chair', name: 'Chair', category: 'Dining', width: 0.45, depth: 0.5, height: 0.9, finishes: WOODS },
   { kind: 'sideboard', name: 'Sideboard', category: 'Dining', width: 1.6, depth: 0.45, height: 0.8, finishes: WOODS },
 
+  { kind: 'workstation', name: 'Desk with computer and chair', category: 'Office', width: 1.6, depth: 1.45, height: 0.74, finishes: ['oak', 'white', 'walnut', 'black'] },
+  { kind: 'workstation2', name: 'Desk, two monitors, chair', category: 'Office', width: 1.8, depth: 1.45, height: 0.74, finishes: ['oak', 'white', 'walnut', 'black'] },
+  { kind: 'cornerdesk', name: 'Corner desk with computer', category: 'Office', width: 1.8, depth: 1.6, height: 0.74, finishes: ['oak', 'white', 'walnut', 'black'] },
+  { kind: 'officedesk', name: 'Office desk', category: 'Office', width: 1.6, depth: 0.8, height: 0.74, finishes: ['oak', 'white', 'walnut', 'black'] },
+  { kind: 'officechair', name: 'Office chair', category: 'Office', width: 0.66, depth: 0.66, height: 1.15, finishes: ['black', 'grey', 'blue'] },
+  { kind: 'filing', name: 'Filing cabinet', category: 'Office', width: 0.47, depth: 0.62, height: 1.02, finishes: ['grey', 'white', 'black'] },
   { kind: 'double', name: 'Double bed', category: 'Bedroom', width: 1.5, depth: 2.1, height: 1.0, finishes: WOODS },
   { kind: 'single', name: 'Single bed', category: 'Bedroom', width: 0.95, depth: 2.05, height: 0.9, finishes: WOODS },
   { kind: 'bedside', name: 'Bedside table', category: 'Bedroom', width: 0.45, depth: 0.4, height: 0.55, finishes: WOODS },
