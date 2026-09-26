@@ -49,7 +49,7 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 - **Bedroom:** beds, bedside table, wardrobe, chest of drawers, desk.
 - **Kitchen:** base, sink, hob and oven, tall units, fridge, island.
 - **Bathroom:** bath, shower, WC, basin.
-- **Garden:** table and chairs, lounger, bench, parasol, barbecue, planter.
+- **Garden:** table and chairs, lounger, bench, parasol, barbecue, planter, and a 2 m timber pergola (four posts, beams, cross-rafters, battens for climbers, knee braces), with or without a climber growing over it. You can walk under a pergola in walk mode.
 
 Select a piece to change its finish, width, depth and height, or to turn, duplicate or delete it. **Ctrl/⌘+D** puts a copy alongside, which is handy for a run of kitchen units. Pieces stand on patios and decks at the right height, and in walk mode you walk round them (except rugs).
 

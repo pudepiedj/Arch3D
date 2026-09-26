@@ -112,7 +112,29 @@ function monitor(ctx: Ctx, x: number, y: number, a: number) {
   ctx.restore();
 }
 
+function pergola(ctx: Ctx, w: number, d: number, fill: string) {
+  // Posts, the two beams and the rafters over them, seen from above.
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  rect(ctx, -w / 2, -d / 2, w, d, fill);
+  ctx.restore();
+  const px = w / 2 - 0.15;
+  const py = d / 2 - 0.15;
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) rect(ctx, sx * px - 0.06, sy * py - 0.06, 0.12, 0.12, '#8a6446');
+  for (const sy of [-1, 1]) line(ctx, -w / 2, sy * py, w / 2, sy * py);
+  const n = Math.max(3, Math.round(w / 0.4) + 1);
+  for (let i = 0; i < n; i++) {
+    const x = -w / 2 + 0.05 + ((w - 0.1) * i) / (n - 1);
+    line(ctx, x, -d / 2, x, d / 2);
+  }
+}
+
 const SYMBOLS: Record<string, Symbol> = {
+  pergola: (ctx, _f, w, d, fill) => pergola(ctx, w, d, fill),
+  pergolaplant: (ctx, _f, w, d, fill) => {
+    pergola(ctx, w, d, fill);
+    circle(ctx, 0, 0, Math.min(w, d) * 0.3, 'rgba(95, 143, 62, 0.35)');
+  },
   officedesk: (ctx, _f, w, d, fill) => rect(ctx, -w / 2, -d / 2, w, d, fill),
   officechair: (ctx, _f, _w, _d, fill) => officeChair(ctx, 0, 0, 0, fill),
   workstation: (ctx, _f, w, d, fill) => {

@@ -65,7 +65,8 @@ export class WalkWorld {
       for (const t of Object.values(level.trees ?? {})) posts.push({ x: t.x, y: t.y, r: trunkRadius(t) });
       // Furniture is in the way (except rugs); you walk round it.
       for (const f of Object.values(level.furniture ?? {})) {
-        if (catalogueItem(f.kind)?.flat) continue;
+        const c = catalogueItem(f.kind);
+        if (c?.flat || c?.walkUnder) continue;
         const base = elevation + standingHeight(level, f);
         this.blocks.push({ poly: footprint(f), bottom: base, top: base + Math.max(f.height, STEP_UP + 0.05) });
       }

@@ -68,6 +68,11 @@ class Kit {
     return mesh;
   }
 
+  /** Any geometry, centred at (x, y) and height z. */
+  mesh(geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number): THREE.Mesh {
+    return this.add(geo, m, x, y, z);
+  }
+
   sphere(r: number, x: number, y: number, z: number, m: THREE.Material) {
     return this.add(new THREE.SphereGeometry(r, 16, 12), m, x, y, z);
   }
@@ -260,7 +265,58 @@ function officeChair(k: Kit, x: number, y: number, a: number, finish?: string) {
   k.g.add(sub.g);
 }
 
+const PERGOLA: Record<string, number> = { oak: 0xa9825a, grey: 0x8d8a84, green: 0x5f6f55 };
+
+/**
+ * A timber pergola: four posts, two beams along the sides, rafters across them, slim
+ * battens on top for climbers and knee braces; optionally with a climber in leaf.
+ */
+function pergola(k: Kit, f: Furniture, w: number, d: number, h: number, plant: boolean) {
+  const m = plain(PERGOLA[f.finish ?? 'oak'] ?? PERGOLA.oak, 0.85);
+  const post = 0.12;
+  const beamH = 0.2;
+  const inset = 0.15; // posts sit in from the corners, so the beams and rafters overhang
+  const px = w / 2 - inset;
+  const py = d / 2 - inset;
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) k.box(post, post, h - beamH, sx * px, sy * py, 0, m);
+  // Main beams along x, over the posts.
+  for (const sy of [-1, 1]) k.box(w, 0.07, beamH, 0, sy * py, h - beamH, m);
+  // Rafters across (along y) on top of the beams, about every 40 cm.
+  const n = Math.max(3, Math.round(w / 0.4) + 1);
+  for (let i = 0; i < n; i++) k.box(0.05, d, 0.15, -w / 2 + 0.05 + ((w - 0.1) * i) / (n - 1), 0, h, m);
+  // Battens along x across the rafters.
+  const b = Math.max(3, Math.round(d / 0.3));
+  for (let i = 0; i < b; i++) k.box(w - 0.1, 0.03, 0.03, 0, -d / 2 + 0.2 + ((d - 0.4) * i) / (b - 1), h + 0.15, m);
+  // Knee braces from each post up to its beam.
+  for (const sx of [-1, 1]) {
+    for (const sy of [-1, 1]) {
+      const brace = k.box(0.05, 0.05, 0.5, sx * (px - 0.17), sy * py, h - beamH - 0.42, m);
+      brace.rotation.z = sx * 0.78;
+    }
+  }
+  if (!plant) return;
+  // A climber: leafy clumps up two posts and spreading over the top, with hanging flowers.
+  const leaf = mat('climber', () => new THREE.MeshStandardMaterial({ color: 0x4f7d38, roughness: 0.9, flatShading: true }));
+  const bloom = mat('bloom', () => new THREE.MeshStandardMaterial({ color: 0x9b7fc8, roughness: 0.8, flatShading: true }));
+  let seed = [...f.id].reduce((a, c) => a * 31 + c.charCodeAt(0), 5) >>> 0;
+  const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  for (const sx of [-1, 1]) {
+    for (let z = 0.3; z < h - 0.2; z += 0.35) {
+      const c = k.mesh(new THREE.IcosahedronGeometry(0.16 + rand() * 0.06, 0), leaf, sx * px + (rand() - 0.5) * 0.12, -py + (rand() - 0.5) * 0.12, z);
+      c.scale.y = 1.3;
+    }
+  }
+  for (let i = 0; i < 16; i++) {
+    const x = (rand() - 0.5) * (w - 0.3);
+    const y = (rand() - 0.5) * (d - 0.3);
+    k.mesh(new THREE.IcosahedronGeometry(0.2 + rand() * 0.12, 0), leaf, x, y, h + 0.2).scale.y = 0.55;
+    if (rand() > 0.55) k.mesh(new THREE.IcosahedronGeometry(0.06, 0), bloom, x + 0.08, y, h + 0.02).scale.y = 2.2;
+  }
+}
+
 const BUILDERS: Record<string, Builder> = {
+  pergola: (k, f, w, d, h) => pergola(k, f, w, d, h, false),
+  pergolaplant: (k, f, w, d, h) => pergola(k, f, w, d, h, true),
   officedesk: (k, f, w, d, h) => officeDesk(k, f, w, d, h),
   officechair: (k, f) => officeChair(k, 0, 0, 0, f.finish),
   workstation: (k, f, w, d, h) => {

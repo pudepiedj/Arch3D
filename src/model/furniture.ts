@@ -21,6 +21,8 @@ export interface CatalogueItem {
   openable?: boolean;
   /** Can be walked over (a rug). */
   flat?: boolean;
+  /** Can be walked under (a pergola): not in the way in walk mode. */
+  walkUnder?: boolean;
 }
 
 export const CATEGORIES = ['Music', 'Living', 'Heating', 'Dining', 'Office', 'Bedroom', 'Kitchen', 'Bathroom', 'Garden'];
@@ -80,6 +82,8 @@ export const CATALOGUE: CatalogueItem[] = [
   { kind: 'lounger', name: 'Sun lounger', category: 'Garden', width: 0.7, depth: 1.95, height: 0.8, finishes: ['teak', 'grey', 'white'] },
   { kind: 'bench', name: 'Garden bench', category: 'Garden', width: 1.5, depth: 0.6, height: 0.85, finishes: ['teak', 'grey', 'white'] },
   { kind: 'parasol', name: 'Parasol', category: 'Garden', width: 2.7, depth: 2.7, height: 2.5, finishes: ['cream', 'green', 'blue'] },
+  { kind: 'pergola', name: 'Pergola', category: 'Garden', width: 2.0, depth: 2.0, height: 2.4, finishes: ['oak', 'grey', 'green'], walkUnder: true },
+  { kind: 'pergolaplant', name: 'Pergola with climber', category: 'Garden', width: 2.0, depth: 2.0, height: 2.4, finishes: ['oak', 'grey', 'green'], walkUnder: true },
   { kind: 'bbq', name: 'Barbecue', category: 'Garden', width: 1.2, depth: 0.55, height: 1.1 },
   { kind: 'planter', name: 'Planter', category: 'Garden', width: 0.6, depth: 0.6, height: 1.1 },
 ];
