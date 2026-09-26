@@ -5,7 +5,7 @@ import { addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelAbove, levelE
 import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, roofAreaRings, setAreaRoof } from '../model/roof';
 import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
-import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, solarGeometry } from '../model/roofitems';
+import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { stairGeometry } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
@@ -72,6 +72,7 @@ export class Panel {
     if (sel.kind === 'pillar') return this.renderPillar(sel.id);
     if (sel.kind === 'chimney') return this.renderChimney(sel.id);
     if (sel.kind === 'solar') return this.renderSolar(sel.id);
+    if (sel.kind === 'rooflight') return this.renderRooflight(sel.id);
 
     if (sel.kind === 'node') {
       const n = plan.nodes[sel.id];
@@ -373,6 +374,69 @@ export class Panel {
         this.store.commit();
       }, true],
     ]);
+  }
+
+  private renderRooflight(id: string) {
+    const level = this.store.plan;
+    const r = level.rooflights?.[id];
+    if (!r) return;
+    const geo = rooflightGeometry(this.store.building, level, r);
+    this.title(geo?.kind === 'kerb' ? 'Rooflight box' : 'Roof window');
+    this.number('Windows', r.count, 1, 1, 12, (v) => {
+      r.count = Math.round(v);
+      this.done();
+    }, '', 'Windows side by side');
+    this.number('Window width', r.width, 0.01, 0.4, 2, (v) => {
+      r.width = v;
+      this.done();
+    }, 'm');
+    this.number('Window length', r.length, 0.01, 0.4, 2.5, (v) => {
+      r.length = v;
+      this.done();
+    }, 'm', 'Up the slope');
+    if (geo?.kind === 'kerb') {
+      this.number('Box slope', r.pitch, 1, 3, 45, (v) => {
+        r.pitch = v;
+        this.done();
+      }, '°', 'Slope of the top of the box');
+      this.number('Kerb height', r.kerb, 0.01, 0.05, 1, (v) => {
+        r.kerb = v;
+        this.done();
+      }, 'm', 'Height of the box above the flat roof at its low side');
+    }
+    this.note(
+      !geo
+        ? 'Not on a roof of this floor any more: drag it back onto one.'
+        : geo.kind === 'kerb'
+          ? 'On a flat roof: a raised box with a light well down into the room below. Drag to move.'
+          : 'In a sloping roof: lies in the slope. Drag to move.',
+    );
+    const btns: [string, () => void, boolean?][] = [
+      [r.open ? 'Show shut' : 'Show open', () => {
+        r.open = !r.open;
+        this.done();
+      }],
+      [r.blinds ? 'Blinds up' : 'Blinds down', () => {
+        r.blinds = !r.blinds;
+        this.done();
+      }],
+      [r.solarMotor ? 'No solar motor' : 'Solar motor', () => {
+        r.solarMotor = !r.solarMotor;
+        this.done();
+      }],
+    ];
+    if (geo?.kind === 'kerb') {
+      btns.push(['Rotate 90°', () => {
+        r.angle += Math.PI / 2;
+        this.done();
+      }]);
+    }
+    btns.push(['Delete', () => {
+      delete level.rooflights![id];
+      this.editor.select(null);
+      this.store.commit();
+    }, true]);
+    this.buttons(btns);
   }
 
   private renderSolar(id: string) {

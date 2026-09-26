@@ -10,6 +10,10 @@ npm test         # model unit tests
 npm run build    # static site in dist/
 ```
 
+**On an iPad (or phone):** keep `npm run dev` running on your computer. As well as the Local address, it prints a **Network:** address such as `http://192.168.1.23:5173/`. With the iPad on the same Wi-Fi, type that address into Safari. Tip: Share → **Add to Home Screen** gives it an app icon.
+- Drawings are saved separately in each browser. To move one between computer and iPad, use **File → Export JSON…** on one, then **Import JSON…** on the other (via AirDrop, iCloud Drive or email).
+- If the iPad can't connect, the computer's firewall may be asking whether to allow incoming connections to `node`. Allow it.
+
 After a `git pull`, run `npm install` again before `npm run dev`. If Vite says it can't resolve an import from one of the `src` files, a new package has been added that isn't installed yet.
 
 ## Using it
@@ -24,6 +28,7 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 | **Pillar** (P) | Click to place a pillar (post). It rises to the underside of the roof above it, or to the wall height if there is none. Drag to move. |
 | **Chimney** (C) | Click on the roof to place a chimney stack (on the floor whose roof it goes through). |
 | **Solar** | Click on a roof slope to lay a solar panel array on it. |
+| **Rooflight** | Click on a roof. A flat roof gets a rooflight box; a sloping roof gets a window lying in the slope. |
 | **Split** (X) | Click on a wall to add a joint, which is then selected so you can drag it (to make a bay, a nib or a step in the wall). |
 
 **Copying doors and windows exactly:** select one and press **Copy** in the panel (Ctrl/⌘+C).
@@ -46,6 +51,12 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 - Set the rows (up the slope), columns (across) and portrait or landscape. The panel shows the panel count and a rough output at 400 W per panel.
 - It warns you if any panels hang off the slope. On a flat roof the panels lie flat.
 - Drag the array to move it, even onto another slope; it re-aligns to whichever slope it's on.
+
+**Rooflights:**
+- **On a flat roof:** a raised box (kerb) with a sloping top holding a row of opening roof windows. The ceiling and roof below are opened up into a lined light well, so from the room you look up into the box and out through the glass.
+- **On a sloping roof:** the windows lie in the slope.
+- **Panel settings:** the number of windows, window width and length, box slope and kerb height, and rotating the box by 90°.
+- **Show open** tilts the windows out at the bottom, **Blinds down** draws the blinds, and **Solar motor** adds or removes the little solar strip on each frame.
 
 **Stairs:**
 - The number of steps and their height come from the floor-to-floor height: the fewest steps that keep each one under 19 cm, e.g. 16 steps of 18.1 cm for 2.9 m.

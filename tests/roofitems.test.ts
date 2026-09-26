@@ -75,3 +75,51 @@ describe('solar panel arrays', () => {
     expect(solarGeometry(b, g, addSolarArray(g, { x: 30, y: 30 }))).toBeNull();
   });
 });
+
+describe('rooflights', () => {
+  it('on a flat roof: a kerb box with a sloping top holding a row of windows', async () => {
+    const { addRooflight, rooflightGeometry } = await import('../src/model/roofitems');
+    const { b, g } = house();
+    g.roof = { kind: 'flat', pitch: 35, overhang: 0.3 };
+    const r = addRooflight(g, { x: 5, y: 3 });
+    r.count = 3;
+    const geo = rooflightGeometry(b, g, r)!;
+    expect(geo.kind).toBe('kerb');
+    expect(geo.windows).toHaveLength(3);
+    const roofTop = g.height + 0.25;
+    expect(geo.roofZ).toBeCloseTo(roofTop, 6);
+    // Box: 3 windows of 0.78 with 0.12 frames = 2.82 m across.
+    const [p0, p1, p2] = geo.top;
+    expect(Math.hypot(p1.x - p0.x, p1.y - p0.y)).toBeCloseTo(2.82, 6);
+    // Low side stands on a 15 cm kerb; the top rises at 15 degrees.
+    expect(Math.min(...geo.top.map((p) => p.z))).toBeCloseTo(roofTop + 0.15, 6);
+    const run = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    expect((p2.z - p1.z) / run).toBeCloseTo(Math.tan((15 * Math.PI) / 180), 6);
+    // Solar motor strips by default, no blinds.
+    expect(geo.windows.every((w) => w.motor && !w.blind)).toBe(true);
+  });
+
+  it('opening a window lifts the bottom of its glass; blinds sit below the glass', async () => {
+    const { addRooflight, rooflightGeometry } = await import('../src/model/roofitems');
+    const { b, g } = house();
+    g.roof = { kind: 'flat', pitch: 35, overhang: 0.3 };
+    const r = addRooflight(g, { x: 5, y: 3 });
+    const shut = rooflightGeometry(b, g, r)!.windows[0];
+    r.open = true;
+    r.blinds = true;
+    const open = rooflightGeometry(b, g, r)!.windows[0];
+    expect(open.glass[0].z).toBeGreaterThan(shut.glass[0].z + 0.1);
+    expect(open.glass[3].z).toBeCloseTo(shut.glass[3].z, 9); // hinge edge stays put
+    expect(Math.max(...open.blind!.map((p) => p.z))).toBeLessThan(Math.min(...shut.glass.map((p) => p.z)) + 0.2);
+  });
+
+  it('on a sloping roof: windows lie in the slope', async () => {
+    const { addRooflight, rooflightGeometry } = await import('../src/model/roofitems');
+    const { b, g } = house();
+    const geo = rooflightGeometry(b, g, addRooflight(g, { x: 5, y: 1.5 }))!;
+    expect(geo.kind).toBe('slope');
+    const surf = roofSurfaceAt(b, g, { x: 5, y: 1.5 })!;
+    for (const p of geo.windows[0].frame) expect(p.z).toBeGreaterThan(surf.z(p));
+    for (const p of geo.windows[0].frame) expect(p.z - surf.z(p)).toBeLessThan(0.15);
+  });
+});

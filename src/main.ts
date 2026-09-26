@@ -203,6 +203,7 @@ const HINTS: Record<Tool, string> = {
   pillar: 'Click to place a pillar; it rises to the roof above it',
   chimney: 'Click on the roof to place a chimney stack (on the floor whose roof it goes through)',
   solar: 'Click on a roof slope to lay a solar array on it (on the floor the roof belongs to)',
+  rooflight: 'Click on a roof: a flat roof gets a rooflight box, a sloping roof a window in the slope',
 };
 
 function syncToolbar() {

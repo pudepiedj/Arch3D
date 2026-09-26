@@ -3,7 +3,7 @@
 
 import { type Vec2, pointInPolygon } from './geom';
 import { type Point3, roofRangeOver, roofSurfaceAt } from './roof';
-import type { Building, Chimney, Level, SolarArray } from './types';
+import type { Building, Chimney, Level, Rooflight, SolarArray } from './types';
 
 export const PANEL_LONG = 1.72;
 export const PANEL_SHORT = 1.13;
@@ -110,4 +110,103 @@ export function solarGeometry(b: Building, level: Level, s: SolarArray): SolarGe
     (p) => ({ x: p.x, y: p.y }),
   );
   return { panels, outline, overhangs };
+}
+
+/** Frame width around and between rooflight windows. */
+const ROOFLIGHT_FRAME = 0.12;
+/** Opened windows tilt out at the bottom by this angle. */
+const OPEN_ANGLE = (12 * Math.PI) / 180;
+
+export function addRooflight(level: Level, p: Vec2): Rooflight {
+  const r: Rooflight = {
+    id: `rl${level.nextId++}`,
+    x: p.x,
+    y: p.y,
+    angle: -Math.PI / 2,
+    count: 1,
+    width: 0.78,
+    length: 1.18,
+    pitch: 15,
+    kerb: 0.15,
+    open: false,
+    blinds: false,
+    solarMotor: true,
+  };
+  level.rooflights ??= {};
+  level.rooflights[r.id] = r;
+  return r;
+}
+
+export interface RooflightWindow {
+  frame: Point3[];
+  glass: Point3[];
+  motor: Point3[] | null;
+  blind: Point3[] | null;
+}
+
+export interface RooflightGeometry {
+  /** 'kerb': a box on a flat roof; 'slope': windows lying in a sloping roof. */
+  kind: 'kerb' | 'slope';
+  /** Plan outline (the box, or the whole row of windows). */
+  footprint: Vec2[];
+  /** Kerb boxes: height of the flat roof's top surface the box stands on. */
+  roofZ: number;
+  /** Kerb boxes: the four corners of the sloping top. */
+  top: Point3[];
+  windows: RooflightWindow[];
+}
+
+/** Lay out a rooflight on the roof under it: a kerb box on a flat roof, or flush in a slope. */
+export function rooflightGeometry(b: Building, level: Level, r: Rooflight): RooflightGeometry | null {
+  const centre = { x: r.x, y: r.y };
+  const surf = roofSurfaceAt(b, level, centre);
+  if (!surf) return null;
+  const onFlat = surf.tan < 0.02;
+  const up = onFlat ? { x: Math.cos(r.angle), y: Math.sin(r.angle) } : surf.up;
+  const across = { x: -up.y, y: up.x };
+  const tan = onFlat ? Math.tan((Math.max(3, Math.min(45, r.pitch)) * Math.PI) / 180) : surf.tan;
+  const cos = 1 / Math.sqrt(1 + tan * tan);
+  const sin = tan * cos;
+  const n = Math.max(1, Math.round(r.count));
+  const g = ROOFLIGHT_FRAME;
+  const totalW = n * r.width + (n + 1) * g;
+  const totalL = r.length + 2 * g;
+  const roofZ = surf.z(centre);
+  // Height of the (box top or roof) plane at the centre of the rooflight.
+  const zc = onFlat ? roofZ + r.kerb + (totalL / 2) * sin : roofZ + 0.02 / cos;
+  /** A point `s` across and `t` up the plane (t measured along the slope), lifted off it. */
+  const at = (s: number, t: number, lift = 0): Point3 => ({
+    x: centre.x + across.x * s + up.x * t * cos,
+    y: centre.y + across.y * s + up.y * t * cos,
+    z: zc + t * sin + lift / cos,
+  });
+  const rect = (s0: number, s1: number, t0: number, t1: number, lift: number) => [
+    at(s0, t0, lift),
+    at(s1, t0, lift),
+    at(s1, t1, lift),
+    at(s0, t1, lift),
+  ];
+  const top = rect(-totalW / 2, totalW / 2, -totalL / 2, totalL / 2, 0);
+  const windows: RooflightWindow[] = [];
+  for (let i = 0; i < n; i++) {
+    const s0 = -totalW / 2 + g + i * (r.width + g);
+    const s1 = s0 + r.width;
+    const t0 = -r.length / 2;
+    const t1 = r.length / 2;
+    const glass = rect(s0 + 0.05, s1 - 0.05, t0 + 0.05, t1 - 0.05, 0.06);
+    if (r.open) {
+      // Hinged at the top: the bottom edge swings out and up.
+      for (const k of [0, 1]) {
+        const lever = r.length - 0.1;
+        glass[k] = at(k ? s1 - 0.05 : s0 + 0.05, t1 - 0.05 - lever * Math.cos(OPEN_ANGLE), 0.06 + lever * Math.sin(OPEN_ANGLE));
+      }
+    }
+    windows.push({
+      frame: rect(s0 - 0.02, s1 + 0.02, t0 - 0.02, t1 + 0.02, 0.04),
+      glass,
+      motor: r.solarMotor ? rect(s0 + 0.08, s1 - 0.08, t1 + 0.01, t1 + 0.09, 0.07) : null,
+      blind: r.blinds ? rect(s0 + 0.04, s1 - 0.04, t0 + 0.04, t1 - 0.04, -0.06) : null,
+    });
+  }
+  return { kind: onFlat ? 'kerb' : 'slope', footprint: top.map((p) => ({ x: p.x, y: p.y })), roofZ, top, windows };
 }

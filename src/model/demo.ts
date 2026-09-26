@@ -1,6 +1,6 @@
 import { addLevelOnTop, createBuilding } from './building';
 import { addPillar, pillarsForSection } from './pillars';
-import { addChimney, addSolarArray } from './roofitems';
+import { addChimney, addRooflight, addSolarArray } from './roofitems';
 import { addStair } from './stairs';
 import { addWall, deleteWall, findWallInterior } from './plan';
 import { placeOpening } from './openings';
@@ -105,6 +105,10 @@ export function demoBuilding(): Building {
     },
   };
   for (const p of pillarsForSection(ground, 't')) addPillar(ground, p);
+
+  // A rooflight box on the garage's flat roof: three windows with blinds and solar motors.
+  const box = addRooflight(ground, { x: 11.5, y: 2.75 });
+  Object.assign(box, { count: 3, angle: Math.PI, blinds: true, width: 0.55, length: 0.98 });
 
   // A straight stair along the back wall of the bedroom, rising towards the left.
   addStair(ground, 4.9, 7.4, Math.PI, 'straight');

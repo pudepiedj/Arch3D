@@ -6,7 +6,7 @@
 // plan is edited, the result is watertight at joints and has no stray slivers.
 
 import * as THREE from 'three';
-import { Vec2, sub, dot } from '../model/geom';
+import { Vec2, dot, pointInPolygon, sub } from '../model/geom';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import { openingsOf } from '../model/openings';
 import { detectRooms } from '../model/rooms';
@@ -16,7 +16,14 @@ import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs } from '../m
 import { type StairGeometry, stairGeometry, stairSurfaceAt, stairwells } from '../model/stairs';
 import { type RailLine, againstWall, buildRails, onSegment } from './rails';
 import { pillarHeight } from '../model/pillars';
-import { type ChimneyGeometry, type SolarGeometry, chimneyGeometry, solarGeometry } from '../model/roofitems';
+import {
+  type ChimneyGeometry,
+  type RooflightGeometry,
+  type SolarGeometry,
+  chimneyGeometry,
+  rooflightGeometry,
+  solarGeometry,
+} from '../model/roofitems';
 import type { Building, Opening, Pillar, Plan } from '../model/types';
 
 export interface Materials {
@@ -33,6 +40,8 @@ export interface Materials {
   brick: THREE.Material;
   pot: THREE.Material;
   solar: THREE.Material;
+  darkFrame: THREE.Material;
+  blind: THREE.Material;
 }
 
 export function createMaterials(): Materials {
@@ -58,6 +67,8 @@ export function createMaterials(): Materials {
     brick: new THREE.MeshStandardMaterial({ color: 0x9a5b45, roughness: 0.9 }),
     pot: new THREE.MeshStandardMaterial({ color: 0xb8653f, roughness: 0.8 }),
     solar: new THREE.MeshStandardMaterial({ color: 0x1b2a4a, roughness: 0.25, metalness: 0.4, side: THREE.DoubleSide }),
+    darkFrame: new THREE.MeshStandardMaterial({ color: 0x3b4046, roughness: 0.5, metalness: 0.3, side: THREE.DoubleSide }),
+    blind: new THREE.MeshStandardMaterial({ color: 0xe8dcc2, roughness: 0.95, side: THREE.DoubleSide }),
   };
 }
 
@@ -138,6 +149,7 @@ export interface LevelOptions {
   /** Chimney stacks and solar arrays on this floor's roofs (none when cut away). */
   chimneys?: ChimneyGeometry[];
   solar?: SolarGeometry[];
+  rooflights?: RooflightGeometry[];
   /** Free-standing pillars, each with the height it rises to. */
   pillars?: (Pillar & { height: number })[];
 }
@@ -152,16 +164,21 @@ export function buildBuildingObject(b: Building, mats: Materials, upTo?: string)
   b.levels.forEach((level, i) => {
     if (cut >= 0 && i > cut) return;
     const below = b.levels[i - 1];
+    // Rooflight boxes on flat roofs open a light well through the ceiling and the roof.
+    const rooflights =
+      i === cut ? [] : Object.values(level.rooflights ?? {}).flatMap((r) => rooflightGeometry(b, level, r) ?? []);
+    const kerbs = rooflights.filter((r) => r.kind === 'kerb');
     const obj = buildPlanObject(level, mats, {
       ceiling: i === cut ? null : ceilingHeight(b, level),
       floorHoles: below ? stairwells(below) : [],
       wellExits: below ? Object.values(below.stairs ?? {}).map((st) => stairGeometry(st, below.height).path.at(-1)!) : [],
-      ceilingHoles: stairwells(level),
+      ceilingHoles: [...stairwells(level), ...kerbs.map((r) => [r.footprint])],
       slab: level.slab,
       stairs: Object.values(level.stairs ?? {}).map((st) => stairGeometry(st, level.height)),
       pillars: Object.values(level.pillars ?? {}).map((q) => ({ ...q, height: pillarHeight(b, level, q) })),
       chimneys: i === cut ? [] : Object.values(level.chimneys ?? {}).map((c) => chimneyGeometry(b, level, c)),
       solar: i === cut ? [] : Object.values(level.solar ?? {}).flatMap((sa) => solarGeometry(b, level, sa) ?? []),
+      rooflights,
       roofs: i === cut ? [] : levelRoofs(b, level).flatMap((r) => (r.geometry ? [r.geometry] : [])),
     });
     obj.position.y = levelElevation(b, level.id);
@@ -236,7 +253,9 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
     }
   }
 
-  for (const r of opts.roofs ?? []) group.add(buildRoofObject(r, mats));
+  const wells = (opts.rooflights ?? []).filter((r) => r.kind === 'kerb').map((r) => r.footprint);
+  for (const r of opts.roofs ?? []) group.add(buildRoofObject(r, mats, wells));
+  if (opts.rooflights?.length) group.add(buildRooflights(opts.rooflights, opts.ceiling ?? 0, mats));
   for (const c of opts.chimneys ?? []) group.add(buildChimney(c, mats));
   if (opts.solar?.length) group.add(buildSolar(opts.solar, mats));
   for (const q of opts.pillars ?? []) {
@@ -314,6 +333,89 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   return group;
 }
 
+/**
+ * Rooflights. A kerb box: sides from the ceiling below (lining the light well) up to the
+ * sloping top, with the windows in it. Windows in a slope just sit on the roof.
+ */
+function buildRooflights(list: RooflightGeometry[], ceiling: number, mats: Materials): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'rooflights';
+  const sides = new Mesher();
+  const top = new Mesher();
+  const frames = new Mesher();
+  const glass = new Mesher();
+  const motors = new Mesher();
+  const blinds = new Mesher();
+  const v = (p: Point3) => new THREE.Vector3(p.x, p.z, p.y);
+  const n0 = new THREE.Vector3(0, 0, 0);
+  const quad = (m: Mesher, q: Point3[]) => m.quad(v(q[0]), v(q[1]), v(q[2]), v(q[3]), new THREE.Vector3(0, 1, 0));
+  for (const r of list) {
+    if (r.kind === 'kerb') {
+      r.top.forEach((a, k) => {
+        const b = r.top[(k + 1) % 4];
+        sides.quad(v({ ...a, z: ceiling }), v({ ...b, z: ceiling }), v(b), v(a), n0);
+      });
+      // The box top, open where the windows are.
+      planeWithHoles(top, r.top, r.windows.map((w) => w.frame));
+    }
+    for (const w of r.windows) {
+      // The frame is a ring round the glass, so you can see out through it.
+      planeWithHoles(frames, w.frame, [insetQuad(w.frame, 0.07)]);
+      quad(glass, w.glass);
+      if (w.motor) quad(motors, w.motor);
+      if (w.blind) quad(blinds, w.blind);
+    }
+  }
+  for (const [m, mat] of [
+    [sides, mats.wall],
+    [top, mats.flatRoof],
+    [frames, mats.darkFrame],
+    [glass, mats.glass],
+    [motors, mats.solar],
+    [blinds, mats.blind],
+  ] as const) {
+    if (!m.pos.length) continue;
+    const mesh = new THREE.Mesh(m.geometry(), mat);
+    mesh.castShadow = mat !== mats.glass;
+    mesh.receiveShadow = true;
+    g.add(mesh);
+  }
+  return g;
+}
+
+/** A flat quad (4 corners in order) with quad-shaped holes, triangulated in its own plane. */
+function planeWithHoles(m: Mesher, outer: Point3[], holes: Point3[][]) {
+  const o = outer[0];
+  const e1 = { x: outer[1].x - o.x, y: outer[1].y - o.y, z: outer[1].z - o.z };
+  const e2 = { x: outer[3].x - o.x, y: outer[3].y - o.y, z: outer[3].z - o.z };
+  const l1 = Math.hypot(e1.x, e1.y, e1.z);
+  const l2 = Math.hypot(e2.x, e2.y, e2.z);
+  const local = (p: Point3) => {
+    const d = { x: p.x - o.x, y: p.y - o.y, z: p.z - o.z };
+    return new THREE.Vector2((d.x * e1.x + d.y * e1.y + d.z * e1.z) / l1, (d.x * e2.x + d.y * e2.y + d.z * e2.z) / l2);
+  };
+  const world = (q: THREE.Vector2) =>
+    new THREE.Vector3(o.x + (e1.x * q.x) / l1 + (e2.x * q.y) / l2, o.z + (e1.z * q.x) / l1 + (e2.z * q.y) / l2, o.y + (e1.y * q.x) / l1 + (e2.y * q.y) / l2);
+  const contour = outer.map(local);
+  const holeRings = holes.map((h) => h.map(local));
+  const all = [...contour, ...holeRings.flat()];
+  for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(contour, holeRings)) {
+    m.tri(world(all[i]), world(all[j]), world(all[k]), new THREE.Vector3(0, 1, 0));
+  }
+}
+
+/** A quad shrunk towards its middle by `by` along both of its sides. */
+function insetQuad(q: Point3[], by: number): Point3[] {
+  const lerp3 = (a: Point3, b: Point3, t: number): Point3 => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t });
+  const w = Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y, q[1].z - q[0].z);
+  const h = Math.hypot(q[3].x - q[0].x, q[3].y - q[0].y, q[3].z - q[0].z);
+  const tu = by / w;
+  const tv = by / h;
+  const bottom = [lerp3(q[0], q[1], tu), lerp3(q[0], q[1], 1 - tu)];
+  const topEdge = [lerp3(q[3], q[2], tu), lerp3(q[3], q[2], 1 - tu)];
+  return [lerp3(bottom[0], topEdge[0], tv), lerp3(bottom[1], topEdge[1], tv), lerp3(bottom[1], topEdge[1], 1 - tv), lerp3(bottom[0], topEdge[0], 1 - tv)];
+}
+
 /** A brick stack with a projecting cap and terracotta pots. */
 function buildChimney(c: ChimneyGeometry, mats: Materials): THREE.Group {
   const g = new THREE.Group();
@@ -383,7 +485,7 @@ function buildSolar(arrays: SolarGeometry[], mats: Materials): THREE.Group {
 }
 
 /** Roof slopes, gable walls, fascia boards along the eaves, or a flat slab. */
-function buildRoofObject(r: RoofGeometry, mats: Materials): THREE.Group {
+function buildRoofObject(r: RoofGeometry, mats: Materials, holes: Vec2[][] = []): THREE.Group {
   const g = new THREE.Group();
   g.name = 'roof';
   const covering = new Mesher();
@@ -403,6 +505,15 @@ function buildRoofObject(r: RoofGeometry, mats: Materials): THREE.Group {
       const flat = f.pts.map((p) => new THREE.Vector2((p.x - o.x) * ux + (p.y - o.y) * uy, p.z));
       for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(flat, [])) {
         gableWalls.tri(v(f.pts[i]), v(f.pts[j]), v(f.pts[k]), new THREE.Vector3(0, 0, 0));
+      }
+      continue;
+    }
+    if (f.kind === 'flat' && holes.some((h) => h.some((p) => pointInPolygon(p, f.pts)))) {
+      // A flat roof with rooflight openings cut through it.
+      const top = f.pts[0].z;
+      for (const piece of subtract(f.pts, holes.map((h) => [h]))) {
+        flatTop.hshape(piece, top, true);
+        flatTop.hshape(piece, top - FLAT_THICKNESS, false);
       }
       continue;
     }

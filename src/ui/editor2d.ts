@@ -17,7 +17,7 @@ import {
 } from '../model/geom';
 import { getLevel, levelBelow } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
-import { addChimney, addSolarArray, chimneyFootprint, solarGeometry } from '../model/roofitems';
+import { addChimney, addRooflight, addSolarArray, chimneyFootprint, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { roofSurfaceAt } from '../model/roof';
 import { DEFAULT_ROOF, type LevelRoof, levelRoofs, roofAreaRings, setAreaRoof, toggleEdge } from '../model/roof';
 import { DEFAULT_GOING, DEFAULT_STAIR_WIDTH, type StairGeometry, addStair, stairAt, stairGeometry } from '../model/stairs';
@@ -46,9 +46,9 @@ import { detectRooms } from '../model/rooms';
 import type { Level, Opening, OpeningKind, Plan, StairShape } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar';
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight';
 export type Selection = {
-  kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar';
+  kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight';
   id: string;
 } | null;
 
@@ -60,7 +60,7 @@ type Gesture =
   | { kind: 'dragOpening'; id: string }
   | { kind: 'dragStair'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'dragPillar'; id: string }
-  | { kind: 'dragRoofItem'; what: 'chimney' | 'solar'; id: string; start: Vec2; x0: number; y0: number }
+  | { kind: 'dragRoofItem'; what: 'chimney' | 'solar' | 'rooflight'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'click' };
 
 interface Snap {
@@ -339,6 +339,10 @@ export class Editor2D {
     for (const c of Object.values(this.plan.chimneys ?? {})) {
       if (pointInPolygon(w, chimneyFootprint(c))) return { kind: 'chimney', id: c.id };
     }
+    for (const r of Object.values(this.plan.rooflights ?? {})) {
+      const g = rooflightGeometry(this.store.building, this.plan, r);
+      if (g && pointInPolygon(w, g.footprint)) return { kind: 'rooflight', id: r.id };
+    }
     for (const sa of Object.values(this.plan.solar ?? {})) {
       const g = solarGeometry(this.store.building, this.plan, sa);
       if (g && pointInPolygon(w, g.outline)) return { kind: 'solar', id: sa.id };
@@ -399,8 +403,9 @@ export class Editor2D {
       this.select(hit);
       if (hit?.kind === 'node') this.gesture = { kind: 'dragNode', id: hit.id };
       else if (hit?.kind === 'pillar') this.gesture = { kind: 'dragPillar', id: hit.id };
-      else if (hit?.kind === 'chimney' || hit?.kind === 'solar') {
-        const item = hit.kind === 'chimney' ? this.plan.chimneys![hit.id] : this.plan.solar![hit.id];
+      else if (hit?.kind === 'chimney' || hit?.kind === 'solar' || hit?.kind === 'rooflight') {
+        const item =
+          hit.kind === 'chimney' ? this.plan.chimneys![hit.id] : hit.kind === 'solar' ? this.plan.solar![hit.id] : this.plan.rooflights![hit.id];
         this.gesture = { kind: 'dragRoofItem', what: hit.kind, id: hit.id, start: this.toWorld(s), x0: item.x, y0: item.y };
       }
       else if (hit?.kind === 'stair') {
@@ -480,7 +485,8 @@ export class Editor2D {
         break;
       }
       case 'dragRoofItem': {
-        const item = cur.what === 'chimney' ? plan.chimneys?.[cur.id] : plan.solar?.[cur.id];
+        const item =
+          cur.what === 'chimney' ? plan.chimneys?.[cur.id] : cur.what === 'solar' ? plan.solar?.[cur.id] : plan.rooflights?.[cur.id];
         if (!item) break;
         const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
         item.x = cur.x0 + snapTo(w.x - cur.start.x);
@@ -582,6 +588,16 @@ export class Editor2D {
         const c = addChimney(plan, this.snap(w).p);
         this.store.commit();
         this.select({ kind: 'chimney', id: c.id });
+        break;
+      }
+      case 'rooflight': {
+        if (!roofSurfaceAt(this.store.building, plan, w)) {
+          this.flash('No roof here on this floor: switch to the floor the roof belongs to', w);
+          break;
+        }
+        const rl = addRooflight(plan, w);
+        this.store.commit();
+        this.select({ kind: 'rooflight', id: rl.id });
         break;
       }
       case 'solar': {
@@ -1022,6 +1038,7 @@ export class Editor2D {
     else if (s.kind === 'pillar') delete this.plan.pillars?.[s.id];
     else if (s.kind === 'chimney') delete this.plan.chimneys?.[s.id];
     else if (s.kind === 'solar') delete this.plan.solar?.[s.id];
+    else if (s.kind === 'rooflight') delete this.plan.rooflights?.[s.id];
     else if (s.kind === 'roof') {
       if (s.id.startsWith('section:')) delete this.plan.roofSections?.[s.id.slice(8)];
       else {
@@ -1045,7 +1062,8 @@ export class Editor2D {
       (s.kind === 'roof' && this.roofExists(s.id)) ||
       (s.kind === 'pillar' && p.pillars?.[s.id]) ||
       (s.kind === 'chimney' && p.chimneys?.[s.id]) ||
-      (s.kind === 'solar' && p.solar?.[s.id]);
+      (s.kind === 'solar' && p.solar?.[s.id]) ||
+      (s.kind === 'rooflight' && p.rooflights?.[s.id]);
     if (!exists) this.select(null);
   }
 
@@ -1160,6 +1178,26 @@ export class Editor2D {
         ctx.strokeStyle = sel ? C.accent : 'rgba(40, 64, 120, 0.9)';
         ctx.lineWidth = 1;
         ctx.stroke();
+      }
+    }
+    // Rooflights: the box outline, and each window with the usual cross.
+    for (const r of Object.values(plan.rooflights ?? {})) {
+      const g = rooflightGeometry(this.store.building, plan, r);
+      if (!g) continue;
+      const sel = this.selection?.kind === 'rooflight' && this.selection.id === r.id;
+      const ink = sel ? C.accent : C.ink;
+      this.path(g.footprint);
+      ctx.fillStyle = sel ? hexAlpha(C.accent, 0.2) : 'rgba(170, 200, 225, 0.5)';
+      ctx.fill();
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = sel ? 2 : 1.2;
+      ctx.stroke();
+      ctx.lineWidth = 1;
+      for (const win of g.windows) {
+        this.path(win.frame);
+        ctx.stroke();
+        this.line(win.frame[0], win.frame[2]);
+        this.line(win.frame[1], win.frame[3]);
       }
     }
     for (const c of Object.values(plan.chimneys ?? {})) {

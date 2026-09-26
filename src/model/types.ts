@@ -66,6 +66,33 @@ export interface SolarArray {
   portrait: boolean;
 }
 
+/**
+ * Roof windows. On a sloping roof they lie in the slope; on a flat roof they sit on a
+ * raised kerb box with a sloping top, over a light well down to the room below.
+ */
+export interface Rooflight {
+  id: string;
+  /** Centre, in plan. */
+  x: number;
+  y: number;
+  /** Flat roofs: direction (radians) in which the box's sloping top rises. */
+  angle: number;
+  /** Windows side by side. */
+  count: number;
+  /** Size of each window: across, and up the slope. */
+  width: number;
+  length: number;
+  /** Flat roofs: slope of the box top in degrees, and kerb height at its low side. */
+  pitch: number;
+  kerb: number;
+  /** Shown opened (bottom edge tilted out). */
+  open: boolean;
+  /** Blinds drawn inside. */
+  blinds: boolean;
+  /** Solar-powered motor strip on the frame. */
+  solarMotor: boolean;
+}
+
 /** A free-standing post, e.g. holding up a veranda or carport roof. */
 export interface Pillar {
   id: string;
@@ -165,6 +192,8 @@ export interface Level extends Plan {
   chimneys?: Record<string, Chimney>;
   /** Solar panel arrays on this floor's roofs. */
   solar?: Record<string, SolarArray>;
+  /** Roof windows and rooflight boxes on this floor's roofs. */
+  rooflights?: Record<string, Rooflight>;
 }
 
 /** A building is a stack of levels, listed from the bottom up. */
