@@ -11,7 +11,7 @@ import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import { openingsOf } from '../model/openings';
 import { detectRooms } from '../model/rooms';
 import { ceilingHeight, levelElevation } from '../model/building';
-import { type Shape, subtract } from '../model/clip';
+import { type Shape, intersectAll, subtract } from '../model/clip';
 import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs, planeOf } from '../model/roof';
 import { type StairGeometry, stairGeometry, stairSurfaceAt, stairwells } from '../model/stairs';
 import { type RailLine, againstWall, buildRails, onSegment } from './rails';
@@ -289,7 +289,7 @@ export interface LevelOptions {
   stairs?: StairGeometry[];
   /** The roofs over this floor (none when it is cut away). */
   /** Roofs, each flagged if it is vaulted (open to the room below, lined with plaster). */
-  roofs?: (RoofGeometry & { vaulted?: boolean })[];
+  roofs?: (RoofGeometry & { vaulted?: boolean; glazedGables?: boolean })[];
   /** Chimney stacks and solar arrays on this floor's roofs (none when cut away). */
   chimneys?: ChimneyGeometry[];
   solar?: SolarGeometry[];
@@ -343,7 +343,7 @@ export function buildBuildingObject(
       chimneys: i === cut ? [] : Object.values(level.chimneys ?? {}).map((c) => chimneyGeometry(b, level, c)),
       solar: i === cut ? [] : Object.values(level.solar ?? {}).flatMap((sa) => solarGeometry(b, level, sa) ?? []),
       rooflights,
-      roofs: roofs.flatMap((r) => (r.geometry ? [{ ...r.geometry, vaulted: !!r.roof.vaulted && r.roof.kind !== 'flat' }] : [])),
+      roofs: roofs.flatMap((r) => (r.geometry ? [{ ...r.geometry, vaulted: !!r.roof.vaulted && r.roof.kind !== 'flat', glazedGables: !!r.roof.glazedGables && r.roof.kind !== 'flat' }] : [])),
       patios: Object.values(level.patios ?? {}).map((patio) => ({ patio, shapes: patioShapes(level, patio) })),
       trees: Object.values(level.trees ?? {}),
       furniture: Object.values(level.furniture ?? {}).map((f) => ({ ...f, base: standingHeight(level, f) })),
@@ -650,6 +650,100 @@ function buildTree(t: Tree, mats: Materials, season: Season): THREE.Group {
   return g;
 }
 
+/**
+ * A window filling a gable triangle, in the gable's own plane (x along the wall, y up): the
+ * opening (the gable less a margin, above a band over the wall plate), the glass inside a
+ * slim frame, and upright glazing bars about every 80 cm. Null if the gable is too small.
+ */
+function gableWindow(face: Vec2[]): { opening: Vec2[]; glass: Vec2[]; bars: Vec2[][] } | null {
+  const MARGIN = 0.15;
+  const FRAME_W = 0.06;
+  let ring = face.filter((p, i) => {
+    const a = face[(i - 1 + face.length) % face.length];
+    const b = face[(i + 1) % face.length];
+    return Math.abs((p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x)) > 1e-9;
+  });
+  if (ring.length < 3) return null;
+  if (polygonSign(ring) < 0) ring = [...ring].reverse();
+  const base = Math.min(...ring.map((p) => p.y));
+  const inset = insetConvex(ring, MARGIN);
+  if (!inset) return null;
+  // Keep clear of the wall plate: nothing lower than a band above it.
+  const band: Vec2[] = [
+    { x: -1e4, y: base + MARGIN + 0.05 },
+    { x: 1e4, y: base + MARGIN + 0.05 },
+    { x: 1e4, y: 1e4 },
+    { x: -1e4, y: 1e4 },
+  ];
+  const opening = intersectAll(inset, band)[0]?.[0];
+  if (!opening || Math.abs(polygonSign(opening) * areaOf(opening)) < 0.15) return null;
+  const glass = insetConvex(polygonSign(opening) < 0 ? [...opening].reverse() : opening, FRAME_W);
+  if (!glass) return null;
+  // Glazing bars: upright, from the bottom of the glass to its sloping top.
+  const xs = glass.map((p) => p.x);
+  const x0 = Math.min(...xs);
+  const x1 = Math.max(...xs);
+  const n = Math.max(0, Math.round((x1 - x0) / 0.8) - 1);
+  const bars: Vec2[][] = [];
+  const bottom = Math.min(...glass.map((p) => p.y));
+  for (let i = 1; i <= n; i++) {
+    const x = x0 + ((x1 - x0) * i) / (n + 1);
+    const top = Math.min(topAt(glass, x - 0.02), topAt(glass, x + 0.02));
+    if (top - bottom > 0.1) {
+      bars.push([
+        { x: x - 0.02, y: bottom },
+        { x: x + 0.02, y: bottom },
+        { x: x + 0.02, y: top },
+        { x: x - 0.02, y: top },
+      ]);
+    }
+  }
+  return { opening, glass, bars };
+}
+
+/** A convex, counter-clockwise polygon moved inwards by d (null if it vanishes). */
+function insetConvex(ring: Vec2[], d: number): Vec2[] | null {
+  const n = ring.length;
+  const lines = ring.map((a, i) => {
+    const b = ring[(i + 1) % n];
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const dir = { x: (b.x - a.x) / len, y: (b.y - a.y) / len };
+    const inward = { x: -dir.y, y: dir.x };
+    return { p: { x: a.x + inward.x * d, y: a.y + inward.y * d }, dir };
+  });
+  const out: Vec2[] = [];
+  for (let i = 0; i < n; i++) {
+    const l1 = lines[(i - 1 + n) % n];
+    const l2 = lines[i];
+    const den = l1.dir.x * l2.dir.y - l1.dir.y * l2.dir.x;
+    if (Math.abs(den) < 1e-9) continue;
+    const t = ((l2.p.x - l1.p.x) * l2.dir.y - (l2.p.y - l1.p.y) * l2.dir.x) / den;
+    out.push({ x: l1.p.x + l1.dir.x * t, y: l1.p.y + l1.dir.y * t });
+  }
+  if (out.length < 3 || polygonSign(out) < 0 || areaOf(out) < 0.01) return null;
+  return out;
+}
+
+function areaOf(ring: Vec2[]): number {
+  let a = 0;
+  ring.forEach((p, k) => {
+    const q = ring[(k + 1) % ring.length];
+    a += p.x * q.y - q.x * p.y;
+  });
+  return Math.abs(a) / 2;
+}
+
+/** The highest point of a polygon's outline at x. */
+function topAt(ring: Vec2[], x: number): number {
+  let top = -Infinity;
+  ring.forEach((a, k) => {
+    const b = ring[(k + 1) % ring.length];
+    if ((a.x - x) * (b.x - x) > 0 || a.x === b.x) return;
+    top = Math.max(top, a.y + ((x - a.x) / (b.x - a.x)) * (b.y - a.y));
+  });
+  return top;
+}
+
 /** +1 for a counter-clockwise ring (in plan coordinates), -1 for clockwise. */
 function polygonSign(ring: Vec2[]): number {
   let a = 0;
@@ -813,7 +907,7 @@ function buildSolar(arrays: SolarGeometry[], mats: Materials): THREE.Group {
 
 /** Roof slopes, gable walls, fascia boards along the eaves, or a flat slab. */
 function buildRoofObject(
-  r: RoofGeometry & { vaulted?: boolean },
+  r: RoofGeometry & { vaulted?: boolean; glazedGables?: boolean },
   mats: Materials,
   holes: Vec2[][] = [],
   slopeHoles: Vec2[][] = [],
@@ -822,6 +916,8 @@ function buildRoofObject(
   g.name = 'roof';
   const covering = new Mesher();
   const lining = new Mesher();
+  const gableFrames = new Mesher();
+  const gableGlass = new Mesher();
   /** Plaster under a vaulted roof: just below the covering, seen from the room. */
   const LINING = 0.03;
   const flatTop = new Mesher();
@@ -838,9 +934,29 @@ function buildRoofObject(
       const ux = (far.x - o.x) / len;
       const uy = (far.y - o.y) / len;
       const flat = f.pts.map((p) => new THREE.Vector2((p.x - o.x) * ux + (p.y - o.y) * uy, p.z));
-      for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(flat, [])) {
-        gableWalls.tri(v(f.pts[i]), v(f.pts[j]), v(f.pts[k]), new THREE.Vector3(0, 0, 0));
+      const glazing = r.glazedGables ? gableWindow(flat.map((q) => ({ x: q.x, y: q.y }))) : null;
+      if (!glazing) {
+        for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(flat, [])) {
+          gableWalls.tri(v(f.pts[i]), v(f.pts[j]), v(f.pts[k]), new THREE.Vector3(0, 0, 0));
+        }
+        continue;
       }
+      // The gable wall with the window's opening in it, then the frame, glass and glazing bars.
+      const at = (q: Vec2, off = 0) => new THREE.Vector3(o.x + q.x * ux - uy * off, q.y, o.y + q.x * uy + ux * off);
+      const none = new THREE.Vector3(0, 0, 0);
+      const fill = (m: Mesher, outer: Vec2[], holesIn: Vec2[][], off = 0) => {
+        const all = [outer, ...holesIn].flat();
+        const tris = THREE.ShapeUtils.triangulateShape(
+          outer.map((q) => new THREE.Vector2(q.x, q.y)),
+          holesIn.map((h) => h.map((q) => new THREE.Vector2(q.x, q.y))),
+        );
+        for (const [i, j, k] of tris) m.tri(at(all[i], off), at(all[j], off), at(all[k], off), none);
+      };
+      const face = flat.map((q) => ({ x: q.x, y: q.y }));
+      fill(gableWalls, face, [glazing.opening]);
+      fill(gableFrames, glazing.opening, [glazing.glass]);
+      fill(gableGlass, glazing.glass, []);
+      for (const bar of glazing.bars) for (const off of [-0.012, 0.012]) fill(gableFrames, bar, [], off);
       continue;
     }
     if (f.kind === 'flat' && holes.some((h) => h.some((p) => pointInPolygon(p, f.pts)))) {
@@ -897,6 +1013,8 @@ function buildRoofObject(
     [gableWalls, mats.wall],
     [trim, mats.frame],
     [lining, mats.ceiling],
+    [gableFrames, mats.darkFrame],
+    [gableGlass, mats.glass],
   ] as const) {
     const mesh = new THREE.Mesh(m.geometry(), mat);
     mesh.castShadow = mesh.receiveShadow = true;

@@ -78,7 +78,7 @@ export function demoBuilding(): Building {
     [9.5, 8],
   ], false);
   // Its ceiling is vaulted: open up to the slopes, with a roof window in one of them.
-  ground.roofAreas = [{ x: 8, y: 9.25, roof: { kind: 'gable', pitch: 35, overhang: 0.3, vaulted: true } }];
+  ground.roofAreas = [{ x: 8, y: 9.25, roof: { kind: 'gable', pitch: 35, overhang: 0.3, vaulted: true, glazedGables: true } }];
 
   at(ground, 4.6, 0, 'door');
   at(ground, 8, 0, 'window');

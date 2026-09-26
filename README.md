@@ -75,6 +75,8 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 
 **Vaulted ceilings:** select a sloping roof and set **Ceiling** to **Vaulted (open to the roof)**. The rooms under it lose their flat ceiling and are open up to the plastered underside of the slopes, with the gable walls rising to the ridge. Windows lying in a slope are cut right through it, so from the room you look up through them to the sky.
 
+**Glazed gables:** set a sloping roof's **Gable ends** to **Glazed (triangular window)**. Each of its gable triangles above the wall plate is filled with glass in a slim anthracite frame, with upright glazing bars about every 80 cm, and the gable wall behind is cut away. Combined with a vaulted ceiling, the room gets light through the top of the gable.
+
 **Roofs on pillars (verandas, terraces, carports):** draw the roof with the Roof tool's **Add section** over the open area. It snaps to the house wall, and its edge there rests on the wall. Set its type and **Eaves height**, then press **Add pillars**. Pillars go at every corner not resting on a wall, and along open edges so that no span is longer than 3.5 m. Their outer faces line up with the roof edge. Pillars are square or round, can be resized, and are solid in walk mode.
 
 **Chimneys:** a brick stack with a projecting cap and 1, 2 or 3 terracotta pots.

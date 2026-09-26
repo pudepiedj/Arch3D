@@ -726,6 +726,10 @@ export class Panel {
         ['flat', 'Flat ceiling'],
         ['vaulted', 'Vaulted (open to the roof)'],
       ], (v) => set({ vaulted: v === 'vaulted' || undefined }));
+      this.select('Gable ends', roof.glazedGables ? 'glazed' : 'wall', [
+        ['wall', 'Solid wall'],
+        ['glazed', 'Glazed (triangular window)'],
+      ], (v) => set({ glazedGables: v === 'glazed' || undefined }));
     }
     if (roof.kind !== 'none') {
       this.number('Overhang', roof.overhang, 0.05, 0, 1.5, (v) => set({ overhang: v }), 'm', 'How far the eaves project past the walls');
