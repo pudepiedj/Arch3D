@@ -37,6 +37,8 @@ export interface Opening {
   swingFlip?: boolean;
   /** Garage door shown rolled up (open) rather than down. */
   open?: boolean;
+  /** Door shown shut (doors are shown open unless this is set). In walk mode it opens as you reach it. */
+  shut?: boolean;
 }
 
 /** A chimney stack rising through the roof, with 1-3 pots. */

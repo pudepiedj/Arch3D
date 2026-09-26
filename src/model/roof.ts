@@ -171,7 +171,39 @@ export function roofAreaRings(b: Building, level: Level): Vec2[][] {
   return uncoveredAreas(outerFaces(level), above ? outerFaces(above) : []);
 }
 
-function makeRoof(id: string, ring: Vec2[], walls: boolean[], roof: Roof, height: number): LevelRoof {
+/** How far off a straight line (m) a corner can be and still be treated as on it. */
+export const STRAIGHTEN_TOL = 0.04;
+
+/**
+ * Drop corners that are within a few centimetres of the line between their neighbours
+ * (and join two edges of the same kind). A joint slightly off a wall's line, e.g. where a
+ * room was added later, would otherwise bend the ridge and every slope from it.
+ */
+export function straighten(ring: Vec2[], walls: boolean[], tol = STRAIGHTEN_TOL): { ring: Vec2[]; walls: boolean[] } {
+  let pts = [...ring];
+  let flags = [...walls];
+  let changed = true;
+  while (changed && pts.length > 3) {
+    changed = false;
+    for (let i = 0; i < pts.length; i++) {
+      const j = (i - 1 + pts.length) % pts.length;
+      const a = pts[j];
+      const c = pts[(i + 1) % pts.length];
+      if (flags[j] !== flags[i]) continue;
+      const pr = projectOnSegment(pts[i], a, c);
+      // Only corners between the ends (not a spike back on itself).
+      if (pr.t <= 0 || pr.t >= 1 || pr.dist >= tol) continue;
+      pts = pts.filter((_, k) => k !== i);
+      flags = flags.filter((_, k) => k !== i);
+      changed = true;
+      break;
+    }
+  }
+  return { ring: pts, walls: flags };
+}
+
+function makeRoof(id: string, rawRing: Vec2[], rawWalls: boolean[], roof: Roof, height: number): LevelRoof {
+  const { ring, walls } = straighten(rawRing, rawWalls);
   const roles = edgeRoles(ring, walls, roof);
   let geometry: RoofGeometry | null = null;
   try {

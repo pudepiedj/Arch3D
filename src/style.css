@@ -107,6 +107,11 @@ button.on {
   color: var(--accent-fg);
 }
 
+button.on:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+
 button.danger {
   color: var(--danger);
 }

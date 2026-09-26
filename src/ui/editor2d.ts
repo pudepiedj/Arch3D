@@ -99,9 +99,12 @@ export class Editor2D {
   /** A copied door or window: its exact type and size. */
   clipboard: OpeningTemplate | null = null;
   ortho = false;
+  /** Show every room's inside dimensions on the plan. */
+  showDims = false;
   gridStep = 0.05;
   onSelectionChange?: () => void;
   onToolChange?: () => void;
+  onDimsChange?: () => void;
   shortcutsEnabled: () => boolean = () => true;
 
   private pointers = new Map<number, Vec2>();
@@ -175,6 +178,12 @@ export class Editor2D {
   /** True while a wall chain is being drawn. */
   get drawing() {
     return this.drawStart !== null;
+  }
+
+  toggleDims() {
+    this.showDims = !this.showDims;
+    this.onDimsChange?.();
+    this.requestRender();
   }
 
   finishChain() {
@@ -859,6 +868,9 @@ export class Editor2D {
       case 'e':
         this.setTool('tree');
         break;
+      case 'm':
+        this.toggleDims();
+        break;
       case 'o':
         this.ortho = !this.ortho;
         this.onToolChange?.();
@@ -1168,6 +1180,49 @@ export class Editor2D {
     }
   }
 
+  /**
+   * A room's inside dimensions: each wall face's length, written just inside it along a
+   * thin dimension line with ticks at the corners.
+   */
+  private drawRoomDims(inner: Vec2[], C: Record<string, string>) {
+    const ctx = this.ctx;
+    const k = this.view.scale;
+    ctx.save();
+    ctx.strokeStyle = hexAlpha(C.accent, 0.7);
+    ctx.fillStyle = C.accent;
+    ctx.lineWidth = 1;
+    ctx.font = '600 11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    inner.forEach((a, i) => {
+      const b = inner[(i + 1) % inner.length];
+      const len = dist(a, b);
+      if (len * k < 40) return;
+      const d = unit(sub(b, a));
+      let n = vec(-d.y, d.x);
+      const mid = scale(add(a, b), 0.5);
+      if (!pointInPolygon(add(mid, scale(n, 0.02)), inner)) n = scale(n, -1);
+      const off = 12 / k;
+      const pa = add(a, scale(n, off));
+      const pb = add(b, scale(n, off));
+      this.line(pa, pb);
+      const t = 3 / k;
+      this.line(add(pa, scale(n, -t)), add(pa, scale(n, t)));
+      this.line(add(pb, scale(n, -t)), add(pb, scale(n, t)));
+      // The figure sits on the line, reading along the wall and never upside down.
+      const m = this.toScreen(add(mid, scale(n, off + 8 / k)));
+      let ang = Math.atan2(d.y, d.x);
+      if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI;
+      if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
+      ctx.save();
+      ctx.translate(m.x, m.y);
+      ctx.rotate(ang);
+      ctx.fillText(len.toFixed(2), 0, 0);
+      ctx.restore();
+    });
+    ctx.restore();
+  }
+
   /** Trees, seen from above: a translucent crown, and the trunk. */
   private drawTrees(C: Record<string, string>) {
     const ctx = this.ctx;
@@ -1447,6 +1502,7 @@ export class Editor2D {
       ctx.fillStyle = C.text;
       ctx.fillText(`${r.netArea.toFixed(1)} m²`, c.x, c.y);
     }
+    if (this.showDims) for (const r of rooms) this.drawRoomDims(r.inner, C);
 
     // Selected wall: dimension.
     if (this.selection?.kind === 'wall') {

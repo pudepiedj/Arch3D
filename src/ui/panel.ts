@@ -174,6 +174,16 @@ export class Panel {
       }]);
     }
     if (o.kind === 'door') {
+      btns.push([o.shut ? 'Show open' : 'Show shut', () => {
+        o.shut = !o.shut || undefined;
+        this.done();
+      }]);
+      const doors = Object.values(plan.openings).filter((d) => d.kind === 'door');
+      const allShut = doors.every((d) => d.shut);
+      btns.push([allShut ? 'Open all doors' : 'Shut all doors', () => {
+        for (const d of doors) d.shut = !allShut || undefined;
+        this.done();
+      }]);
       btns.push(['Flip hinge', () => {
         o.hingeFlip = !o.hingeFlip;
         this.done();

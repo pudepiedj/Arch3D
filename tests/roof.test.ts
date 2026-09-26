@@ -358,3 +358,40 @@ describe('roof sections attached to the house', () => {
     });
   }
 });
+
+describe('ridge straightening', () => {
+  it('ignores a joint a couple of centimetres off the line of a wall, so the ridge stays straight', () => {
+    const b = createBuilding();
+    const g = b.levels[0];
+    // The front wall has a joint at x = 5 that is 2 cm out of line.
+    box(g, [
+      [0, 0],
+      [5, 0.02],
+      [10, 0],
+      [10, 6],
+      [0, 6],
+    ]);
+    g.roof = { kind: 'gable', pitch: 35, overhang: 0.3 };
+    const [r] = levelRoofs(b, g);
+    expect(r.ring).toHaveLength(4);
+    const peak = top(r);
+    const ridge = r.geometry!.faces.flatMap((f) => f.pts).filter((p) => Math.abs(p.z - peak) < 1e-6);
+    const ys = ridge.map((p) => p.y);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(1e-6);
+  });
+
+  it('keeps a real step in a wall', () => {
+    const b = createBuilding();
+    const g = b.levels[0];
+    box(g, [
+      [0, 0],
+      [5, 0],
+      [5, 0.5],
+      [10, 0.5],
+      [10, 6],
+      [0, 6],
+    ]);
+    const [r] = levelRoofs(b, g);
+    expect(r.ring).toHaveLength(6);
+  });
+});

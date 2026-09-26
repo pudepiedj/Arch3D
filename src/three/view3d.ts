@@ -32,6 +32,8 @@ export class View3D {
   sunStudy = false;
   sunTime = new Date();
   private season: Season = { leaf: 1, autumn: false };
+  /** Doors shown shut, which swing open in walk mode as the walker reaches them. */
+  private doors: { pivot: THREE.Object3D; x: number; y: number; floor: number; open: number }[] = [];
   private world: WalkWorld | null = null;
   /** Height of the walker's feet, and the smoothed eye height that follows it. */
   private foot = 0;
@@ -180,6 +182,14 @@ export class View3D {
     const cut = this.mode === 'orbit' && this.cutaway ? this.activeId : undefined;
     this.planObj = buildBuildingObject(b, this.mats, cut, this.season);
     this.scene.add(this.planObj);
+    this.planObj.updateMatrixWorld(true);
+    this.doors = [];
+    this.planObj.traverse((o) => {
+      if (!o.name.startsWith('door:')) return;
+      const c = o.userData.centre as { x: number; y: number };
+      const floor = o.getWorldPosition(new THREE.Vector3()).y;
+      this.doors.push({ pivot: o, x: c.x, y: c.y, floor, open: o.userData.openAngle as number });
+    });
     // The floors the cutaway hides still shade the garden in a sun study: keep them as
     // invisible shadow casters.
     if (cut && this.sunStudy) {
@@ -350,7 +360,20 @@ export class View3D {
     const dt = Math.min(this.timer.getDelta(), 0.1);
     if (this.mode === 'orbit') this.orbit.update();
     else this.walk(dt);
+    this.swingDoors(dt);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  /** In walk mode, shut doors open as the walker comes within reach and close behind them. */
+  private swingDoors(dt: number) {
+    const p = this.camera.position;
+    for (const d of this.doors) {
+      const near =
+        this.mode === 'walk' && Math.abs(this.foot - d.floor) < 1 && Math.hypot(p.x - d.x, p.z - d.y) < 1.5;
+      const target = near ? d.open : 0;
+      const r = d.pivot.rotation;
+      if (Math.abs(r.y - target) > 1e-3) r.y += (target - r.y) * Math.min(1, dt * 5);
+    }
   }
 
   private walk(dt: number) {

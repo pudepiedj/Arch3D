@@ -38,6 +38,10 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 | **Tree** (E) | Choose Broadleaf or Conifer, then click to plant one. Drag the trunk to move it; set the height and crown spread in the panel. |
 | **Split** (X) | Click on a wall to add a joint, which is then selected so you can drag it (to make a bay, a nib or a step in the wall). |
 
+**Room dimensions:** the **Dimensions** button (or M) writes every room's inside measurements along its walls, face to face of the plaster line. The setting is remembered on each device.
+
+**Doors shown shut:** select a door and press **Show shut**, or **Shut all doors** for the whole floor. Shut doors stay shut in the orbit view. In walk mode each one swings open as you reach it and closes behind you.
+
 **Copying doors and windows exactly:** select one and press **Copy** in the panel (Ctrl/⌘+C).
 - **Paste** (toolbar button, or Ctrl/⌘+V) then click on walls to place identical copies: same type, width, height, sill, hinge and swing. A paste that would not fit at full size is refused, never shrunk. Press Esc when done.
 - **Duplicate** (Ctrl/⌘+D) puts a copy right beside the selected one.
@@ -144,6 +148,7 @@ Everything visible is *derived* from that data on every change, so there is no s
 - **Walking** (`walk.ts`, no rendering code, unit-tested) treats every floor (minus its stairwells) and every stair tread as a surface. The walker stands on the highest surface that is at most one step above their feet. Climbing a stair is just walking onto it, and walking off the top lands you on the next floor. Walls of the storey you are on, and steps too tall to step onto, block movement.
 - **Roofs** (`roof.ts`): each floor's roof areas are its outline minus the outline of the floor above.
   - Each area, and each hand-drawn section, is roofed separately using the straight skeleton of its outline: every eave rises at the same pitch, and the slopes meet along hips, valleys and ridges. This uses the MIT-licensed `straight-skeleton` 1.1.0, pinned; newer versions wrap GPL code.
+  - A corner less than 4 cm off the straight line between its neighbours is ignored for the roof (the overhang hides the difference). Otherwise a joint slightly out of line, e.g. where rooms were added later, would put a kink in the ridge.
   - A gable end is an edge that doesn't slope. It is pushed far away before the skeleton is computed, so it has no influence. The roof is then trimmed back to the wall line, and the vertical profile left there becomes the gable wall. Edges against a taller wall work the same way, without a gable wall.
   - That library occasionally leaves part of a slope out, where two lined-up edges merge (the walls either side of a bay). The gap is filled with the slope whose plane matches the heights already known around it. Tests check that every roof covers its whole outline, with no tears.
 - **Rooms** (`rooms.ts`) are the enclosed faces of the wall graph. They give the floors and the net floor area labels.

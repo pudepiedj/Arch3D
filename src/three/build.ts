@@ -977,7 +977,14 @@ function buildOpeningObject(fp: Footprint, o: Opening, mats: Materials): THREE.O
     const handle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, 0.1), mats.frame);
     handle.position.set(hingeSign * (leafW - 0.08), 1.0, 0);
     pivot.add(leaf, handle);
-    pivot.rotation.y = -side * hingeSign * THREE.MathUtils.degToRad(DOOR_OPEN_DEG);
+    const openAngle = -side * hingeSign * THREE.MathUtils.degToRad(DOOR_OPEN_DEG);
+    pivot.rotation.y = o.shut ? 0 : openAngle;
+    // Shut doors swing open in walk mode as the walker comes up to them (see View3D).
+    if (o.shut) {
+      pivot.name = `door:${o.id}`;
+      pivot.userData.openAngle = openAngle;
+      pivot.userData.centre = wallPoint(fp, o.offset, 0);
+    }
     g.add(pivot);
   }
   return g;

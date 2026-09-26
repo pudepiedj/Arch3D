@@ -85,6 +85,20 @@ $('#ortho').addEventListener('click', () => {
   syncToolbar();
 });
 $('#finish').addEventListener('click', () => editor.finishChain());
+try {
+  editor.showDims = localStorage.getItem('arch3d.dims') === '1';
+} catch {
+  // No storage (private browsing): dimensions start hidden.
+}
+editor.onDimsChange = () => {
+  try {
+    localStorage.setItem('arch3d.dims', editor.showDims ? '1' : '0');
+  } catch {
+    // Not remembered; no matter.
+  }
+  syncToolbar();
+};
+$('#dims').addEventListener('click', () => editor.toggleDims());
 $('#undo').addEventListener('click', () => store.undo());
 $('#redo').addEventListener('click', () => store.redo());
 
@@ -314,6 +328,7 @@ function syncToolbar() {
   $('#treeKind').hidden = editor.tool !== 'tree';
   for (const b of $$('#treeKind button')) b.classList.toggle('on', b.dataset.kind === editor.treeKind);
   $('#sun').classList.toggle('on', sunPanel.open);
+  $('#dims').classList.toggle('on', editor.showDims);
   for (const b of $$('#patioSurface button')) b.classList.toggle('on', b.dataset.surface === editor.patioSurface);
   $('#stairShape').hidden = editor.tool !== 'stair';
   $('#roofMode').hidden = editor.tool !== 'roof';
