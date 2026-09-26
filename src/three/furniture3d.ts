@@ -59,6 +59,14 @@ class Kit {
     return this.add(new THREE.CylinderGeometry(r2, r, h, seg), m, x, y, z + h / 2);
   }
 
+  /** A round rod between two points (plan x, y and height z). */
+  rod(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }, r: number, m: THREE.Material) {
+    const d = new THREE.Vector3(b.x - a.x, b.z - a.z, b.y - a.y);
+    const mesh = this.add(new THREE.CylinderGeometry(r, r, d.length(), 8), m, (a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+    return mesh;
+  }
+
   sphere(r: number, x: number, y: number, z: number, m: THREE.Material) {
     return this.add(new THREE.SphereGeometry(r, 16, 12), m, x, y, z);
   }
@@ -215,9 +223,16 @@ const BUILDERS: Record<string, Builder> = {
     lid.rotation.z = angle;
     k.g.add(lid);
     if (f.open) {
-      const reach = w * 0.88;
-      const x = -w / 2 + reach * Math.cos(angle);
-      k.cyl(0.012, reach * Math.sin(angle), x, front - 0.3, floor + rim, lac, 0.012, 8);
+      // The stick is hinged on top of the rim on the curved treble side, and leans in to a
+      // cup under the lid, so it stands clear of the strings.
+      const y = d / 2 - 0.36 * d;
+      const edge = rimEdgeAt(caseLine, y);
+      const foot = { x: edge - 0.025, y, z: floor + rim };
+      // A point on the lid's underside, a little inboard of the foot.
+      const r = foot.x + w / 2 - 0.12;
+      const top = { x: -w / 2 + r * Math.cos(angle), y, z: floor + rim + r * Math.sin(angle) };
+      k.rod(foot, top, 0.011, lac);
+      k.box(0.04, 0.05, 0.02, foot.x, y, foot.z, plain(0xc8a24a, 0.25, 0.9)); // brass hinge block
     }
     // The stool, in front of the keyboard.
     if (f.stool) {
@@ -478,6 +493,18 @@ const BUILDERS: Record<string, Builder> = {
     bush.scale.y = (h - 0.45) / (Math.min(w, d) * 1.1);
   },
 };
+
+/** The outer (treble side, largest x) edge of a case outline at depth y. */
+function rimEdgeAt(ring: Vec2[], y: number): number {
+  let best = -Infinity;
+  ring.forEach((a, i) => {
+    const b = ring[(i + 1) % ring.length];
+    if ((a.y - y) * (b.y - y) > 0 || a.y === b.y) return;
+    const x = a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x);
+    best = Math.max(best, x);
+  });
+  return best;
+}
 
 /** The angle that turns a chair standing in direction `a` from the centre to face the centre. */
 function facingCentre(a: number): number {
