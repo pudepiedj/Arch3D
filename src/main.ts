@@ -199,6 +199,8 @@ const HINTS: Record<Tool, string> = {
   paste: 'Click on walls to place exact copies · Esc when done',
   stair: 'Click where the stair starts (its bottom step), then click in the direction it goes up',
   roof: 'Click a roof to select it · click an edge of the selected roof to switch eave / gable end',
+  garage: 'Click on a wall to place a garage roller door (2.5 m wide; change it in the panel)',
+  pillar: 'Click to place a pillar; it rises to the roof above it',
 };
 
 function syncToolbar() {

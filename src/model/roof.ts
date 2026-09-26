@@ -528,3 +528,19 @@ export function setAreaRoof(level: Level, ring: Vec2[], roof: Roof) {
 export function clearAreaRoof(level: Level, ring: Vec2[]) {
   level.roofAreas = (level.roofAreas ?? []).filter((s) => !pointInPolygon(s, ring));
 }
+
+/**
+ * Height of the underside of the lowest roof over point p on this floor (above the floor),
+ * or null if nothing roofs it.
+ */
+export function roofHeightAt(b: Building, level: Level, p: Vec2): number | null {
+  let best: number | null = null;
+  for (const r of levelRoofs(b, level)) {
+    for (const f of r.geometry?.faces ?? []) {
+      if (f.kind === 'gable' || !pointInPolygon(p, f.pts)) continue;
+      const z = f.kind === 'flat' ? f.pts[0].z - FLAT_THICKNESS : planeOf(f.pts)?.(p);
+      if (z !== undefined && z !== null && (best === null || z < best)) best = z;
+    }
+  }
+  return best;
+}

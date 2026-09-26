@@ -4,11 +4,12 @@
 import { addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
 import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, roofAreaRings, setAreaRoof } from '../model/roof';
 import { pointInPolygon } from '../model/geom';
+import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
 import { stairGeometry } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
 import { deleteNode, deleteOpening, deleteWall, finishNodeMove, moveNode, normalize, setWallLength, splitWallAt } from '../model/plan';
-import { DEFAULTS, type OpeningKind, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
+import { DEFAULTS, type OpeningKind, type Pillar, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
 import type { Editor2D } from './editor2d';
 import type { Store } from './store';
 
@@ -67,6 +68,7 @@ export class Panel {
     if (sel.kind === 'level') return this.renderLevel(sel.id);
     if (sel.kind === 'stair') return this.renderStair(sel.id);
     if (sel.kind === 'roof') return this.renderRoof(sel.id);
+    if (sel.kind === 'pillar') return this.renderPillar(sel.id);
 
     if (sel.kind === 'node') {
       const n = plan.nodes[sel.id];
@@ -94,10 +96,11 @@ export class Panel {
     if (!o) return;
     const fps = computeFootprints(plan);
     const fp = fps.get(o.wallId);
-    this.title(o.kind === 'door' ? 'Door' : 'Window');
+    this.title(o.kind === 'door' ? 'Door' : o.kind === 'garage' ? 'Garage door' : 'Window');
     this.select('Type', o.kind, [
       ['door', 'Door'],
       ['window', 'Window'],
+      ['garage', 'Garage roller door'],
     ], (v) => {
       const k = v as OpeningKind;
       o.kind = k;
@@ -150,6 +153,16 @@ export class Panel {
     if (clip && !same) {
       btns.push([`Match copied (${Math.round(clip.width * 100)}×${Math.round(clip.height * 100)})`, () => {
         if (!this.editor.matchSelection()) alert('The copied size does not fit here.');
+      }]);
+    }
+    if (o.kind === 'garage') {
+      btns.push([o.open ? 'Show shut' : 'Show open', () => {
+        o.open = !o.open;
+        this.done();
+      }]);
+      btns.push(['Casing to other side', () => {
+        o.swingFlip = !o.swingFlip;
+        this.done();
       }]);
     }
     if (o.kind === 'door') {
@@ -294,6 +307,13 @@ export class Panel {
     }
     const btns: [string, () => void, boolean?][] = [];
     if (isSection) {
+      btns.push(['Add pillars', () => {
+        const spots = pillarsForSection(level, id.slice(8));
+        if (!spots.length) return alert('This roof already rests on walls or pillars at all its corners.');
+        for (const p of spots) addPillar(level, p);
+        this.store.commit();
+        this.render();
+      }]);
       btns.push(['Delete section', () => {
         delete level.roofSections![id.slice(8)];
         this.editor.select(null);
@@ -306,6 +326,32 @@ export class Panel {
       }]);
     }
     if (btns.length) this.buttons(btns);
+  }
+
+  private renderPillar(id: string) {
+    const level = this.store.plan;
+    const q = level.pillars?.[id];
+    if (!q) return;
+    this.title('Pillar');
+    this.select('Shape', q.shape, [
+      ['square', 'Square'],
+      ['round', 'Round'],
+    ], (v) => {
+      q.shape = v as Pillar['shape'];
+      this.done();
+    });
+    this.number(q.shape === 'round' ? 'Diameter' : 'Width', q.size, 0.01, 0.05, 1.5, (v) => {
+      q.size = v;
+      this.done();
+    }, 'm');
+    this.note(`${pillarHeight(this.store.building, level, q).toFixed(2)} m tall: it rises to the roof above it (or the wall height if there is none). Drag to move.`);
+    this.buttons([
+      ['Delete', () => {
+        delete level.pillars![id];
+        this.editor.select(null);
+        this.store.commit();
+      }, true],
+    ]);
   }
 
   /** Type, pitch and overhang fields for a roof. */

@@ -45,14 +45,20 @@ interface Block {
 }
 
 export class WalkWorld {
-  private levels: { id: string; elevation: number; colliders: Collider[] }[] = [];
+  private levels: { id: string; elevation: number; colliders: Collider[]; posts: { x: number; y: number; r: number }[] }[] = [];
   private surfaces: Surface[] = [];
   private blocks: Block[] = [];
 
   constructor(b: Building) {
     b.levels.forEach((level, i) => {
       const elevation = levelElevation(b, level.id);
-      this.levels.push({ id: level.id, elevation, colliders: buildColliders(level) });
+      const posts = Object.values(level.pillars ?? {}).map((q) => ({
+        x: q.x,
+        y: q.y,
+        // A square post is treated as the circle round it.
+        r: q.shape === 'round' ? q.size / 2 : (q.size / 2) * Math.SQRT2,
+      }));
+      this.levels.push({ id: level.id, elevation, colliders: buildColliders(level), posts });
       const below = b.levels[i - 1];
       const holes = below ? stairwells(below).map((shape) => shape[0]) : [];
       for (const r of detectRooms(level)) this.surfaces.push({ poly: r.polygon, holes, z: elevation + 0.005 });
@@ -105,9 +111,20 @@ export class WalkWorld {
         { x: cur.x + sx, y: cur.y },
         { x: cur.x, y: cur.y + sy },
       ];
-      const colliders = this.levels.find((l) => l.id === this.levelAt(foot))?.colliders ?? [];
+      const here = this.levels.find((l) => l.id === this.levelAt(foot));
+      const colliders = here?.colliders ?? [];
       for (const t of tries) {
-        for (let iter = 0; iter < 3; iter++) for (const c of colliders) pushOut(t, c);
+        for (let iter = 0; iter < 3; iter++) {
+          for (const c of colliders) pushOut(t, c);
+          for (const q of here?.posts ?? []) {
+            const d = Math.hypot(t.x - q.x, t.y - q.y);
+            const min = RADIUS + q.r;
+            if (d < min && d > 1e-9) {
+              t.x = q.x + ((t.x - q.x) / d) * min;
+              t.y = q.y + ((t.y - q.y) / d) * min;
+            }
+          }
+        }
         if (this.blocked(t, foot)) continue;
         const ground = this.groundAt(t, foot);
         if (ground < foot - STEP_DOWN) continue;
@@ -128,7 +145,8 @@ function buildColliders(plan: Plan): Collider[] {
     const u1 = Math.max(fp.uL1, fp.uR1);
     let cursor = u0;
     for (const o of openingsOf(plan, fp.wallId)) {
-      if (o.kind !== 'door') continue;
+      // Doors and open garage doors can be walked through.
+      if (o.kind !== 'door' && !(o.kind === 'garage' && o.open)) continue;
       out.push({ fp, u0: cursor, u1: o.offset - o.width / 2 });
       cursor = o.offset + o.width / 2;
     }

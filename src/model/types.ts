@@ -18,7 +18,8 @@ export interface Wall {
   height: number;
 }
 
-export type OpeningKind = 'door' | 'window';
+/** 'garage' is a roller door: slats that roll up into a casing above the opening. */
+export type OpeningKind = 'door' | 'window' | 'garage';
 
 export interface Opening {
   id: string;
@@ -34,6 +35,18 @@ export interface Opening {
   hingeFlip?: boolean;
   /** Door swings to the right-hand side of the wall instead of the left. */
   swingFlip?: boolean;
+  /** Garage door shown rolled up (open) rather than down. */
+  open?: boolean;
+}
+
+/** A free-standing post, e.g. holding up a veranda or carport roof. */
+export interface Pillar {
+  id: string;
+  x: number;
+  y: number;
+  /** Width (square) or diameter (round). */
+  size: number;
+  shape: 'square' | 'round';
 }
 
 export type StairShape = 'straight' | 'L' | 'U';
@@ -119,6 +132,8 @@ export interface Level extends Plan {
   roofAreas?: RoofAreaSetting[];
   /** Extra hand-drawn roofs. */
   roofSections?: Record<string, RoofSection>;
+  /** Free-standing pillars. They rise to the roof above them (or the floor's wall height). */
+  pillars?: Record<string, Pillar>;
 }
 
 /** A building is a stack of levels, listed from the bottom up. */
@@ -136,4 +151,6 @@ export const DEFAULTS = {
   slab: 0.3,
   door: { width: 0.9, height: 2.1, sill: 0 },
   window: { width: 1.2, height: 1.2, sill: 0.9 },
+  garage: { width: 2.5, height: 2.1, sill: 0 },
+  pillar: 0.25,
 };

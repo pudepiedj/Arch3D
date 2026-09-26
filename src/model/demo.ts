@@ -1,4 +1,5 @@
 import { addLevelOnTop, createBuilding } from './building';
+import { addPillar, pillarsForSection } from './pillars';
 import { addStair } from './stairs';
 import { addWall, deleteWall, findWallInterior } from './plan';
 import { placeOpening } from './openings';
@@ -6,8 +7,8 @@ import { DEFAULTS, type Building, type Level, type OpeningKind, type Plan } from
 
 /**
  * A two-storey house showing the main features: a gabled main roof with a cross gable
- * over a two-storey window bay, a flat-roofed single-storey extension at the side and a
- * gabled one at the back, a stair, doors and windows.
+ * over a two-storey window bay, a flat-roofed garage with a roller door at the side, a
+ * gabled garden room and a terrace roof on pillars at the back, a stair, doors and windows.
  */
 export function demoBuilding(): Building {
   const b = createBuilding();
@@ -56,7 +57,7 @@ export function demoBuilding(): Building {
   addWall(ground, { x: 0, y: 4.2 }, { x: 6, y: 4.2 }, int);
   addWall(ground, { x: 6, y: 5 }, { x: 10, y: 5 }, int);
   bay(ground);
-  // Utility room off the kitchen: flat roof (the default for single-storey parts).
+  // Garage off the kitchen: flat roof (the default for single-storey parts), roller door.
   loop(ground, [
     [10, 1],
     [13, 1],
@@ -80,12 +81,28 @@ export function demoBuilding(): Building {
   at(ground, 2.5, 4.2, 'door');
   at(ground, 8, 5, 'door');
   at(ground, 10, 2.75, 'door');
-  at(ground, 13, 2.75, 'window');
+  at(ground, 13, 2.75, 'garage');
   at(ground, 11.5, 1, 'window');
   at(ground, 10, 6.5, 'window');
   at(ground, 8, 8, 'door');
   at(ground, 8, 10.5, 'window');
   at(ground, 6.5, 9.25, 'window');
+
+  // A covered terrace behind the bedroom: a flat roof on pillars, against the house wall.
+  ground.roofSections = {
+    t: {
+      id: 't',
+      points: [
+        { x: 0, y: 8 },
+        { x: 5.8, y: 8 },
+        { x: 5.8, y: 10.8 },
+        { x: 0, y: 10.8 },
+      ],
+      roof: { kind: 'flat', pitch: 35, overhang: 0.1 },
+      base: 2.6,
+    },
+  };
+  for (const p of pillarsForSection(ground, 't')) addPillar(ground, p);
 
   // A straight stair along the back wall of the bedroom, rising towards the left.
   addStair(ground, 4.9, 7.4, Math.PI, 'straight');

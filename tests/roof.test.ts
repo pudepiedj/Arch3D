@@ -308,6 +308,7 @@ describe('the demo house', () => {
     // Gables at both ends and over the bay.
     expect(faces(main, 'gable')).toHaveLength(3);
     const lower = levelRoofs(b, b.levels[0]);
-    expect(lower.map((r) => r.roof.kind).sort()).toEqual(['flat', 'gable']);
+    // Garage (flat), garden room (gable) and the terrace roof section (flat).
+    expect(lower.map((r) => r.roof.kind).sort()).toEqual(['flat', 'flat', 'gable']);
   });
 });

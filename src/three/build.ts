@@ -15,7 +15,8 @@ import { type Shape, subtract } from '../model/clip';
 import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs } from '../model/roof';
 import { type StairGeometry, stairGeometry, stairSurfaceAt, stairwells } from '../model/stairs';
 import { type RailLine, againstWall, buildRails, onSegment } from './rails';
-import type { Building, Opening, Plan } from '../model/types';
+import { pillarHeight } from '../model/pillars';
+import type { Building, Opening, Pillar, Plan } from '../model/types';
 
 export interface Materials {
   wall: THREE.Material;
@@ -27,6 +28,7 @@ export interface Materials {
   ceiling: THREE.Material;
   roof: THREE.Material;
   flatRoof: THREE.Material;
+  garage: THREE.Material;
 }
 
 export function createMaterials(): Materials {
@@ -48,6 +50,7 @@ export function createMaterials(): Materials {
     ceiling: new THREE.MeshStandardMaterial({ color: 0xfbfaf8, roughness: 0.95, shadowSide: THREE.DoubleSide }),
     roof: new THREE.MeshStandardMaterial({ color: 0x8f4b3a, roughness: 0.85, side: THREE.DoubleSide }),
     flatRoof: new THREE.MeshStandardMaterial({ color: 0x5d6066, roughness: 0.95, side: THREE.DoubleSide }),
+    garage: new THREE.MeshStandardMaterial({ color: 0xcdd1d5, roughness: 0.45, metalness: 0.35 }),
   };
 }
 
@@ -125,6 +128,8 @@ export interface LevelOptions {
   stairs?: StairGeometry[];
   /** The roofs over this floor (none when it is cut away). */
   roofs?: RoofGeometry[];
+  /** Free-standing pillars, each with the height it rises to. */
+  pillars?: (Pillar & { height: number })[];
 }
 
 /**
@@ -144,6 +149,7 @@ export function buildBuildingObject(b: Building, mats: Materials, upTo?: string)
       ceilingHoles: stairwells(level),
       slab: level.slab,
       stairs: Object.values(level.stairs ?? {}).map((st) => stairGeometry(st, level.height)),
+      pillars: Object.values(level.pillars ?? {}).map((q) => ({ ...q, height: pillarHeight(b, level, q) })),
       roofs: i === cut ? [] : levelRoofs(b, level).flatMap((r) => (r.geometry ? [r.geometry] : [])),
     });
     obj.position.y = levelElevation(b, level.id);
@@ -219,6 +225,17 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   }
 
   for (const r of opts.roofs ?? []) group.add(buildRoofObject(r, mats));
+  for (const q of opts.pillars ?? []) {
+    const geo =
+      q.shape === 'round'
+        ? new THREE.CylinderGeometry(q.size / 2, q.size / 2, q.height, 24)
+        : new THREE.BoxGeometry(q.size, q.height, q.size);
+    const m = new THREE.Mesh(geo, mats.frame);
+    m.position.set(q.x, q.height / 2, q.y);
+    m.castShadow = m.receiveShadow = true;
+    m.name = `pillar:${q.id}`;
+    group.add(m);
+  }
 
   const wallMesh = new THREE.Mesh(sides.geometry(), mats.wall);
   wallMesh.castShadow = wallMesh.receiveShadow = true;
@@ -423,6 +440,23 @@ function buildOpeningObject(fp: Footprint, o: Opening, mats: Materials): THREE.O
     const glass = new THREE.Mesh(new THREE.PlaneGeometry(o.width - 2 * FRAME, o.height - 2 * FRAME), mats.glass);
     glass.position.set(o.offset, o.sill + o.height / 2, 0);
     g.add(glass);
+  } else if (o.kind === 'garage') {
+    // Roller door: runs in guides on the inside face, and rolls up into a casing above.
+    const side = o.swingFlip ? -1 : 1; // +1: inside is the wall's left (+v) face
+    const face = side * (t / 2 + 0.03);
+    box(0.06, top + 0.3, 0.07, lo + 0.03, (top + 0.3) / 2, face, mats.garage);
+    box(0.06, top + 0.3, 0.07, hi - 0.03, (top + 0.3) / 2, face, mats.garage);
+    box(o.width + 0.2, 0.34, 0.34, o.offset, top + 0.17, side * (t / 2 + 0.17), mats.garage);
+    if (!o.open) {
+      const slat = 0.1;
+      const n = Math.max(1, Math.round(o.height / slat));
+      for (let k = 0; k < n; k++) {
+        box(o.width - 0.04, (o.height / n) * 0.86, 0.025, o.offset, o.sill + (k + 0.5) * (o.height / n), face, mats.garage);
+      }
+    } else {
+      // Rolled up: only the bottom rail shows, tucked under the casing.
+      box(o.width - 0.04, 0.05, 0.04, o.offset, top - 0.03, face, mats.garage);
+    }
   } else {
     // Door lining covers the reveals.
     const depth = t + 0.01;

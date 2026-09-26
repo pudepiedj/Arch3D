@@ -16,6 +16,7 @@ import {
   vec,
 } from '../model/geom';
 import { getLevel, levelBelow } from '../model/building';
+import { addPillar, pillarAt } from '../model/pillars';
 import { DEFAULT_ROOF, type LevelRoof, levelRoofs, roofAreaRings, setAreaRoof, toggleEdge } from '../model/roof';
 import { DEFAULT_GOING, DEFAULT_STAIR_WIDTH, type StairGeometry, addStair, stairAt, stairGeometry } from '../model/stairs';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
@@ -43,8 +44,8 @@ import { detectRooms } from '../model/rooms';
 import type { Level, Opening, OpeningKind, Plan, StairShape } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'split' | 'paste' | 'stair' | 'roof';
-export type Selection = { kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof'; id: string } | null;
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar';
+export type Selection = { kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar'; id: string } | null;
 
 type Gesture =
   | { kind: 'pan'; last: Vec2 }
@@ -53,6 +54,7 @@ type Gesture =
   | { kind: 'dragWall'; id: string; start: Vec2; a0: Vec2; b0: Vec2; n: Vec2 }
   | { kind: 'dragOpening'; id: string }
   | { kind: 'dragStair'; id: string; start: Vec2; x0: number; y0: number }
+  | { kind: 'dragPillar'; id: string }
   | { kind: 'click' };
 
 interface Snap {
@@ -328,6 +330,8 @@ export class Editor2D {
         return { kind: 'opening', id: o.id };
       }
     }
+    const pillar = pillarAt(this.plan, w, 4 / this.view.scale);
+    if (pillar) return { kind: 'pillar', id: pillar };
     const stair = stairAt(this.plan, w);
     if (stair) return { kind: 'stair', id: stair };
     const wall = this.wallAt(w, tol);
@@ -381,6 +385,7 @@ export class Editor2D {
       const hit = this.hitTest(s);
       this.select(hit);
       if (hit?.kind === 'node') this.gesture = { kind: 'dragNode', id: hit.id };
+      else if (hit?.kind === 'pillar') this.gesture = { kind: 'dragPillar', id: hit.id };
       else if (hit?.kind === 'stair') {
         const st = this.plan.stairs[hit.id];
         this.gesture = { kind: 'dragStair', id: hit.id, start: this.toWorld(s), x0: st.x, y0: st.y };
@@ -457,6 +462,16 @@ export class Editor2D {
         this.store.changed();
         break;
       }
+      case 'dragPillar': {
+        const q = plan.pillars?.[cur.id];
+        if (!q) break;
+        const snap = this.snap(w);
+        q.x = snap.p.x;
+        q.y = snap.p.y;
+        this.lastGuides = snap.guides;
+        this.store.changed();
+        break;
+      }
       case 'dragStair': {
         const st = plan.stairs[cur.id];
         if (!st) break;
@@ -517,6 +532,7 @@ export class Editor2D {
         break;
       case 'dragOpening':
       case 'dragStair':
+      case 'dragPillar':
         if (this.dragging) this.store.commit();
         break;
       case 'click':
@@ -535,8 +551,15 @@ export class Editor2D {
         this.placeWallPoint(s.p);
         break;
       }
+      case 'pillar': {
+        const q = addPillar(plan, this.snap(w).p);
+        this.store.commit();
+        this.select({ kind: 'pillar', id: q.id });
+        break;
+      }
       case 'door':
       case 'window':
+      case 'garage':
       case 'paste': {
         const fp = this.wallAt(w, 10 / this.view.scale);
         const spec = this.openingSpec();
@@ -717,6 +740,12 @@ export class Editor2D {
       case 'r':
         this.setTool('roof');
         break;
+      case 'g':
+        this.setTool('garage');
+        break;
+      case 'p':
+        this.setTool('pillar');
+        break;
       case 'o':
         this.ortho = !this.ortho;
         this.onToolChange?.();
@@ -726,7 +755,7 @@ export class Editor2D {
 
   /** What a click with the current tool places: a default door/window, or the copied one. */
   private openingSpec(): OpeningKind | OpeningTemplate | null {
-    if (this.tool === 'door' || this.tool === 'window') return this.tool;
+    if (this.tool === 'door' || this.tool === 'window' || this.tool === 'garage') return this.tool;
     if (this.tool === 'paste') return this.clipboard;
     return null;
   }
@@ -935,6 +964,7 @@ export class Editor2D {
     else if (s.kind === 'node') deleteNode(this.plan, s.id);
     else if (s.kind === 'opening') deleteOpening(this.plan, s.id);
     else if (s.kind === 'stair') delete this.plan.stairs[s.id];
+    else if (s.kind === 'pillar') delete this.plan.pillars?.[s.id];
     else if (s.kind === 'roof') {
       if (s.id.startsWith('section:')) delete this.plan.roofSections?.[s.id.slice(8)];
       else {
@@ -955,7 +985,8 @@ export class Editor2D {
       (s.kind === 'level' && getLevel(this.store.building, s.id)) ||
       (s.kind === 'wall' && p.walls[s.id]) || (s.kind === 'node' && p.nodes[s.id]) || (s.kind === 'opening' && p.openings[s.id]) ||
       (s.kind === 'stair' && p.stairs?.[s.id]) ||
-      (s.kind === 'roof' && this.roofExists(s.id));
+      (s.kind === 'roof' && this.roofExists(s.id)) ||
+      (s.kind === 'pillar' && p.pillars?.[s.id]);
     if (!exists) this.select(null);
   }
 
@@ -1058,6 +1089,18 @@ export class Editor2D {
 
     this.drawRoofs(C);
 
+    // Pillars: solid squares or circles.
+    for (const q of Object.values(plan.pillars ?? {})) {
+      const sel = this.selection?.kind === 'pillar' && this.selection.id === q.id;
+      const c = this.toScreen(q);
+      const r = Math.max(3, (q.size / 2) * this.view.scale);
+      ctx.beginPath();
+      if (q.shape === 'round') ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+      else ctx.rect(c.x - r, c.y - r, r * 2, r * 2);
+      ctx.fillStyle = sel ? C.accent : C.wall;
+      ctx.fill();
+    }
+
     for (const r of rooms) {
       const c = this.toScreen(r.centroid);
       ctx.fillStyle = C.text;
@@ -1120,7 +1163,7 @@ export class Editor2D {
         ctx.lineWidth = 2;
         ctx.stroke();
       }
-    } else if ((this.tool === 'door' || this.tool === 'window' || this.tool === 'paste') && h) {
+    } else if ((this.tool === 'door' || this.tool === 'window' || this.tool === 'garage' || this.tool === 'paste') && h) {
       const fp = this.wallAt(h, 10 / this.view.scale);
       const spec = this.openingSpec();
       if (fp && spec) {
@@ -1211,7 +1254,17 @@ export class Editor2D {
     // Jamb lines.
     this.line(rect[0], rect[3]);
     this.line(rect[1], rect[2]);
-    if (o.kind === 'window') {
+    if (o.kind === 'garage') {
+      // Roller door: the door line on the inside face (dashed when open), and the casing.
+      const side = o.swingFlip ? -1 : 1;
+      if (o.open) ctx.setLineDash([5, 4]);
+      ctx.lineWidth = selected ? 3 : 2.5;
+      this.line(wallPoint(fp, lo, side * half), wallPoint(fp, hi, side * half));
+      ctx.setLineDash([2, 3]);
+      ctx.lineWidth = 1;
+      this.line(wallPoint(fp, lo - 0.1, side * (half + 0.34)), wallPoint(fp, hi + 0.1, side * (half + 0.34)));
+      ctx.setLineDash([]);
+    } else if (o.kind === 'window') {
       this.line(wallPoint(fp, lo, half * 0.25), wallPoint(fp, hi, half * 0.25));
       this.line(wallPoint(fp, lo, -half * 0.25), wallPoint(fp, hi, -half * 0.25));
       this.line(rect[0], rect[1]);
