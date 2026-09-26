@@ -26,7 +26,9 @@ import {
 } from '../model/roofitems';
 import { patioShapes } from '../model/patios';
 import { crownBase, trunkRadius } from '../model/trees';
-import type { Building, Opening, Patio, Pillar, Plan, Tree } from '../model/types';
+import { standingHeight } from '../model/furniture';
+import { buildFurniture } from './furniture3d';
+import type { Building, Furniture, Opening, Patio, Pillar, Plan, Tree } from '../model/types';
 
 export interface Materials {
   wall: THREE.Material;
@@ -296,6 +298,8 @@ export interface LevelOptions {
   /** Patios, decks and gravel, with their outlines less the house. */
   patios?: { patio: Patio; shapes: Shape[] }[];
   trees?: Tree[];
+  /** Furniture, each with the height of what it stands on (floor, patio or deck). */
+  furniture?: (Furniture & { base: number })[];
   /** How leafy the broad-leaved trees are: 1 summer, 0 bare; `autumn` colours them. */
   season?: Season;
 }
@@ -338,6 +342,7 @@ export function buildBuildingObject(
       roofs: i === cut ? [] : levelRoofs(b, level).flatMap((r) => (r.geometry ? [r.geometry] : [])),
       patios: Object.values(level.patios ?? {}).map((patio) => ({ patio, shapes: patioShapes(level, patio) })),
       trees: Object.values(level.trees ?? {}),
+      furniture: Object.values(level.furniture ?? {}).map((f) => ({ ...f, base: standingHeight(level, f) })),
       season,
     });
     obj.position.y = levelElevation(b, level.id);
@@ -431,6 +436,13 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
 
   if (opts.patios?.length) group.add(buildPatios(opts.patios, mats));
   for (const t of opts.trees ?? []) group.add(buildTree(t, mats, opts.season ?? { leaf: 1, autumn: false }));
+  for (const f of opts.furniture ?? []) {
+    const obj = buildFurniture(f);
+    // Just above the floor, so a piece never fights with it.
+    obj.position.set(f.x, f.base + 0.006, f.y);
+    obj.rotation.y = -f.angle;
+    group.add(obj);
+  }
 
   const wallMesh = new THREE.Mesh(sides.geometry(), mats.wall);
   wallMesh.castShadow = wallMesh.receiveShadow = true;

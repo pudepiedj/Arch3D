@@ -12,6 +12,7 @@ import { computeFootprints, type Footprint } from './joints';
 import { openingsOf } from './openings';
 import { patioShapes } from './patios';
 import { trunkRadius } from './trees';
+import { catalogueItem, footprint, standingHeight } from './furniture';
 import { detectRooms } from './rooms';
 import { stairGeometry, stairwells } from './stairs';
 import type { Building, Plan } from './types';
@@ -62,6 +63,12 @@ export class WalkWorld {
         r: q.shape === 'round' ? q.size / 2 : (q.size / 2) * Math.SQRT2,
       }));
       for (const t of Object.values(level.trees ?? {})) posts.push({ x: t.x, y: t.y, r: trunkRadius(t) });
+      // Furniture is in the way (except rugs); you walk round it.
+      for (const f of Object.values(level.furniture ?? {})) {
+        if (catalogueItem(f.kind)?.flat) continue;
+        const base = elevation + standingHeight(level, f);
+        this.blocks.push({ poly: footprint(f), bottom: base, top: base + Math.max(f.height, STEP_UP + 0.05) });
+      }
       this.levels.push({ id: level.id, elevation, colliders: buildColliders(level), posts });
       const below = b.levels[i - 1];
       const holes = below ? stairwells(below).map((shape) => shape[0]) : [];

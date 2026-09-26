@@ -2,6 +2,8 @@ import { addLevelOnTop, createBuilding } from './building';
 import { addPillar, pillarsForSection } from './pillars';
 import { addPatio } from './patios';
 import { addTree } from './trees';
+import { addFurniture, againstWall } from './furniture';
+import { computeFootprints } from './joints';
 import { addChimney, addRooflight, addSolarArray } from './roofitems';
 import { addStair } from './stairs';
 import { addWall, deleteWall, findWallInterior } from './plan';
@@ -146,9 +148,39 @@ export function demoBuilding(): Building {
   at(first, 7, 5, 'door');
   // Main roof: gabled, with a cross gable over the bay (its front edge set to a gable end).
   first.roof = { kind: 'gable', pitch: 35, overhang: 0.3, edges: [{ x: 2.4, y: -1.15, type: 'gable' }] };
+  // Bedrooms and bathroom.
+  furnish(first, 'double', 0.5, 6.2);
+  furnish(first, 'wardrobe', 3.0, 7.6);
+  furnish(first, 'bedside', 0.3, 7.3);
+  furnish(first, 'single', 9.7, 1.2);
+  furnish(first, 'desk', 5.8, 1.3);
+  furnish(first, 'bath', 9.7, 6.5);
+  furnish(first, 'basin', 8.6, 5.3);
+  furnish(first, 'wc', 9.4, 5.3);
+
   // A chimney stack astride the ridge, and solar panels on the back slope.
   const chimney = addChimney(first, { x: 8.6, y: 4 });
   chimney.pots = 2;
   addSolarArray(first, { x: 4.6, y: 6.3 });
+  // Downstairs: the grand piano in the living room, dining, kitchen, and the terrace.
+  addFurniture(ground, 'grand', { x: 3.3, y: 2.1 }, 0);
+  furnish(ground, 'sofa3', 0.4, 2.3);
+  addFurniture(ground, 'rug', { x: 1.9, y: 2.3 }, Math.PI / 2);
+  addFurniture(ground, 'dining6', { x: 2.6, y: 5.7 }, 0);
+  furnish(ground, 'sideboard', 0.4, 5.9);
+  for (const [kind, x] of [['base', 6.55], ['base', 7.15], ['sink', 7.95], ['hob', 8.75], ['base', 9.35]] as const) furnish(ground, kind, x, 0.3);
+  furnish(ground, 'fridge', 9.7, 4.2);
+  addFurniture(ground, 'dininground', { x: 7.9, y: 3.0 }, 0);
+  addFurniture(ground, 'gardenset', { x: 2.2, y: 9.7 }, 0);
+  addFurniture(ground, 'parasol', { x: 2.2, y: 9.7 }, 0);
+  addFurniture(ground, 'lounger', { x: 11.2, y: 8.6 }, 0);
+  addFurniture(ground, 'bench', { x: 5.0, y: 10.9 }, Math.PI);
   return b;
+}
+
+/** Place a piece with its back against the wall nearest to (x, y). */
+function furnish(level: Level, kind: string, x: number, y: number) {
+  const f = addFurniture(level, kind, { x, y });
+  const wall = againstWall(computeFootprints(level).values(), { x, y }, f.depth, 1);
+  if (wall) Object.assign(f, { x: wall.at.x, y: wall.at.y, angle: wall.angle });
 }

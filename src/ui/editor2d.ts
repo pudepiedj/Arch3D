@@ -20,6 +20,8 @@ import { addPillar, pillarAt } from '../model/pillars';
 import { addPatio, patioAt, patioShapes } from '../model/patios';
 import { addTree, treeAt, trunkRadius } from '../model/trees';
 import { siteOf } from '../model/sun';
+import { addFurniture, againstWall, catalogueItem, furnitureAt } from '../model/furniture';
+import { drawFurnitureSymbol } from './furniture2d';
 import { addChimney, addRooflight, addSolarArray, chimneyFootprint, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { roofSurfaceAt } from '../model/roof';
 import { DEFAULT_ROOF, type LevelRoof, levelRoofs, roofAreaRings, setAreaRoof, toggleEdge } from '../model/roof';
@@ -46,12 +48,12 @@ import {
   splitWallAt,
 } from '../model/plan';
 import { detectRooms } from '../model/rooms';
-import type { Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind } from '../model/types';
+import type { Furniture, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree';
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture';
 export type Selection = {
-  kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree';
+  kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture';
   id: string;
 } | null;
 
@@ -63,6 +65,7 @@ type Gesture =
   | { kind: 'dragOpening'; id: string }
   | { kind: 'dragStair'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'dragPillar'; id: string }
+  | { kind: 'dragFurniture'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'dragPatio'; id: string; start: Vec2; pts0: Vec2[] }
   | { kind: 'dragRoofItem'; what: 'chimney' | 'solar' | 'rooflight' | 'tree'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'click' };
@@ -96,6 +99,9 @@ export class Editor2D {
   patioSurface: PatioSurface = 'paving';
   /** Kind of tree the Tree tool plants. */
   treeKind: TreeKind = 'deciduous';
+  /** Catalogue entry the Furniture tool places, and the angle it is placed at. */
+  furnitureKind = 'grand';
+  furnitureAngle = 0;
   /** A copied door or window: its exact type and size. */
   clipboard: OpeningTemplate | null = null;
   ortho = false;
@@ -105,6 +111,7 @@ export class Editor2D {
   onSelectionChange?: () => void;
   onToolChange?: () => void;
   onDimsChange?: () => void;
+  onOpenCatalogue?: () => void;
   shortcutsEnabled: () => boolean = () => true;
 
   private pointers = new Map<number, Vec2>();
@@ -370,6 +377,8 @@ export class Editor2D {
     if (pillar) return { kind: 'pillar', id: pillar };
     const stair = stairAt(this.plan, w);
     if (stair) return { kind: 'stair', id: stair };
+    const piece = furnitureAt(this.plan, w);
+    if (piece) return { kind: 'furniture', id: piece };
     const wall = this.wallAt(w, tol);
     if (wall) return { kind: 'wall', id: wall.wallId };
     const crown = treeAt(this.plan, w, 0);
@@ -435,6 +444,10 @@ export class Editor2D {
         this.gesture = { kind: 'dragStair', id: hit.id, start: this.toWorld(s), x0: st.x, y0: st.y };
       }
       else if (hit?.kind === 'opening') this.gesture = { kind: 'dragOpening', id: hit.id };
+      else if (hit?.kind === 'furniture') {
+        const f = this.plan.furniture![hit.id];
+        this.gesture = { kind: 'dragFurniture', id: hit.id, start: this.toWorld(s), x0: f.x, y0: f.y };
+      }
       else if (hit?.kind === 'patio') {
         const pts0 = this.plan.patios![hit.id].points.map((p) => ({ ...p }));
         this.gesture = { kind: 'dragPatio', id: hit.id, start: this.toWorld(s), pts0 };
@@ -529,6 +542,21 @@ export class Editor2D {
         this.store.changed();
         break;
       }
+      case 'dragFurniture': {
+        const f = plan.furniture?.[cur.id];
+        if (!f) break;
+        const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
+        f.x = cur.x0 + snapTo(w.x - cur.start.x);
+        f.y = cur.y0 + snapTo(w.y - cur.start.y);
+        // Keep it tight against a wall it is square to and near.
+        const wall = againstWall(this.fps.values(), f, f.depth, 0.12);
+        if (wall && Math.abs(Math.sin(wall.angle - f.angle)) < 1e-3 && Math.cos(wall.angle - f.angle) > 0) {
+          f.x = wall.at.x;
+          f.y = wall.at.y;
+        }
+        this.store.changed();
+        break;
+      }
       case 'dragPillar': {
         const q = plan.pillars?.[cur.id];
         if (!q) break;
@@ -602,6 +630,7 @@ export class Editor2D {
       case 'dragPillar':
       case 'dragRoofItem':
       case 'dragPatio':
+      case 'dragFurniture':
         if (this.dragging) this.store.commit();
         break;
       case 'click':
@@ -619,6 +648,29 @@ export class Editor2D {
     if (what === 'solar') return p.solar?.[id];
     if (what === 'rooflight') return p.rooflights?.[id];
     return p.trees?.[id];
+  }
+
+  /** Where the Furniture tool would put its piece for the pointer at w: back to a nearby wall, or free. */
+  private furniturePlacement(w: Vec2): { at: Vec2; angle: number } | null {
+    const c = catalogueItem(this.furnitureKind);
+    if (!c) return null;
+    const wall = c.flat ? null : againstWall(this.fps.values(), w, c.depth);
+    if (wall) return wall;
+    const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
+    return { at: { x: snapTo(w.x), y: snapTo(w.y) }, angle: this.furnitureAngle };
+  }
+
+  /** Turn the selected piece (or the one about to be placed) by a step. */
+  rotateFurniture(step: number) {
+    const s = this.selection;
+    const f = s?.kind === 'furniture' ? this.plan.furniture?.[s.id] : undefined;
+    if (f) {
+      f.angle = normAngle(f.angle + step);
+      this.store.commit();
+    } else if (this.tool === 'furniture') {
+      this.furnitureAngle = normAngle(this.furnitureAngle + step);
+      this.requestRender();
+    }
   }
 
   private click(w: Vec2) {
@@ -681,6 +733,14 @@ export class Editor2D {
       case 'patio':
         this.outlineClick(w);
         break;
+      case 'furniture': {
+        const at = this.furniturePlacement(w);
+        if (!at) break;
+        const f = addFurniture(plan, this.furnitureKind, at.at, at.angle);
+        this.store.commit();
+        this.select({ kind: 'furniture', id: f.id });
+        break;
+      }
       case 'tree': {
         const t = addTree(plan, this.snap(w).p, this.treeKind);
         this.store.commit();
@@ -783,6 +843,10 @@ export class Editor2D {
       }
       return;
     }
+    if (!mod && (e.key === '[' || e.key === ']')) {
+      this.rotateFurniture(((e.key === ']' ? 1 : -1) * Math.PI) / 12);
+      return;
+    }
     if (mod && e.key.toLowerCase() === 'd') {
       e.preventDefault();
       this.duplicateSelection();
@@ -871,6 +935,9 @@ export class Editor2D {
       case 'm':
         this.toggleDims();
         break;
+      case 'f':
+        this.onOpenCatalogue?.();
+        break;
       case 'o':
         this.ortho = !this.ortho;
         this.onToolChange?.();
@@ -898,6 +965,18 @@ export class Editor2D {
   /** Put an identical copy of the selected door or window next to it. */
   duplicateSelection(): boolean {
     const s = this.selection;
+    if (s?.kind === 'furniture') {
+      const f = this.plan.furniture?.[s.id];
+      if (!f) return false;
+      // Side by side, to its right: handy for a run of kitchen units.
+      const copy: Furniture = { ...f, id: `f${this.plan.nextId++}` };
+      copy.x = f.x + Math.cos(f.angle) * f.width;
+      copy.y = f.y + Math.sin(f.angle) * f.width;
+      this.plan.furniture![copy.id] = copy;
+      this.store.commit();
+      this.select({ kind: 'furniture', id: copy.id });
+      return true;
+    }
     if (s?.kind !== 'opening') return false;
     const copy = duplicateOpening(this.plan, s.id);
     if (!copy) return false;
@@ -1223,6 +1302,29 @@ export class Editor2D {
     ctx.restore();
   }
 
+  private drawFurniture(C: Record<string, string>) {
+    // Largest first, so a rug lies under the table on it.
+    const list = Object.values(this.plan.furniture ?? {}).sort((a, b) => b.width * b.depth - a.width * a.depth);
+    for (const f of list) {
+      const sel = this.selection?.kind === 'furniture' && this.selection.id === f.id;
+      this.drawPiece(f, sel ? C.accent : C.ink, sel ? hexAlpha(C.accent, 0.18) : hexAlpha(C.opening, 0.92));
+    }
+  }
+
+  private drawPiece(f: Furniture, ink: string, fill: string) {
+    const ctx = this.ctx;
+    const k = this.view.scale;
+    const s = this.toScreen(f);
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate(f.angle);
+    ctx.scale(k, k);
+    ctx.lineWidth = 1 / k;
+    ctx.strokeStyle = ink;
+    drawFurnitureSymbol(ctx, f, fill);
+    ctx.restore();
+  }
+
   /** Trees, seen from above: a translucent crown, and the trunk. */
   private drawTrees(C: Record<string, string>) {
     const ctx = this.ctx;
@@ -1302,6 +1404,7 @@ export class Editor2D {
     else if (s.kind === 'rooflight') delete this.plan.rooflights?.[s.id];
     else if (s.kind === 'patio') delete this.plan.patios?.[s.id];
     else if (s.kind === 'tree') delete this.plan.trees?.[s.id];
+    else if (s.kind === 'furniture') delete this.plan.furniture?.[s.id];
     else if (s.kind === 'roof') {
       if (s.id.startsWith('section:')) delete this.plan.roofSections?.[s.id.slice(8)];
       else {
@@ -1328,7 +1431,8 @@ export class Editor2D {
       (s.kind === 'solar' && p.solar?.[s.id]) ||
       (s.kind === 'rooflight' && p.rooflights?.[s.id]) ||
       (s.kind === 'patio' && p.patios?.[s.id]) ||
-      (s.kind === 'tree' && p.trees?.[s.id]);
+      (s.kind === 'tree' && p.trees?.[s.id]) ||
+      (s.kind === 'furniture' && p.furniture?.[s.id]);
     if (!exists) this.select(null);
   }
 
@@ -1394,6 +1498,8 @@ export class Editor2D {
       ctx.fillStyle = C.room;
       ctx.fill();
     }
+
+    this.drawFurniture(C);
 
     // The floor below, faintly, as a guide for placing walls above it.
     const below = this.below();
@@ -1603,6 +1709,16 @@ export class Editor2D {
           ctx.fillRect(q.x - 3, q.y - 3, 6, 6);
         }
       }
+    } else if (this.tool === 'furniture' && h) {
+      const at = this.furniturePlacement(h);
+      const c = catalogueItem(this.furnitureKind);
+      if (at && c) {
+        const ghost: Furniture = { id: '', kind: c.kind, x: at.at.x, y: at.at.y, angle: at.angle, width: c.width, depth: c.depth, height: c.height, open: true, stool: true };
+        ctx.save();
+        ctx.globalAlpha = 0.6;
+        this.drawPiece(ghost, C.accent, hexAlpha(C.accent, 0.15));
+        ctx.restore();
+      }
     } else if (this.tool === 'stair' && h) {
       const start = this.stairStart;
       if (start) {
@@ -1784,6 +1900,11 @@ function levelBelowOf(store: Store): Level {
 function local(fp: Footprint, p: Vec2) {
   const r = sub(p, fp.a);
   return { u: dot(r, fp.dir), v: dot(r, fp.n) };
+}
+
+function normAngle(a: number): number {
+  const t = a % (Math.PI * 2);
+  return t < 0 ? t + Math.PI * 2 : t;
 }
 
 function hexAlpha(color: string, a: number): string {

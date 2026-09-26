@@ -36,7 +36,21 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 | **Rooflight** | Click on a roof. A flat roof gets a rooflight box; a sloping roof gets a window lying in the slope. |
 | **Patio** (T) | Choose Paving, Decking or Gravel, then click the corners of the area. Click the first corner, double-click or press Enter to finish. |
 | **Tree** (E) | Choose Broadleaf or Conifer, then click to plant one. Drag the trunk to move it; set the height and crown spread in the panel. |
+| **Furniture** (F) | Opens the catalogue. Pick a piece, then click to place it: near a wall it turns its back to the wall and sits tight against it. [ and ] turn it in 15° steps. Esc when done. |
 | **Split** (X) | Click on a wall to add a joint, which is then selected so you can drag it (to make a bay, a nib or a step in the wall). |
+
+**Furniture:** about 40 pieces in seven groups:
+- **Music:** grand piano, upright piano, music stand.
+- **Living:** sofas, armchair, coffee table, TV, bookcase, lamp, rug.
+- **Dining:** table with 6 chairs, round table with 4 chairs, chair, sideboard.
+- **Bedroom:** beds, bedside table, wardrobe, chest of drawers, desk.
+- **Kitchen:** base, sink, hob and oven, tall units, fridge, island.
+- **Bathroom:** bath, shower, WC, basin.
+- **Garden:** table and chairs, lounger, bench, parasol, barbecue, planter.
+
+Select a piece to change its finish, width, depth and height, or to turn, duplicate or delete it. **Ctrl/⌘+D** puts a copy alongside, which is handy for a run of kitchen units. Pieces stand on patios and decks at the right height, and in walk mode you walk round them (except rugs).
+
+**The grand piano** is modelled properly: the curved case with its straight bass side and bentside, rim, soundboard, gilt iron frame and strings, 88 keys, music desk, lyre and pedals, and the stool. The **Size** list has Blüthner's models (11, 10, 6, 4, 2 and 1, from 154 to 280 cm long). The widths are approximate, so check yours with a tape. The lid can be shown open on its stick or closed, the stool on or off, and the finish black, walnut, mahogany or white.
 
 **Room dimensions:** the **Dimensions** button (or M) writes every room's inside measurements along its walls, face to face of the plaster line. The setting is remembered on each device.
 
@@ -157,7 +171,6 @@ Everything visible is *derived* from that data on every change, so there is no s
 
 - Dormers.
 - A sun-hours map: how many hours of direct sun each part of a patio gets on a given day.
-- Furniture.
 - Textures and materials per room.
 - Curved walls.
 - Snapping openings to exact positions from a room's inside corner on either side.

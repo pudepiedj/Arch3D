@@ -7,6 +7,7 @@ import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
 import { PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
 import { TREE_DEFAULTS } from '../model/trees';
+import { GRAND_MODELS, catalogueItem } from '../model/furniture';
 import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { stairGeometry } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
@@ -77,6 +78,7 @@ export class Panel {
     if (sel.kind === 'rooflight') return this.renderRooflight(sel.id);
     if (sel.kind === 'patio') return this.renderPatio(sel.id);
     if (sel.kind === 'tree') return this.renderTree(sel.id);
+    if (sel.kind === 'furniture') return this.renderFurniture(sel.id);
 
     if (sel.kind === 'node') {
       const n = plan.nodes[sel.id];
@@ -388,6 +390,79 @@ export class Panel {
         this.store.commit();
       }, true],
     ]);
+  }
+
+  private renderFurniture(id: string) {
+    const level = this.store.plan;
+    const f = level.furniture?.[id];
+    if (!f) return;
+    const c = catalogueItem(f.kind);
+    this.title(c?.name ?? 'Furniture');
+    if (f.kind === 'grand') {
+      const model = GRAND_MODELS.find((m) => Math.abs(m.depth - f.depth) < 0.005 && Math.abs(m.width - f.width) < 0.005);
+      this.select('Size', model?.name ?? 'custom', [
+        ...GRAND_MODELS.map((m): [string, string] => [m.name, m.name]),
+        ...(model ? [] : [['custom', 'Custom size'] as [string, string]]),
+      ], (v) => {
+        const m = GRAND_MODELS.find((g) => g.name === v);
+        if (!m) return;
+        f.width = m.width;
+        f.depth = m.depth;
+        this.done();
+      });
+    }
+    if (c?.finishes) {
+      this.select('Finish', f.finish ?? c.finishes[0], c.finishes.map((v): [string, string] => [v, v[0].toUpperCase() + v.slice(1)]), (v) => {
+        f.finish = v;
+        this.done();
+      });
+    }
+    this.number('Width', f.width, 0.01, 0.2, 6, (v) => {
+      f.width = v;
+      this.done();
+    }, 'm');
+    this.number(f.kind === 'grand' ? 'Length' : 'Depth', f.depth, 0.01, 0.2, 6, (v) => {
+      f.depth = v;
+      this.done();
+    }, 'm');
+    if (!c?.flat && f.kind !== 'grand') {
+      this.number('Height', f.height, 0.01, 0.2, 3, (v) => {
+        f.height = v;
+        this.done();
+      }, 'm');
+    }
+    const deg = ((Math.round((f.angle * 180) / Math.PI) % 360) + 360) % 360;
+    this.number('Turned', deg, 5, 0, 359, (v) => {
+      f.angle = (v * Math.PI) / 180;
+      this.done();
+    }, '°');
+    this.note(
+      f.kind === 'grand'
+        ? 'The keyboard end is the front. The dashed box in front is the stool. Drag to move; [ and ] turn it.'
+        : 'Drag to move; it keeps tight to a wall it is square to. [ and ] turn it; Ctrl/⌘+D puts a copy alongside.',
+    );
+    const btns: [string, () => void, boolean?][] = [];
+    if (f.kind === 'grand') {
+      btns.push([f.open ? 'Close lid' : 'Open lid', () => {
+        f.open = !f.open;
+        this.done();
+      }]);
+      btns.push([f.stool ? 'No stool' : 'Stool', () => {
+        f.stool = !f.stool;
+        this.done();
+      }]);
+    }
+    btns.push(['Turn 90°', () => {
+      f.angle = (f.angle + Math.PI / 2) % (Math.PI * 2);
+      this.done();
+    }]);
+    btns.push(['Duplicate', () => this.editor.duplicateSelection()]);
+    btns.push(['Delete', () => {
+      delete level.furniture![id];
+      this.editor.select(null);
+      this.store.commit();
+    }, true]);
+    this.buttons(btns);
   }
 
   private renderTree(id: string) {

@@ -228,6 +228,31 @@ export interface Level extends Plan {
   patios?: Record<string, Patio>;
   /** Trees (normally on the ground floor's plan). */
   trees?: Record<string, Tree>;
+  /** Furniture, indoors and out. */
+  furniture?: Record<string, Furniture>;
+}
+
+/**
+ * A piece of furniture. `kind` names an entry in the catalogue (furniture.ts); position is
+ * the centre of its footprint, and in its own frame the back is towards -y (against a wall)
+ * and the front, where you sit or stand, towards +y.
+ */
+export interface Furniture {
+  id: string;
+  kind: string;
+  x: number;
+  y: number;
+  /** Rotation in radians (plan coordinates). */
+  angle: number;
+  width: number;
+  depth: number;
+  height: number;
+  /** Colour or finish, from the catalogue entry's list. */
+  finish?: string;
+  /** Piano lid up (and similar things shown open). */
+  open?: boolean;
+  /** Piano stool shown. */
+  stool?: boolean;
 }
 
 /** Where the house is, for the sun. */

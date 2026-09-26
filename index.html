@@ -27,6 +27,7 @@
         <button data-tool="rooflight" title="Roof windows, or a rooflight box on a flat roof">Rooflight</button>
         <button data-tool="patio" title="Draw a paved patio, a deck or a gravelled area (T)">Patio</button>
         <button data-tool="tree" title="Plant a tree (E)">Tree</button>
+        <button id="furnitureBtn" title="Choose furniture to place (F)">Furniture</button>
         <button data-tool="paste" id="pasteTool" title="Place exact copies of the copied door/window (Ctrl/⌘+V)" hidden>Paste</button>
       </div>
 
@@ -100,6 +101,14 @@
         <div class="overlay" id="walkHint" hidden></div>
       </section>
     </main>
+    <dialog id="catalogueDialog">
+      <form method="dialog">
+        <h2>Furniture</h2>
+        <p class="note">Pick a piece, then click on the plan to place it. Near a wall it turns its back to the wall; [ and ] turn it. Esc when done.</p>
+        <div id="catalogueList"></div>
+        <button value="cancel">Close</button>
+      </form>
+    </dialog>
     <dialog id="drawingsDialog">
       <form method="dialog">
         <h2>Drawings saved on the computer</h2>
