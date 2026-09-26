@@ -390,6 +390,7 @@ export class Panel {
     if (!c) return;
     const geo = chimneyGeometry(this.store.building, level, c);
     this.title('Chimney stack');
+    this.position(c);
     this.select('Pots', String(c.pots), [
       ['1', '1 pot'],
       ['2', '2 pots'],
@@ -591,6 +592,7 @@ export class Panel {
     if (!r) return;
     const geo = rooflightGeometry(this.store.building, level, r);
     this.title(geo?.kind === 'kerb' ? 'Rooflight box' : 'Roof window');
+    this.position(r);
     this.number('Windows', r.count, 1, 1, 12, (v) => {
       r.count = Math.round(v);
       this.done();
@@ -654,6 +656,7 @@ export class Panel {
     if (!sa) return;
     const geo = solarGeometry(this.store.building, level, sa);
     this.title('Solar panels');
+    this.position(sa);
     this.number('Rows', sa.rows, 1, 1, 20, (v) => {
       sa.rows = Math.round(v);
       this.done();
@@ -751,6 +754,18 @@ export class Panel {
       ed.onToolChange?.();
     }, 'm');
     this.note(`Walls run the full ${this.store.plan.height} m floor-to-floor height of ${this.store.plan.name.toLowerCase()}.`);
+  }
+
+  /** X and Y of a roof item's centre: type the same number as another to line them up. */
+  private position(item: { x: number; y: number }) {
+    this.number('X (across)', item.x, 0.01, -1000, 1000, (v) => {
+      item.x = v;
+      this.done();
+    }, 'm', 'Distance across the plan; give two items the same X to line them up');
+    this.number('Y (up/down)', item.y, 0.01, -1000, 1000, (v) => {
+      item.y = v;
+      this.done();
+    }, 'm', 'Distance down the plan; give two items the same Y to line them up');
   }
 
   private done() {

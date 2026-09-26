@@ -377,6 +377,12 @@ button.danger {
   font-size: 13px;
 }
 
+.menu-items .version {
+  padding: 4px 10px 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .menu-items hr {
   border: 0;
   border-top: 1px solid var(--line);

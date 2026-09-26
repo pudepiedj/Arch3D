@@ -690,7 +690,8 @@ export class Editor2D {
    * with the centres of the doors and windows below: across or up and down the plan, within
    * a few pixels, with a guide line to what it lined up with.
    */
-  private alignRoofItem(p: Vec2, selfId: string): { p: Vec2; guides: Snap['guides'] } {
+  /** What a roof item lines up with: the other roof items, and door and window centres. */
+  private alignTargets(selfId: string): Vec2[] {
     const plan = this.plan;
     const targets: Vec2[] = [];
     for (const list of [plan.rooflights, plan.solar, plan.chimneys]) {
@@ -700,7 +701,21 @@ export class Editor2D {
       const fp = this.fps.get(o.wallId);
       if (fp) targets.push(wallPoint(fp, o.offset, 0));
     }
-    const tol = 10 / this.view.scale;
+    return targets;
+  }
+
+  /** Guides from a selected roof item to everything it is exactly in line with. */
+  private alignedGuides(p: Vec2, selfId: string): Snap['guides'] {
+    const guides: Snap['guides'] = [];
+    for (const t of this.alignTargets(selfId)) {
+      if (Math.abs(t.x - p.x) < 0.005 || Math.abs(t.y - p.y) < 0.005) guides.push({ from: t, to: p });
+    }
+    return guides;
+  }
+
+  private alignRoofItem(p: Vec2, selfId: string): { p: Vec2; guides: Snap['guides'] } {
+    const targets = this.alignTargets(selfId);
+    const tol = 16 / this.view.scale;
     const out = { x: p.x, y: p.y };
     const guides: Snap['guides'] = [];
     let bx: Vec2 | null = null;
@@ -1697,6 +1712,11 @@ export class Editor2D {
     this.drawToolPreview(C);
 
     for (const g of this.lastGuides) this.guide(g.from, g.to, C.accent);
+    const sel = this.selection;
+    if (sel && !this.lastGuides.length && (sel.kind === 'rooflight' || sel.kind === 'solar' || sel.kind === 'chimney')) {
+      const item = this.roofItem(sel.kind, sel.id);
+      if (item) for (const g of this.alignedGuides(item, sel.id)) this.guide(g.from, g.to, C.accent);
+    }
   }
 
   private drawToolPreview(C: Record<string, string>) {
@@ -1994,11 +2014,16 @@ export class Editor2D {
 
   private guide(a: Vec2, b: Vec2, color: string) {
     const ctx = this.ctx;
-    ctx.strokeStyle = hexAlpha(color, 0.6);
-    ctx.setLineDash([2, 4]);
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = hexAlpha(color, 0.9);
+    ctx.setLineDash([6, 4]);
+    ctx.lineWidth = 1.5;
     this.line(a, b);
     ctx.setLineDash([]);
+    // A small ring on what it lines up with.
+    const q = this.toScreen(a);
+    ctx.beginPath();
+    ctx.arc(q.x, q.y, 4, 0, Math.PI * 2);
+    ctx.stroke();
   }
 
   private path(pts: Vec2[]) {

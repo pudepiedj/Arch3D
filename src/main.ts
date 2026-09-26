@@ -11,7 +11,9 @@ import { Store } from './ui/store';
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const $$ = (sel: string) => [...document.querySelectorAll<HTMLButtonElement>(sel)];
 
+declare const __APP_VERSION__: string;
 const store = new Store(Store.loadSaved() ?? demoBuilding());
+document.querySelector('#version')!.textContent = `Version ${__APP_VERSION__}`;
 const editor = new Editor2D($('#planPane'), store);
 const view = new View3D($('#viewPane'));
 const panel = new Panel($('#panel'), editor, store);
