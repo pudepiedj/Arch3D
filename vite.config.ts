@@ -1,5 +1,5 @@
 import { defineConfig } from 'vite';
-import { drawingsStore } from './server/drawings';
+import { drawingsStore } from './server/drawings.ts';
 
 export default defineConfig({
   plugins: [drawingsStore()],
