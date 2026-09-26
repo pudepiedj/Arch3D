@@ -545,6 +545,12 @@ export class Editor2D {
         const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
         item.x = cur.x0 + snapTo(w.x - cur.start.x);
         item.y = cur.y0 + snapTo(w.y - cur.start.y);
+        if (cur.what !== 'tree') {
+          const aligned = this.alignRoofItem(item, cur.id);
+          item.x = aligned.p.x;
+          item.y = aligned.p.y;
+          this.lastGuides = aligned.guides;
+        }
         this.store.changed();
         break;
       }
@@ -679,6 +685,37 @@ export class Editor2D {
     return { at: { x: snapTo(w.x), y: snapTo(w.y) }, angle: this.furnitureAngle };
   }
 
+  /**
+   * Line a roof item (rooflight, solar array, chimney) up with the others on this floor and
+   * with the centres of the doors and windows below: across or up and down the plan, within
+   * a few pixels, with a guide line to what it lined up with.
+   */
+  private alignRoofItem(p: Vec2, selfId: string): { p: Vec2; guides: Snap['guides'] } {
+    const plan = this.plan;
+    const targets: Vec2[] = [];
+    for (const list of [plan.rooflights, plan.solar, plan.chimneys]) {
+      for (const it of Object.values(list ?? {})) if (it.id !== selfId) targets.push({ x: it.x, y: it.y });
+    }
+    for (const o of Object.values(plan.openings)) {
+      const fp = this.fps.get(o.wallId);
+      if (fp) targets.push(wallPoint(fp, o.offset, 0));
+    }
+    const tol = 10 / this.view.scale;
+    const out = { x: p.x, y: p.y };
+    const guides: Snap['guides'] = [];
+    let bx: Vec2 | null = null;
+    let by: Vec2 | null = null;
+    for (const t of targets) {
+      if (Math.abs(t.x - p.x) < tol && (!bx || Math.abs(t.x - p.x) < Math.abs(bx.x - p.x))) bx = t;
+      if (Math.abs(t.y - p.y) < tol && (!by || Math.abs(t.y - p.y) < Math.abs(by.y - p.y))) by = t;
+    }
+    if (bx) out.x = bx.x;
+    if (by) out.y = by.y;
+    if (bx) guides.push({ from: bx, to: out });
+    if (by) guides.push({ from: by, to: out });
+    return { p: out, guides };
+  }
+
   /** Turn the selected piece (or the one about to be placed) by a step. */
   rotateFurniture(step: number) {
     const s = this.selection;
@@ -711,7 +748,7 @@ export class Editor2D {
           this.flash('No roof here on this floor: switch to the floor the roof belongs to', w);
           break;
         }
-        const rl = addRooflight(plan, w);
+        const rl = addRooflight(plan, this.alignRoofItem(w, '').p);
         this.store.commit();
         this.select({ kind: 'rooflight', id: rl.id });
         break;
@@ -721,7 +758,7 @@ export class Editor2D {
           this.flash('No roof here on this floor: switch to the floor the roof belongs to', w);
           break;
         }
-        const sa = addSolarArray(plan, w);
+        const sa = addSolarArray(plan, this.alignRoofItem(w, '').p);
         this.store.commit();
         this.select({ kind: 'solar', id: sa.id });
         break;

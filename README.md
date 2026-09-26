@@ -93,6 +93,7 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - **On a flat roof:** a raised box (kerb) with a sloping top holding a row of opening roof windows. The ceiling and roof below are opened up into a lined light well, so from the room you look up into the box and out through the glass.
 - **On a sloping roof:** the windows lie in the slope.
 - **Panel settings:** the number of windows, window width and length, box slope and kerb height, and rotating the box by 90°.
+- **Lining up:** while you place or drag a rooflight (or a solar array or chimney), it snaps into line, across or up and down the plan, with the other roof items on that floor and with the centres of its doors and windows. A dashed guide shows what it has lined up with, so a row of roof windows sits at one height up the slope, or a roof window sits directly over the window below.
 - **Show open** tilts the windows out at the bottom, **Blinds down** draws the blinds, and **Solar motor** adds or removes the little solar strip on each frame.
 
 **Sun and shadows (the Sun button):** puts the sun where it really is for a date, a time and the house's location, with shadows.
