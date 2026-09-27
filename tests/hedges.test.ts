@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as THREE from 'three';
 import { createBuilding } from '../src/model/building';
 import { HEDGE_DEFAULTS, addHedge, hedgeAt, hedgeClosed, hedgeLength, hedgeRuns, onHedge } from '../src/model/hedges';
 import { addFurniture } from '../src/model/furniture';
@@ -103,5 +104,36 @@ describe('gates', () => {
       obj.traverse((o) => (found ||= o.name === `furniture:${g.id}`));
       expect(found).toBe(true);
     }
+  });
+});
+
+describe('damaged or extreme drawings', () => {
+  it('leave out things with no proper position when loaded', async () => {
+    const { migrate } = await import('../src/model/building');
+    const b = createBuilding();
+    const l = b.levels[0];
+    addHedge(l, [{ x: 0, y: 0 }, { x: 5, y: 0 }]);
+    const bad = addHedge(l, [{ x: 0, y: 1 }, { x: 5, y: 1 }]);
+    (bad.points[1] as { x: number | null }).x = null;
+    const g = addFurniture(l, 'gate5', { x: 1, y: 1 });
+    const again = migrate(JSON.parse(JSON.stringify(b)));
+    expect(Object.keys(again.levels[0].hedges!).length).toBe(1);
+    expect(again.levels[0].furniture![g.id]).toBeDefined();
+  });
+
+  it('keep a very long fence or hedge within bounds in 3D', () => {
+    const b = createBuilding();
+    addHedge(b.levels[0], [{ x: 0, y: 0 }, { x: 2000, y: 0 }], 'fence');
+    addHedge(b.levels[0], [{ x: 0, y: 5 }, { x: 2000, y: 5 }], 'beech');
+    const obj = buildBuildingObject(b, createMaterials());
+    let verts = 0;
+    let boards = 0;
+    obj.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if ((o as THREE.InstancedMesh).isInstancedMesh) boards += (o as THREE.InstancedMesh).count;
+      else if (m.isMesh) verts += m.geometry.getAttribute('position').count;
+    });
+    expect(boards).toBeLessThanOrEqual(3000);
+    expect(verts).toBeLessThan(200000);
   });
 });

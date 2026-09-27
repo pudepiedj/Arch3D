@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check-drawing": "node scripts/check-drawing.mjs"
   },
   "dependencies": {
     "polygon-clipping": "^0.15.7",

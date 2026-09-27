@@ -22,6 +22,8 @@ npm run build    # static site in dist/
 - **Export/Import JSON** save and open a file on the device you are using, for keeping or sending a copy elsewhere. Chrome and Edge ask where to put it; Safari always uses `Downloads` (a web page can't choose the folder there). **Save to computer** is the one that goes into this project's `drawings` folder, and its message shows the full path.
 - If the iPad can't connect, the computer's firewall may be asking whether to allow incoming connections to `node`. Allow it.
 
+**If a drawing won't open, or breaks the 3D view:** `npm run check-drawing` lists what is in every drawing in the `drawings` folder (newest first) and anything odd: numbers that aren't numbers, very long hedges or fences, things far from the house. `npm run check-drawing -- drawings/autosave-iPad.json` checks just one.
+
 After a `git pull`, run `npm install` again before `npm run dev`. If Vite says it can't resolve an import from one of the `src` files, a new package has been added that isn't installed yet.
 
 ## Using it
