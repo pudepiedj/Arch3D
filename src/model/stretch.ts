@@ -133,6 +133,7 @@ export function stretchLevel(level: Level, box: Box, d: Vec2, picked?: Picked, m
   }
   // Outlines drawn corner by corner: each corner inside the box moves.
   for (const pt of Object.values(level.patios ?? {})) pt.points.forEach(movePoint);
+  for (const h of Object.values(level.hedges ?? {})) h.points.forEach(movePoint);
   for (const s of Object.values(level.roofSections ?? {})) {
     s.points.forEach(movePoint);
     s.roof.edges?.forEach(movePoint);

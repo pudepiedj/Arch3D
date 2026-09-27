@@ -130,6 +130,18 @@ export interface Tree {
   spread: number;
 }
 
+export type HedgeKind = 'privet' | 'hawthorn' | 'beech' | 'fence';
+
+/** A hedge or fence along a line of points (closed if its last point is its first). */
+export interface Hedge {
+  id: string;
+  points: { x: number; y: number }[];
+  kind: HedgeKind;
+  height: number;
+  /** Thickness through the hedge (a fence is always a board's thickness). */
+  width: number;
+}
+
 /** A free-standing post, e.g. holding up a veranda or carport roof. */
 export interface Pillar {
   id: string;
@@ -245,6 +257,8 @@ export interface Level extends Plan {
   patios?: Record<string, Patio>;
   /** Trees (normally on the ground floor's plan). */
   trees?: Record<string, Tree>;
+  /** Hedges and fences (normally on the ground floor's plan). */
+  hedges?: Record<string, Hedge>;
   /** Furniture, indoors and out. */
   furniture?: Record<string, Furniture>;
 }

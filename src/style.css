@@ -258,7 +258,7 @@ button.icon {
   z-index: 2;
   top: 12px;
   left: 12px;
-  width: 232px;
+  width: 262px;
   padding: 12px;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -277,14 +277,54 @@ button.icon {
 
 .panel .field {
   display: grid;
-  grid-template-columns: 1fr 84px 16px;
+  grid-template-columns: minmax(0, 1fr) 28px 58px 28px 16px;
   align-items: center;
   gap: 6px;
   margin: 5px 0;
 }
 
 .panel .field select {
-  grid-column: 2 / 4;
+  grid-column: 2 / 6;
+}
+
+.panel .field .step {
+  min-height: 30px;
+  padding: 0;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.panel .field input[type='number'] {
+  text-align: center;
+  -moz-appearance: textfield;
+}
+
+.panel .field input[type='number']::-webkit-inner-spin-button,
+.panel .field input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* On a touch screen: a wider panel and bigger − and + to tap. */
+@media (pointer: coarse) {
+  .panel {
+    width: 290px;
+  }
+
+  .panel .field {
+    grid-template-columns: minmax(0, 1fr) 38px 62px 38px 16px;
+  }
+
+  .panel .field .step {
+    min-height: 38px;
+    font-size: 20px;
+  }
+
+  .panel input,
+  .panel select {
+    min-height: 38px;
+    font-size: 16px;
+  }
 }
 
 .panel input,
@@ -931,4 +971,39 @@ button.icon {
     break-after: auto;
     page-break-after: auto;
   }
+}
+
+/* Done / Back / Cancel while drawing a point at a time: big enough for a finger. */
+.drawbar {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 14px;
+  background: var(--bar);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.drawbar button {
+  min-height: 44px;
+  min-width: 64px;
+  font-weight: 600;
+}
+
+.drawbar #drawbarText {
+  margin-right: 6px;
+  color: var(--muted);
+}
+
+/* The bar says what the hint would, where the hint goes. */
+#planPane.drawing .hint {
+  display: none;
 }

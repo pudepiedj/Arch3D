@@ -7,6 +7,7 @@ import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
 import { PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
 import { TREE_DEFAULTS } from '../model/trees';
+import { HEDGE_DEFAULTS, HEDGE_NAMES, hedgeClosed, hedgeLength } from '../model/hedges';
 import { GRAND_MODELS, catalogueItem } from '../model/furniture';
 import { stretchSummary } from '../model/stretch';
 import { DEFAULT_INVERT, DEFAULT_TANK, FITTING_NAMES, deleteDrainNode, pipeFall, pipeLength, tankVolume } from '../model/drains';
@@ -15,7 +16,7 @@ import { stairGeometry } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
 import { deleteNode, deleteOpening, deleteWall, finishNodeMove, moveNode, normalize, setWallLength, splitWallAt } from '../model/plan';
-import { DEFAULTS, type OpeningKind, type DrainFitting, type DrainKind, type GlazedStyle, type PatioSurface, type Pillar, type TreeKind, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
+import { DEFAULTS, type OpeningKind, type DrainFitting, type DrainKind, type GlazedStyle, type PatioSurface, type Pillar, type TreeKind, type HedgeKind, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
 import type { Editor2D } from './editor2d';
 import type { Store } from './store';
 
@@ -31,7 +32,51 @@ export class Panel {
     });
   }
 
+  /** When Apply was last pressed, to show that it was. */
+  private appliedAt = -Infinity;
+
   render() {
+    this.renderBody();
+    this.addApply();
+  }
+
+  /**
+   * Every panel with fields gets an Apply button, first in its row of buttons. Changes are
+   * applied as they are made (a number when you leave its box), so Apply finishes whatever
+   * is being typed and shows that it has been applied: clear on an iPad with no Enter key.
+   */
+  private addApply() {
+    if (this.el.hidden || (this.editor.tool === 'stretch' && !this.editor.selection)) return;
+    if (!this.el.querySelector('input, select')) return;
+    let row = [...this.el.querySelectorAll<HTMLElement>('.buttons')].at(-1);
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'buttons';
+      this.el.append(row);
+    }
+    const b = document.createElement('button');
+    b.className = 'apply on';
+    const recent = performance.now() - this.appliedAt < 1500;
+    b.textContent = recent ? 'Applied ✓' : 'Apply';
+    b.title = 'Apply what you have typed (changes also apply as you go)';
+    // On the press, not the click: pressing it would otherwise take the focus from the box
+    // being typed in, which applies it and redraws the panel before the click arrives.
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.appliedAt = performance.now();
+      const a = document.activeElement as HTMLElement | null;
+      // Leaving the box applies what was typed, and redraws the panel.
+      if (a && this.el.contains(a)) a.blur();
+      if (b.isConnected) this.render();
+      setTimeout(() => {
+        const now = this.el.querySelector<HTMLButtonElement>('button.apply');
+        if (now) now.textContent = 'Apply';
+      }, 1500);
+    });
+    row.prepend(b);
+  }
+
+  private renderBody() {
     const sel = this.editor.selection;
     const plan = this.store.plan;
     this.el.replaceChildren();
@@ -80,6 +125,7 @@ export class Panel {
     if (sel.kind === 'rooflight') return this.renderRooflight(sel.id);
     if (sel.kind === 'patio') return this.renderPatio(sel.id);
     if (sel.kind === 'tree') return this.renderTree(sel.id);
+    if (sel.kind === 'hedge') return this.renderHedge(sel.id);
     if (sel.kind === 'furniture') return this.renderFurniture(sel.id);
     if (sel.kind === 'drainNode') return this.renderDrainNode(sel.id);
     if (sel.kind === 'drainPipe') return this.renderDrainPipe(sel.id);
@@ -709,6 +755,42 @@ export class Panel {
     ]);
   }
 
+  private renderHedge(id: string) {
+    const level = this.store.plan;
+    const h = level.hedges?.[id];
+    if (!h) return;
+    this.title(HEDGE_NAMES[h.kind]);
+    this.select('Kind', h.kind, (Object.keys(HEDGE_NAMES) as HedgeKind[]).map((k): [string, string] => [k, HEDGE_NAMES[k]]), (v) => {
+      h.kind = v as HedgeKind;
+      Object.assign(h, HEDGE_DEFAULTS[h.kind]);
+      this.done();
+    });
+    this.number('Height', h.height, 0.1, 0.3, 6, (v) => {
+      h.height = v;
+      this.done();
+    }, 'm');
+    if (h.kind !== 'fence') {
+      this.number('Thickness', h.width, 0.05, 0.2, 3, (v) => {
+        h.width = v;
+        this.done();
+      }, 'm', 'Through the hedge, face to face');
+    }
+    const season = {
+      privet: 'Evergreen (semi-evergreen in a hard winter).',
+      hawthorn: 'In leaf from May to October; twiggy and bare in winter.',
+      beech: 'Fresh green in summer, copper in autumn, and it keeps its brown leaves through the winter.',
+      fence: 'Timber posts at most 1.8 m apart, a gravel board, and featheredge boards.',
+    }[h.kind];
+    this.note(`${hedgeLength(h).toFixed(1)} m long${hedgeClosed(h) ? ', all the way round' : ''}. ${season} Drag it to move it; drag a corner to reshape it, a circle to add a corner; double-click a corner to remove it.`);
+    this.buttons([
+      ['Delete', () => {
+        delete level.hedges![id];
+        this.editor.select(null);
+        this.store.commit();
+      }, true],
+    ]);
+  }
+
   private renderPatio(id: string) {
     const level = this.store.plan;
     const pt = level.patios?.[id];
@@ -987,6 +1069,8 @@ export class Panel {
     input.min = String(min);
     input.max = String(max);
     input.value = String(Math.round(value * 1000) / 1000);
+    // The on-screen keyboard's key says "done", and finishes the entry.
+    input.enterKeyHint = 'done';
     const u = document.createElement('em');
     u.textContent = unit;
     input.addEventListener('change', () => {
@@ -998,7 +1082,25 @@ export class Panel {
       if (e.key === 'Enter') input.blur();
       e.stopPropagation();
     });
-    row.append(span, input, u);
+    // − and + step it without the keyboard (the easy way on an iPad).
+    const places = Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
+    const stepper = (sign: number, text: string, what: string) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'step';
+      b.textContent = text;
+      b.title = `${what} by ${step} ${unit}`.trim();
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        const cur = parseFloat(input.value);
+        const base = Number.isFinite(cur) ? cur : value;
+        const next = clamp(Math.round((base + sign * step) / step) * step, min, max);
+        input.value = next.toFixed(places);
+        onChange(Number(next.toFixed(places + 3)));
+      });
+      return b;
+    };
+    row.append(span, stepper(-1, '−', 'Less'), input, stepper(1, '+', 'More'), u);
     this.el.append(row);
   }
 
@@ -1010,7 +1112,8 @@ export class Panel {
     const input = document.createElement('input');
     input.type = 'text';
     input.value = value;
-    input.style.gridColumn = '2 / 4';
+    input.style.gridColumn = '2 / 6';
+    input.enterKeyHint = 'done';
     input.addEventListener('change', () => {
       onChange(input.value.trim());
       input.blur();
