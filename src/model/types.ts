@@ -277,6 +277,8 @@ export interface DrainNode {
   fitting: DrainFitting;
   /** Depth of the pipe's invert (the inside bottom of the pipe) below the ground, in m. */
   invert: number;
+  /** Inspection chamber: round rather than square. */
+  round?: boolean;
   /** Treatment plant: tank shape, width (or diameter) and depth, in m. */
   tank?: { shape: 'round' | 'box'; width: number; depth: number };
 }

@@ -525,6 +525,16 @@ export class Panel {
       this.store.commit();
       this.render();
     }, 'm', n.fitting === 'treatment' ? 'Depth of the inlet pipe below the ground' : 'Depth of the inside bottom of the pipe below the ground here');
+    if (n.fitting === 'chamber') {
+      this.select('Shape', n.round ? 'round' : 'square', [
+        ['square', 'Square'],
+        ['round', 'Round'],
+      ], (v) => {
+        n.round = v === 'round' || undefined;
+        this.store.commit();
+        this.render();
+      });
+    }
     if (n.fitting === 'treatment') {
       const t = (n.tank ??= { ...DEFAULT_TANK });
       this.select('Tank', t.shape, [

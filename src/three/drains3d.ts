@@ -51,8 +51,13 @@ export function buildDrains(d: Drains): { below: THREE.Group; surface: THREE.Gro
     const depth = n.invert;
     switch (n.fitting) {
       case 'chamber':
-        add(below, new THREE.BoxGeometry(0.6, depth + 0.15, 0.6), M.concrete, n.x, -(depth + 0.15) / 2, n.y);
-        add(surface, new THREE.BoxGeometry(0.6, 0.02, 0.6), M.cover, n.x, 0.01, n.y);
+        if (n.round) {
+          add(below, new THREE.CylinderGeometry(0.3, 0.3, depth + 0.15, 24), M.concrete, n.x, -(depth + 0.15) / 2, n.y);
+          add(surface, new THREE.CylinderGeometry(0.3, 0.3, 0.02, 24), M.cover, n.x, 0.01, n.y);
+        } else {
+          add(below, new THREE.BoxGeometry(0.6, depth + 0.15, 0.6), M.concrete, n.x, -(depth + 0.15) / 2, n.y);
+          add(surface, new THREE.BoxGeometry(0.6, 0.02, 0.6), M.cover, n.x, 0.01, n.y);
+        }
         break;
       case 'gully':
         add(below, new THREE.CylinderGeometry(0.15, 0.15, depth, 16), M.concrete, n.x, -depth / 2, n.y);

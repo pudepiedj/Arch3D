@@ -1683,14 +1683,17 @@ export class Editor2D {
       switch (n.fitting) {
         case 'chamber': {
           const h = r(0.6, 6);
-          ctx.rect(s.x - h, s.y - h, h * 2, h * 2);
+          // Square: a square with a cross; round: a circle with a cross.
+          const c = n.round ? h * Math.SQRT1_2 : h;
+          if (n.round) ctx.arc(s.x, s.y, h, 0, Math.PI * 2);
+          else ctx.rect(s.x - h, s.y - h, h * 2, h * 2);
           ctx.fill();
           ctx.stroke();
           ctx.beginPath();
-          ctx.moveTo(s.x - h, s.y - h);
-          ctx.lineTo(s.x + h, s.y + h);
-          ctx.moveTo(s.x + h, s.y - h);
-          ctx.lineTo(s.x - h, s.y + h);
+          ctx.moveTo(s.x - c, s.y - c);
+          ctx.lineTo(s.x + c, s.y + c);
+          ctx.moveTo(s.x + c, s.y - c);
+          ctx.lineTo(s.x - c, s.y + c);
           ctx.stroke();
           break;
         }
