@@ -125,7 +125,8 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - **Decking:** grooved timber boards with staggered joints on a frame, 15 cm up (one step) with a timber fascia round the edge.
 - **Gravel:** a gravel scatter.
 - **Panel settings:** the surface, the height, the slab size or board width, and which way the courses or boards run (**Turn 90°**). It also shows the area.
-- Drag a patio to move it. In walk mode you step up onto it. A deck higher than a step (over 35 cm) is solid, so it needs steps to get onto it.
+- **Reshape** a selected patio by its corners: drag a white square to move that corner (it snaps like a wall joint), drag a small circle in the middle of an edge to add a corner there, and double-click a corner to remove it (a patio keeps at least three). If furniture stands on the patio, click again to pick the patio underneath.
+- Drag a patio anywhere else to move it. In walk mode you step up onto it. A deck higher than a step (over 35 cm) is solid, so it needs steps to get onto it.
 
 **Stairs:**
 - The number of steps and their height come from the floor-to-floor height: the fewest steps that keep each one under 19 cm, e.g. 16 steps of 18.1 cm for 2.9 m.
@@ -139,7 +140,7 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - **Different roofs for different parts:** choose the **Roof** tool (R) and click a roof area to give it its own type, pitch and overhang. For example, one extension gabled and the others flat.
 - **Gable ends where you want them:** with a roof selected, click any of its edges to switch it between a sloping eave and a vertical gable end. By default a roof is gabled at both ends of its main ridge. A roof against a taller wall runs its ridge into the wall, with its gable at the far end.
 - **Cross gables:** for a window bay or projection that is part of the house, click the bay's front edge of the main roof to make it a gable. The bay gets its own ridge, meeting the main roof in valleys.
-- **Extra roof sections:** Roof tool → **Add section**, then click the corners (they snap to walls). Use it for a porch canopy or a separate roof over part of the house. Sections can overlap other roofs, have their own gable ends, and can start lower (**Eaves height**).
+- **Extra roof sections:** Roof tool → **Add section**, then click the corners (they snap to walls). Use it for a porch canopy or a separate roof over part of the house. Sections can overlap other roofs, have their own gable ends, and can start lower (**Eaves height**). Select a section to reshape it the same way as a patio: drag its corners, drag an edge's middle circle to add a corner, double-click a corner to remove it.
 - **On the plan:** eaves are dashed, gable ends solid, and ridges, hips and valleys dotted.
 - **Seeing it in 3D:** in orbit view with **Cutaway** on, the roofs of the floor you are editing are lifted off with its ceiling. With it off (the default) you see the whole house.
 

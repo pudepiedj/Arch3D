@@ -68,6 +68,7 @@ type Gesture =
   | { kind: 'dragStair'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'dragPillar'; id: string }
   | { kind: 'dragDrain'; id: string }
+  | { kind: 'dragCorner'; index: number; insert: boolean }
   | { kind: 'stretchBox'; start: Vec2 }
   | { kind: 'stretchMove'; start: Vec2 }
   | { kind: 'dragFurniture'; id: string; start: Vec2; x0: number; y0: number }
@@ -168,7 +169,17 @@ export class Editor2D {
     });
     c.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     c.addEventListener('contextmenu', (e) => e.preventDefault());
-    c.addEventListener('dblclick', () => {
+    c.addEventListener('dblclick', (e) => {
+      // Double-click a corner of the selected patio or roof section: remove that corner.
+      const h = this.outlineHandleAt(this.eventPoint(e));
+      if (h && !h.insert) {
+        const pts = this.selectedOutline();
+        if (pts && pts.length > 3) {
+          pts.splice(h.index, 1);
+          this.store.commit();
+          return;
+        }
+      }
       if (this.tool === 'wall') this.finishChain();
       if (this.drawingOutline) this.finishOutline();
       if (this.tool === 'drain') this.finishDrainRun();
@@ -251,7 +262,7 @@ export class Editor2D {
     return vec((p.x - this.view.ox) / this.view.scale, (p.y - this.view.oy) / this.view.scale);
   }
 
-  private eventPoint(e: PointerEvent | WheelEvent): Vec2 {
+  private eventPoint(e: MouseEvent): Vec2 {
     const r = this.canvas.getBoundingClientRect();
     return vec(e.clientX - r.left, e.clientY - r.top);
   }
@@ -471,6 +482,16 @@ export class Editor2D {
       return;
     }
 
+    // The corners of the selected patio or roof section can be dragged to reshape it, and
+    // the handles midway along its edges dragged out to add a corner.
+    if (this.tool === 'select' || this.tool === 'roof' || this.tool === 'patio') {
+      const h = this.outlineHandleAt(s);
+      if (h && !this.sectionPts.length) {
+        this.gesture = { kind: 'dragCorner', index: h.index, insert: h.insert };
+        return;
+      }
+    }
+
     if (this.tool === 'stretch') {
       // Inside the box: drag to stretch. Anywhere else: drag out a new box.
       const w = this.toWorld(s);
@@ -634,6 +655,21 @@ export class Editor2D {
         this.store.changed();
         break;
       }
+      case 'dragCorner': {
+        const pts = this.selectedOutline();
+        if (!pts) break;
+        if (cur.insert) {
+          // First movement of a midpoint handle: it becomes a new corner.
+          pts.splice(cur.index + 1, 0, { x: w.x, y: w.y });
+          cur.index += 1;
+          cur.insert = false;
+        }
+        const snap = this.snap(w);
+        pts[cur.index] = { x: snap.p.x, y: snap.p.y };
+        this.lastGuides = snap.guides;
+        this.store.changed();
+        break;
+      }
       case 'dragDrain': {
         const n = this.store.building.drains?.nodes[cur.id];
         if (!n) break;
@@ -719,6 +755,11 @@ export class Editor2D {
       case 'dragRoofItem':
       case 'dragPatio':
       case 'dragFurniture':
+      case 'dragCorner':
+        // A plain click on a handle (no drag) does what a click there always did.
+        if (this.dragging) this.store.commit();
+        else if (this.tool !== 'select') this.click(this.toWorld(this.eventPoint(e)));
+        break;
       case 'dragDrain':
         if (this.dragging) this.store.commit();
         break;
@@ -809,6 +850,48 @@ export class Editor2D {
     if (bx) guides.push({ from: bx, to: out });
     if (by) guides.push({ from: by, to: out });
     return { p: out, guides };
+  }
+
+  /** The corner list of the selected patio or hand-drawn roof section, if one is selected. */
+  private selectedOutline(): { x: number; y: number }[] | null {
+    const s = this.selection;
+    if (s?.kind === 'patio') return this.plan.patios?.[s.id]?.points ?? null;
+    if (s?.kind === 'roof' && s.id.startsWith('section:')) return this.plan.roofSections?.[s.id.slice(8)]?.points ?? null;
+    return null;
+  }
+
+  /** The corner (or edge-midpoint) handle of the selected outline under screen point s. */
+  private outlineHandleAt(s: Vec2): { index: number; insert: boolean } | null {
+    const pts = this.selectedOutline();
+    if (!pts) return null;
+    const near = (p: Vec2) => dist(this.toScreen(p), s) < 9;
+    const corner = pts.findIndex(near);
+    if (corner >= 0) return { index: corner, insert: false };
+    const mid = pts.findIndex((p, i) => near(scale(add(p, pts[(i + 1) % pts.length]), 0.5)));
+    return mid >= 0 ? { index: mid, insert: true } : null;
+  }
+
+  /** Handles on the selected outline: squares at the corners, small circles midway along edges. */
+  private drawOutlineHandles(C: Record<string, string>) {
+    const pts = this.selectedOutline();
+    if (!pts) return;
+    const ctx = this.ctx;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = C.accent;
+    pts.forEach((p, i) => {
+      const m = this.toScreen(scale(add(p, pts[(i + 1) % pts.length]), 0.5));
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = C.bg;
+      ctx.fill();
+      ctx.stroke();
+    });
+    for (const p of pts) {
+      const q = this.toScreen(p);
+      ctx.fillStyle = C.bg;
+      ctx.fillRect(q.x - 5, q.y - 5, 10, 10);
+      ctx.strokeRect(q.x - 5, q.y - 5, 10, 10);
+    }
   }
 
   /** True if the floor being edited is the ground floor (where the drains are drawn). */
@@ -2098,6 +2181,7 @@ export class Editor2D {
 
     this.drawTrees(C);
     this.drawNorth(C, W, H);
+    this.drawOutlineHandles(C);
     this.drawToolPreview(C);
     if (this.tool === 'stretch') this.drawStretch(C);
 
