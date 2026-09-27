@@ -58,6 +58,9 @@ export class View3D {
   private framed = false;
   mode: ViewMode = 'orbit';
   onModeChange?: (m: ViewMode) => void;
+  /** The 3D graphics were lost (true) or given back (false). */
+  onContextLost?: (lost: boolean) => void;
+  lost = false;
   onLockChange?: (locked: boolean) => void;
 
   // Touch walking: left half of the view is a joystick, right half turns the head.
@@ -73,6 +76,18 @@ export class View3D {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     container.appendChild(this.renderer.domElement);
+    // If the graphics crash or run out of memory the browser takes the 3D view away: say so
+    // (rather than leaving it blank), and carry on if the browser gives it back.
+    this.renderer.domElement.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      this.lost = true;
+      this.onContextLost?.(true);
+    });
+    this.renderer.domElement.addEventListener('webglcontextrestored', () => {
+      this.lost = false;
+      this.rebuild();
+      this.onContextLost?.(false);
+    });
 
     this.scene.background = new THREE.Color(0xcfe3f3);
     this.scene.fog = new THREE.Fog(0xcfe3f3, 60, 180);
@@ -168,7 +183,9 @@ export class View3D {
   setSunStudy(on: boolean) {
     this.sunStudy = on;
     // Sharper shadows for studying them.
-    this.sun.shadow.mapSize.set(on ? 4096 : 2048, on ? 4096 : 2048);
+    // (Not on a tablet, whose graphics memory is smaller.)
+    const sharp = on && !matchMedia('(pointer: coarse)').matches ? 4096 : 2048;
+    this.sun.shadow.mapSize.set(sharp, sharp);
     this.sun.shadow.map?.dispose();
     this.sun.shadow.map = null;
     this.rebuild();

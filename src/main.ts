@@ -168,6 +168,13 @@ document.addEventListener(
   true,
 );
 
+// The 3D graphics lost (a crash or out of memory): say so, and offer a restart (a reload:
+// the drawing is kept in the browser and backed up, so nothing is lost).
+view.onContextLost = (lost) => {
+  $('#glcrash').hidden = !lost;
+};
+$('#glRestart').addEventListener('click', () => location.reload());
+
 // While something is drawn a point at a time: Done, Back and Cancel, for when there is no
 // keyboard (an iPad) and a double-click is awkward.
 $('#drawDone').addEventListener('click', () => editor.finishCurrent());

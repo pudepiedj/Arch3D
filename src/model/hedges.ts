@@ -1,6 +1,7 @@
 // Hedges and fences: drawn as a line of points on a floor's plan (normally the ground floor).
 
 import { type Vec2, dist, projectOnSegment } from './geom';
+import { isGate } from './gates';
 import type { Hedge, HedgeKind, Level } from './types';
 
 export const HEDGE_DEFAULTS: Record<HedgeKind, { height: number; width: number }> = {
@@ -60,15 +61,80 @@ export function hedgeAt(level: Level, p: Vec2, tol: number): string | undefined 
   return best;
 }
 
-/** A hedge's footprint, one rectangle per run, overlapping at the corners. */
-export function hedgeFootprints(h: Hedge): Vec2[][] {
-  return hedgeSegments(h).map(([a, b]) => {
+/**
+ * A straight stretch of hedge between corners or gates. At a corner it runs on by half its
+ * thickness to fill the corner; where it stops at a gate (`openA`, `openB`) it stops square.
+ */
+export interface HedgeRun {
+  a: Vec2;
+  b: Vec2;
+  openA: boolean;
+  openB: boolean;
+}
+
+/** The runs of a hedge, less the gaps where gates stand in its line. */
+export function hedgeRuns(h: Hedge, level: Level): HedgeRun[] {
+  const gates = Object.values(level.furniture ?? {}).filter((f) => isGate(f.kind));
+  const runs: HedgeRun[] = [];
+  for (const [a, b] of hedgeSegments(h)) {
     const L = dist(a, b);
     const ux = (b.x - a.x) / L;
     const uy = (b.y - a.y) / L;
-    const hw = h.width / 2;
-    const e = hw; // run on past the ends by half the thickness, to fill the corners
-    const p = (s: number, t: number) => ({ x: a.x + ux * s - uy * t, y: a.y + uy * s + ux * t });
-    return [p(-e, -hw), p(L + e, -hw), p(L + e, hw), p(-e, hw)];
-  });
+    const at = (s: number) => ({ x: a.x + ux * s, y: a.y + uy * s });
+    // The stretches of this run that gates take up, along it.
+    const gaps: [number, number][] = [];
+    for (const f of gates) {
+      const u = (f.x - a.x) * ux + (f.y - a.y) * uy;
+      const off = Math.abs(-(f.x - a.x) * uy + (f.y - a.y) * ux);
+      const square = Math.abs(Math.sin(f.angle - Math.atan2(uy, ux))) < 0.15;
+      if (!square || off > h.width / 2 + 0.2 || u < -f.width / 2 || u > L + f.width / 2) continue;
+      gaps.push([u - f.width / 2, u + f.width / 2]);
+    }
+    gaps.sort((p, q) => p[0] - q[0]);
+    let s0 = 0;
+    let open0 = false;
+    for (const [g0, g1] of gaps) {
+      if (g0 > s0 + 0.02) runs.push({ a: at(s0), b: at(Math.min(g0, L)), openA: open0, openB: true });
+      if (g1 > s0) {
+        s0 = g1;
+        open0 = true;
+      }
+    }
+    if (s0 < L - 0.02) runs.push({ a: at(s0), b: b, openA: open0, openB: false });
+  }
+  return runs;
+}
+
+/** A run's rectangle: run on past a corner by half the thickness, square at a gate. */
+export function runFootprint(r: HedgeRun, width: number): Vec2[] {
+  const L = dist(r.a, r.b);
+  const ux = (r.b.x - r.a.x) / L;
+  const uy = (r.b.y - r.a.y) / L;
+  const hw = width / 2;
+  const e0 = r.openA ? 0 : hw;
+  const e1 = r.openB ? 0 : hw;
+  const p = (s: number, t: number) => ({ x: r.a.x + ux * s - uy * t, y: r.a.y + uy * s + ux * t });
+  return [p(-e0, -hw), p(L + e1, -hw), p(L + e1, hw), p(-e0, hw)];
+}
+
+/** A hedge's footprint, one rectangle per run, overlapping at the corners, open at gates. */
+export function hedgeFootprints(h: Hedge, level: Level): Vec2[][] {
+  return hedgeRuns(h, level).map((r) => runFootprint(r, h.width));
+}
+
+/**
+ * Where a gate goes if set on the hedge or fence nearest p (within reach): on its line,
+ * turned to run along it. Null if none is near.
+ */
+export function onHedge(level: Level, p: Vec2, reach: number): { at: Vec2; angle: number } | null {
+  let best: { at: Vec2; angle: number; d: number } | null = null;
+  for (const h of Object.values(level.hedges ?? {})) {
+    for (const [a, b] of hedgeSegments(h)) {
+      const pr = projectOnSegment(p, a, b);
+      const d = pr.dist - h.width / 2;
+      if (d > reach || (best && d >= best.d)) continue;
+      best = { at: pr.point, angle: Math.atan2(b.y - a.y, b.x - a.x), d };
+    }
+  }
+  return best && { at: best.at, angle: best.angle };
 }

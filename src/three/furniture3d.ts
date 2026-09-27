@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import { grandOutline } from '../model/furniture';
+import { gateLeaves, gatePost } from '../model/gates';
 import type { Vec2 } from '../model/geom';
 import type { Furniture } from '../model/types';
 
@@ -314,7 +315,64 @@ function pergola(k: Kit, f: Furniture, w: number, d: number, h: number, plant: b
   }
 }
 
+const GATE: Record<string, number> = { oak: 0xa9825a, grey: 0x8d8a84, green: 0x4f6b4a, white: 0xeeece6, black: 0x26272a };
+
+/**
+ * A gate on its two posts. A five-bar gate: heel and head stiles, five rails, a diagonal
+ * brace from the foot of the heel up to the top rail, and a middle stile; a pair of leaves
+ * if it is very wide. A path gate: top and bottom rails and a brace behind pickets, or
+ * close boards if it is as tall as a fence. Open, each leaf swings through 90° towards +y.
+ */
+function gate(k: Kit, f: Furniture, w: number, h: number) {
+  const m = plain(GATE[f.finish ?? 'oak'] ?? GATE.oak, 0.8);
+  const iron = dark();
+  const post = gatePost(f);
+  const postH = h + (f.kind === 'gate5' ? 0.15 : 0.08);
+  for (const s of [-1, 1]) k.box(post, post, postH, s * (w / 2 - post / 2), 0, 0, m);
+  const foot = f.kind === 'gate5' ? 0.1 : 0.06;
+  const leafH = h - foot;
+  for (const leaf of gateLeaves(f)) {
+    const L = leaf.length;
+    const sub = new Kit();
+    // Built from its hinge at x = 0 out to x = L; mirrored for a leaf running the other way.
+    const X = (x: number) => x * leaf.dir;
+    if (f.kind === 'gate5') {
+      const t = 0.045;
+      sub.box(0.1, t, leafH, X(0.05), 0, foot, m); // heel stile
+      sub.box(0.08, t, leafH, X(L - 0.04), 0, foot, m); // head stile
+      for (let i = 0; i < 5; i++) {
+        const z = foot + 0.04 + ((leafH - 0.14) * i) / 4;
+        sub.box(L, t * 0.8, i === 4 ? 0.12 : 0.085, X(L / 2), 0, z, m);
+      }
+      sub.box(0.06, t * 0.8, leafH - 0.1, X(L * 0.55), 0.004, foot + 0.05, m); // middle stile
+      const brace = sub.rod({ x: X(0.1), y: 0.03, z: foot + 0.05 }, { x: X(L * 0.55), y: 0.03, z: foot + leafH - 0.08 }, 0.028, m);
+      brace.scale.set(1, 1, 0.6);
+      // Hinges and a latch.
+      for (const z of [foot + 0.1, foot + leafH - 0.1]) sub.box(0.3, 0.05, 0.04, X(0.15), 0, z, iron);
+      sub.box(0.12, 0.06, 0.05, X(L - 0.06), 0, foot + leafH * 0.75, iron);
+    } else {
+      const boarded = h >= 1.4;
+      sub.box(L, 0.03, 0.08, X(L / 2), 0.03, foot + 0.12, m); // bottom rail
+      sub.box(L, 0.03, 0.08, X(L / 2), 0.03, foot + leafH - 0.25, m); // top rail
+      sub.rod({ x: X(0.06), y: 0.03, z: foot + 0.2 }, { x: X(L - 0.06), y: 0.03, z: foot + leafH - 0.25 }, 0.022, m);
+      const bw = boarded ? 0.1 : 0.07;
+      const pitch = boarded ? 0.095 : 0.12;
+      const n = Math.max(2, Math.floor((L - bw) / pitch) + 1);
+      for (let i = 0; i < n; i++) sub.box(bw, 0.02, leafH, X(bw / 2 + ((L - bw) * i) / (n - 1)), -0.01, foot, m);
+      for (const z of [foot + 0.15, foot + leafH - 0.22]) sub.box(0.22, 0.04, 0.03, X(0.11), 0.03, z, iron);
+      sub.box(0.08, 0.05, 0.05, X(L - 0.05), 0.03, foot + leafH * 0.65, iron);
+    }
+    sub.g.position.set(leaf.hinge, 0, 0);
+    // Open: swing a quarter turn to the +y side (a leaf running +x turns towards +y).
+    if (f.open) sub.g.rotation.y = -leaf.dir * (Math.PI / 2);
+    k.g.add(sub.g);
+  }
+}
+
 const BUILDERS: Record<string, Builder> = {
+  gate5: (k, f, w, _d, h) => gate(k, f, w, h),
+  pathgate: (k, f, w, _d, h) => gate(k, f, w, h),
+  pathgatetall: (k, f, w, _d, h) => gate(k, f, w, h),
   pergola: (k, f, w, d, h) => pergola(k, f, w, d, h, false),
   pergolaplant: (k, f, w, d, h) => pergola(k, f, w, d, h, true),
   officedesk: (k, f, w, d, h) => officeDesk(k, f, w, d, h),

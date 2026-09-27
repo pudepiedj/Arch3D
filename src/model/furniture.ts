@@ -28,6 +28,7 @@ export interface CatalogueItem {
 export const CATEGORIES = ['Music', 'Living', 'Heating', 'Dining', 'Office', 'Bedroom', 'Kitchen', 'Bathroom', 'Garden'];
 
 const WOODS = ['oak', 'walnut', 'white'];
+const GATE_FINISHES = ['oak', 'grey', 'green', 'white', 'black'];
 const FABRICS = ['grey', 'blue', 'green', 'cream', 'rust'];
 
 export const CATALOGUE: CatalogueItem[] = [
@@ -86,6 +87,9 @@ export const CATALOGUE: CatalogueItem[] = [
   { kind: 'pergolaplant', name: 'Pergola with climber', category: 'Garden', width: 2.0, depth: 2.0, height: 2.4, finishes: ['oak', 'grey', 'green'], walkUnder: true },
   { kind: 'bbq', name: 'Barbecue', category: 'Garden', width: 1.2, depth: 0.55, height: 1.1 },
   { kind: 'planter', name: 'Planter', category: 'Garden', width: 0.6, depth: 0.6, height: 1.1 },
+  { kind: 'gate5', name: 'Five-bar gate', category: 'Garden', width: 3.0, depth: 0.15, height: 1.2, finishes: GATE_FINISHES, openable: true },
+  { kind: 'pathgate', name: 'Path gate (picket)', category: 'Garden', width: 1.0, depth: 0.12, height: 1.0, finishes: GATE_FINISHES, openable: true },
+  { kind: 'pathgatetall', name: 'Path gate (close-board, as the fence)', category: 'Garden', width: 1.0, depth: 0.12, height: 1.8, finishes: GATE_FINISHES, openable: true },
 ];
 
 export function catalogueItem(kind: string): CatalogueItem | undefined {

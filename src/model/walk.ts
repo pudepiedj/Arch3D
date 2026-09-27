@@ -13,6 +13,7 @@ import { openingsOf } from './openings';
 import { patioShapes } from './patios';
 import { trunkRadius } from './trees';
 import { hedgeFootprints } from './hedges';
+import { isGate } from './gates';
 import { catalogueItem, footprint, standingHeight } from './furniture';
 import { detectRooms } from './rooms';
 import { stairGeometry, stairwells } from './stairs';
@@ -66,12 +67,13 @@ export class WalkWorld {
       for (const t of Object.values(level.trees ?? {})) posts.push({ x: t.x, y: t.y, r: trunkRadius(t) });
       // Hedges and fences are in the way.
       for (const h of Object.values(level.hedges ?? {})) {
-        for (const poly of hedgeFootprints(h)) this.blocks.push({ poly, bottom: elevation, top: elevation + h.height });
+        for (const poly of hedgeFootprints(h, level)) this.blocks.push({ poly, bottom: elevation, top: elevation + h.height });
       }
       // Furniture is in the way (except rugs); you walk round it.
       for (const f of Object.values(level.furniture ?? {})) {
         const c = catalogueItem(f.kind);
-        if (c?.flat || c?.walkUnder) continue;
+        // An open gate lets you through.
+        if (c?.flat || c?.walkUnder || (isGate(f.kind) && f.open)) continue;
         const base = elevation + standingHeight(level, f);
         this.blocks.push({ poly: footprint(f), bottom: base, top: base + Math.max(f.height, STEP_UP + 0.05) });
       }

@@ -22,6 +22,8 @@ npm run build    # static site in dist/
 - **Export/Import JSON** save and open a file on the device you are using, for keeping or sending a copy elsewhere. Chrome and Edge ask where to put it; Safari always uses `Downloads` (a web page can't choose the folder there). **Save to computer** is the one that goes into this project's `drawings` folder, and its message shows the full path.
 - If the iPad can't connect, the computer's firewall may be asking whether to allow incoming connections to `node`. Allow it.
 
+**If a drawing won't open, or breaks the 3D view:** `npm run check-drawing` lists what is in every drawing in the `drawings` folder (newest first) and anything odd: numbers that aren't numbers, very long hedges or fences, things far from the house. `npm run check-drawing -- drawings/autosave-iPad.json` checks just one.
+
 After a `git pull`, run `npm install` again before `npm run dev`. If Vite says it can't resolve an import from one of the `src` files, a new package has been added that isn't installed yet.
 
 ## Using it
@@ -64,6 +66,8 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 Select a piece to change its finish, width, depth and height, or to turn, duplicate or delete it. **Ctrl/⌘+D** puts a copy alongside, which is handy for a run of kitchen units. Pieces stand on patios and decks at the right height, and in walk mode you walk round them (except rugs).
 
 **The grand piano** is modelled properly: the curved case with its straight bass side and bentside, rim, soundboard, gilt iron frame and strings, 88 keys, music desk, lyre and pedals, and the stool. The **Size** list has Blüthner's models (11, 10, 6, 4, 2 and 1, from 154 to 280 cm long). The widths are approximate, so check yours with a tape. The lid can be shown open on its stick or closed, the stool on or off, and the finish black, walnut, mahogany or white.
+
+**Gates** (Furniture → Garden): a **five-bar gate** (3 m to start; any width, and wider than about 4 m it becomes a pair meeting in the middle), a **picket path gate** (1 m wide, 1 m high) and a **close-board path gate** as tall as the fence. Place one on a hedge or fence and it sits square in its line and cuts its own gap; drag it along the line to move it. In the panel: **Open gate / Shut gate**, **Hang on other post**, and turn it 180° to make it open to the other side. The plan shows its posts, leaf and swing. In walk mode a shut gate stops you and an open one lets you through.
 
 **Hedges and fences:** privet stays green all year; hawthorn is in leaf from May to October and bare and twiggy in winter; beech is green in summer, copper in autumn, and keeps its russet leaves through the winter, following the Sun study's date like the trees. The fence is close-board: posts at most 1.8 m apart, a gravel board and featheredge boards. They cast shadows in a sun study, show on printed plans with the trees, and in walk mode you can't go through them.
 

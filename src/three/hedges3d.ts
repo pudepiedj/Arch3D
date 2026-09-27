@@ -3,7 +3,7 @@
 // close-board: posts, a gravel board and overlapping featheredge boards.
 
 import * as THREE from 'three';
-import { FENCE_BAY, hedgeSegments } from '../model/hedges';
+import { FENCE_BAY, type HedgeRun } from '../model/hedges';
 import type { Hedge } from '../model/types';
 import type { Season } from './build';
 
@@ -47,19 +47,26 @@ function wobble(x: number, y: number, z: number): number {
   return s - Math.floor(s) - 0.5;
 }
 
-export function buildHedge(h: Hedge, season: Season): THREE.Group {
+export function buildHedge(h: Hedge, runs: HedgeRun[], season: Season): THREE.Group {
   const g = new THREE.Group();
   g.name = `hedge:${h.id}`;
-  if (h.kind === 'fence') buildFence(g, h);
+  if (h.kind === 'fence') buildFence(g, h, runs);
   else {
     const mat = material(hedgeColour(h, season));
-    for (const [a, b] of hedgeSegments(h)) {
+    for (const { a, b, openA, openB } of runs) {
       const L = Math.hypot(b.x - a.x, b.y - a.y);
-      const len = L + h.width; // on past each end, to fill the corners
-      const geo = new THREE.BoxGeometry(len, h.height, h.width, Math.max(2, Math.round(len / 0.25)), Math.max(2, Math.round(h.height / 0.25)), 3);
+      // On past a corner by half the thickness, to fill it; square where it meets a gate.
+      const e0 = openA ? 0 : h.width / 2;
+      const e1 = openB ? 0 : h.width / 2;
+      const len = L + e0 + e1;
+      // Lumpy enough to read as foliage, but never more detail than the graphics can take.
+      const along = Math.min(240, Math.max(2, Math.round(len / 0.25)));
+      const up = Math.min(12, Math.max(2, Math.round(h.height / 0.25)));
+      const geo = new THREE.BoxGeometry(len, h.height, h.width, along, up, 3);
       const angle = Math.atan2(b.y - a.y, b.x - a.x);
-      const cx = (a.x + b.x) / 2;
-      const cy = (a.y + b.y) / 2;
+      const mid = (e1 - e0) / 2 / (L || 1);
+      const cx = (a.x + b.x) / 2 + (b.x - a.x) * mid;
+      const cy = (a.y + b.y) / 2 + (b.y - a.y) * mid;
       // Lumpy faces, a slightly rounded top, and a narrower foot, from world positions so
       // that runs meeting at a corner match.
       const pos = geo.getAttribute('position') as THREE.BufferAttribute;
@@ -93,7 +100,7 @@ export function buildHedge(h: Hedge, season: Season): THREE.Group {
   return g;
 }
 
-function buildFence(g: THREE.Group, h: Hedge) {
+function buildFence(g: THREE.Group, h: Hedge, runs: HedgeRun[]) {
   const H = h.height;
   const boardW = 0.1;
   const boards: THREE.Matrix4[] = [];
@@ -104,12 +111,12 @@ function buildFence(g: THREE.Group, h: Hedge) {
     m.castShadow = m.receiveShadow = true;
     g.add(m);
   };
-  for (const [a, b] of hedgeSegments(h)) {
+  for (const { a, b } of runs) {
     const L = Math.hypot(b.x - a.x, b.y - a.y);
     const angle = Math.atan2(b.y - a.y, b.x - a.x);
     const ux = (b.x - a.x) / L;
     const uy = (b.y - a.y) / L;
-    const n = Math.max(1, Math.ceil(L / FENCE_BAY));
+    const n = Math.min(400, Math.max(1, Math.ceil(L / FENCE_BAY)));
     for (let k = 0; k <= n; k++) {
       const t = (k / n) * L;
       add(new THREE.BoxGeometry(0.1, H + 0.05, 0.1), material(POST, false), a.x + ux * t, (H + 0.05) / 2, a.y + uy * t, angle);
@@ -120,7 +127,8 @@ function buildFence(g: THREE.Group, h: Hedge) {
       add(new THREE.BoxGeometry(L, 0.08, 0.04), material(POST, false), (a.x + b.x) / 2 - uy * 0.05, y, (a.y + b.y) / 2 + ux * 0.05, angle);
     }
     // Featheredge boards, each overlapping the next, slightly staggered in and out.
-    const count = Math.max(1, Math.floor(L / (boardW * 0.8)));
+    // A board every 8 cm, but (for a very long fence) no more than 3000 of them: wider boards.
+    const count = Math.min(3000, Math.max(1, Math.floor(L / (boardW * 0.8))));
     const step = L / count;
     for (let k = 0; k < count; k++) {
       const t = (k + 0.5) * step;

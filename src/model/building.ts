@@ -99,6 +99,7 @@ export function migrate(data: unknown): Building {
     for (const l of d.levels) {
       l.openings ??= {};
       l.stairs ??= {};
+      dropBroken(l);
     }
     return d as Building;
   }
@@ -122,4 +123,26 @@ export function migrate(data: unknown): Building {
     return b;
   }
   throw new Error('not an Arch3D plan');
+}
+
+const ok = (v: unknown) => typeof v === 'number' && Number.isFinite(v);
+const okPoint = (p: { x: unknown; y: unknown } | null | undefined) => !!p && ok(p.x) && ok(p.y);
+
+/**
+ * Leave out anything whose position or size isn't a proper number (it can't be drawn, and
+ * would upset the 3D view): garden things, furniture and roof items. Walls are left alone.
+ */
+function dropBroken(l: Level) {
+  const keep = <T extends object>(rec: Record<string, T> | undefined, good: (t: T) => boolean) => {
+    if (!rec) return;
+    for (const [k, t] of Object.entries(rec)) if (!t || !good(t)) delete rec[k];
+  };
+  keep(l.hedges, (h) => Array.isArray(h.points) && h.points.length >= 2 && h.points.every(okPoint) && ok(h.height) && ok(h.width));
+  keep(l.patios, (p) => Array.isArray(p.points) && p.points.length >= 3 && p.points.every(okPoint));
+  keep(l.trees, (t) => okPoint(t) && ok(t.height) && ok(t.spread));
+  keep(l.furniture, (f) => okPoint(f) && ok(f.width) && ok(f.depth) && ok(f.height) && ok(f.angle));
+  keep(l.pillars, (q) => okPoint(q) && ok(q.size));
+  keep(l.chimneys, okPoint);
+  keep(l.rooflights, okPoint);
+  keep(l.solar, okPoint);
 }

@@ -2,6 +2,7 @@
 // (the editor sets up the transform): centred, back at -y, front at +y.
 
 import { grandOutline } from '../model/furniture';
+import { gateLeaves, gatePost } from '../model/gates';
 import type { Vec2 } from '../model/geom';
 import type { Furniture } from '../model/types';
 
@@ -129,7 +130,34 @@ function pergola(ctx: Ctx, w: number, d: number, fill: string) {
   }
 }
 
+/** A gate from above: its two posts, each leaf shut across the gap or swung open, and its swing. */
+function gate(ctx: Ctx, f: Furniture, w: number) {
+  const post = gatePost(f);
+  for (const s of [-1, 1]) rect(ctx, s * (w / 2 - post / 2) - post / 2, -post / 2, post, post, '#6f5237');
+  for (const leaf of gateLeaves(f)) {
+    const L = leaf.length;
+    const x0 = leaf.hinge;
+    // The swing: a quarter circle from shut to open.
+    ctx.save();
+    ctx.setLineDash([0.08, 0.06]);
+    ctx.beginPath();
+    if (leaf.dir > 0) ctx.arc(x0, 0, L, 0, Math.PI / 2);
+    else ctx.arc(x0, 0, L, Math.PI / 2, Math.PI);
+    ctx.stroke();
+    ctx.restore();
+    // The leaf itself, drawn thick.
+    ctx.save();
+    ctx.lineWidth *= 3;
+    if (f.open) line(ctx, x0, 0, x0, L);
+    else line(ctx, x0, 0, x0 + leaf.dir * L, 0);
+    ctx.restore();
+  }
+}
+
 const SYMBOLS: Record<string, Symbol> = {
+  gate5: (ctx, f, w) => gate(ctx, f, w),
+  pathgate: (ctx, f, w) => gate(ctx, f, w),
+  pathgatetall: (ctx, f, w) => gate(ctx, f, w),
   pergola: (ctx, _f, w, d, fill) => pergola(ctx, w, d, fill),
   pergolaplant: (ctx, _f, w, d, fill) => {
     pergola(ctx, w, d, fill);

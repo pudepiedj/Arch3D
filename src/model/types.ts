@@ -284,6 +284,8 @@ export interface Furniture {
   open?: boolean;
   /** Piano stool shown. */
   stool?: boolean;
+  /** Mirrored: a gate hung on its right-hand post instead of its left. */
+  flip?: boolean;
 }
 
 export type DrainFitting = 'junction' | 'chamber' | 'gully' | 'downpipe' | 'soakaway' | 'sewer' | 'treatment';
