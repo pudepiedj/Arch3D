@@ -5,6 +5,7 @@ import { View3D, type ViewMode } from './three/view3d';
 import { Editor2D, type Tool } from './ui/editor2d';
 import { Panel } from './ui/panel';
 import { SunPanel } from './ui/sunpanel';
+import { Sync, reachable } from './ui/sync';
 import { CATALOGUE, CATEGORIES } from './model/furniture';
 import { Store } from './ui/store';
 
@@ -252,10 +253,41 @@ const thisDevice = () =>
       ? 'tablet'
       : 'computer';
 const sharedUnavailable = () =>
-  alert('Saving to the computer only works while the app is running from "npm run dev" (or "npm run preview") on it.');
+  alert('Can\'t reach the computer running the app: opening from it only works while "npm run dev" (or "npm run preview") is running on it.');
+
+// Backs the drawing up to the computer as it changes, and shows whether it can.
+const sync = new Sync(store, thisDevice());
+const renderSync = () => {
+  const el = $('#sync');
+  const time = (d: Date) => d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  if (sync.state === 'offline') {
+    el.dataset.state = 'offline';
+    el.textContent = 'Not connected';
+  } else if (sync.state === 'checking') {
+    el.dataset.state = 'checking';
+    el.textContent = 'Checking…';
+  } else if (!sync.safe) {
+    el.dataset.state = 'pending';
+    el.textContent = 'Backing up…';
+  } else {
+    el.dataset.state = 'connected';
+    el.textContent = sync.lastBackup ? `Backed up ${time(sync.lastBackup)}` : 'Connected';
+  }
+  $('#offline').hidden = sync.state !== 'offline';
+};
+sync.onChange = renderSync;
+renderSync();
+$('#sync').addEventListener('click', () => void sync.check());
+$('#offlineExport').addEventListener('click', () => exportCopy());
 
 $('#saveShared').addEventListener('click', async () => {
   closeMenu();
+  // Check the computer is there before asking for a name, and say plainly if it is not.
+  if (!(await reachable())) {
+    await sync.check();
+    if (confirm('NOT SAVED: the computer running the app isn\'t answering (has "npm run dev" stopped?).\n\nDownload a copy of the drawing to this device instead?')) exportCopy();
+    return;
+  }
   const when = new Date().toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
   const name = prompt('Name for this saved drawing:', `House, ${when}`);
   if (name === null) return;
@@ -267,9 +299,11 @@ $('#saveShared').addEventListener('click', async () => {
     });
     if (!res.ok) throw new Error(`${res.status}`);
     const saved = await res.json();
+    sync.saved();
     alert(`Saved as a new drawing on the computer:\n${saved.file}`);
   } catch {
-    sharedUnavailable();
+    await sync.check();
+    if (confirm('NOT SAVED: the computer stopped answering while saving.\n\nDownload a copy of the drawing to this device instead?')) exportCopy();
   }
 });
 
@@ -318,15 +352,18 @@ $('#openShared').addEventListener('click', async () => {
   dialog.showModal();
 });
 
-$('#export').addEventListener('click', () => {
+/** Download the drawing as a file on this device. */
+function exportCopy() {
   const blob = new Blob([JSON.stringify(store.building, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'plan.arch3d.json';
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  a.download = `house-${stamp}.arch3d.json`;
   a.click();
-  URL.revokeObjectURL(a.href);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   closeMenu();
-});
+}
+$('#export').addEventListener('click', () => exportCopy());
 $('#import').addEventListener('click', () => $('#importFile').click());
 $('#importFile').addEventListener('change', async (e) => {
   const f = (e.target as HTMLInputElement).files?.[0];

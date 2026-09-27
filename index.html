@@ -76,6 +76,7 @@
       </div>
       <button id="sun" class="toggle" title="Sun study: the real sun for a date, time and place, with shadows">Sun</button>
       <button id="cutaway" class="toggle" title="In orbit view, hide the floors above the one you are editing">Cutaway</button>
+      <button id="sync" class="sync" title="Whether the computer running the app is reachable, and when this drawing was last backed up to it">Checking…</button>
       <details class="menu">
         <summary>File</summary>
         <div class="menu-items">
@@ -93,6 +94,14 @@
       </details>
     </header>
 
+    <div class="banner" id="offline" role="alert" hidden>
+      <span>
+        <strong>Not connected to the computer running the app</strong> (has <code>npm run dev</code> stopped?).
+        Your changes are only being kept in this browser, and <em>Save to computer</em> won't work.
+        Start <code>npm run dev</code> again and the app backs up straight away, or download a copy now.
+      </span>
+      <button id="offlineExport">Download a copy</button>
+    </div>
     <main class="work" id="work" data-layout="split">
       <section class="pane" id="planPane">
         <aside class="panel" id="panel"></aside>

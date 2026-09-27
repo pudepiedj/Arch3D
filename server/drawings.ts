@@ -1,8 +1,15 @@
 // A tiny drawings store for the dev/preview server, so every device using the app (the
 // computer running `npm run dev`, an iPad on the same Wi-Fi) can save to and open from one
-// place. Saves never overwrite: each one is a new, timestamped file in ./drawings.
+// place. Saves never overwrite: each one is a new, timestamped file in ./drawings. The one
+// exception is each device's automatic backup, which is kept up to date as it works.
+//
+//   GET  /api/status                  is the computer there? (for the app's connection light)
+//   GET  /api/drawings                list, newest first
+//   GET  /api/drawings/<file>         one drawing
+//   POST /api/drawings                save a new drawing
+//   PUT  /api/drawings/autosave       replace this device's automatic backup
 
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join, resolve } from 'node:path';
 import type { Plugin } from 'vite';
@@ -17,6 +24,8 @@ export interface DrawingInfo {
   device: string;
   savedAt: string;
   bytes: number;
+  /** An automatic backup rather than a save. */
+  auto?: boolean;
 }
 
 async function list(): Promise<DrawingInfo[]> {
@@ -33,6 +42,7 @@ async function list(): Promise<DrawingInfo[]> {
         device: String(data.device ?? ''),
         savedAt: String(data.savedAt ?? (await stat(join(DIR, file))).mtime.toISOString()),
         bytes: Buffer.byteLength(text),
+        auto: file.startsWith('autosave-') || undefined,
       });
     } catch {
       // Not one of ours, or damaged: leave it out of the list.
@@ -73,6 +83,7 @@ function newFileName(name: string, when: Date): string {
 
 async function handle(req: IncomingMessage, res: ServerResponse, next: () => void) {
   const url = new URL(req.url ?? '/', 'http://local');
+  if (url.pathname === '/api/status') return send(res, 200, { ok: true });
   if (!url.pathname.startsWith('/api/drawings')) return next();
   try {
     const file = decodeURIComponent(url.pathname.slice('/api/drawings'.length).replace(/^\//, ''));
@@ -80,6 +91,19 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
     if (req.method === 'GET') {
       if (!SAFE_FILE.test(file)) return send(res, 400, { error: 'bad file name' });
       return send(res, 200, JSON.parse(await readFile(join(DIR, file), 'utf8')));
+    }
+    if (req.method === 'PUT' && file === 'autosave') {
+      const data = JSON.parse(await readBody(req));
+      if (!data || typeof data !== 'object' || !data.building) return send(res, 400, { error: 'no drawing' });
+      await mkdir(DIR, { recursive: true });
+      const device = String(data.device ?? 'device').slice(0, 40);
+      const slug = device.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'device';
+      const fileName = `autosave-${slug}.json`;
+      const record = { name: `Automatic backup (${device})`, device, savedAt: new Date().toISOString(), building: data.building };
+      // Written to a temporary file first, so a backup is never left half-written.
+      await writeFile(join(DIR, `${fileName}.tmp`), JSON.stringify(record));
+      await rename(join(DIR, `${fileName}.tmp`), join(DIR, fileName));
+      return send(res, 200, { file: fileName, savedAt: record.savedAt });
     }
     if (req.method === 'POST' && !file) {
       const data = JSON.parse(await readBody(req));
