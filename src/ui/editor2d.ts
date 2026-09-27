@@ -149,6 +149,12 @@ export class Editor2D {
   shortcutsEnabled: () => boolean = () => true;
 
   private pointers = new Map<number, Vec2>();
+  /** For spotting a double tap by finger or Pencil. */
+  private tapStart: { t: number; p: Vec2 } | null = null;
+  private lastTap: { t: number; p: Vec2 } | null = null;
+  private doubleTapped = -Infinity;
+  /** Called after each redraw, so the page can show the Done / Back / Cancel bar. */
+  onRender?: () => void;
   /** What a click (without dragging) on the current selection moves on to. */
   private cycle: Selection = null;
   private gesture: Gesture | null = null;
@@ -182,19 +188,31 @@ export class Editor2D {
     c.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     c.addEventListener('contextmenu', (e) => e.preventDefault());
     c.addEventListener('dblclick', (e) => {
-      // Double-click a corner of the selected patio or roof section: remove that corner.
-      const h = this.outlineHandleAt(this.eventPoint(e));
-      if (h && !h.insert) {
-        const pts = this.selectedOutline();
-        if (pts && pts.length > (this.selection?.kind === 'hedge' ? 2 : 3)) {
-          pts.splice(h.index, 1);
-          this.store.commit();
-          return;
-        }
+      // Some browsers follow a double tap with a dblclick of their own: it's been handled.
+      if (performance.now() - this.doubleTapped < 800) return;
+      this.doubleAt(this.eventPoint(e));
+    });
+    // A finger or a Pencil doesn't make a dblclick: a double tap does the same.
+    c.addEventListener('pointerdown', (e) => {
+      // Timed by when the touch happened (event.timeStamp), not when it was handled.
+      if (e.pointerType !== 'mouse') this.tapStart = { t: e.timeStamp, p: this.eventPoint(e) };
+    });
+    c.addEventListener('pointerup', (e) => {
+      const start = this.tapStart;
+      this.tapStart = null;
+      if (e.pointerType === 'mouse' || !start || this.pointers.size) return;
+      const p = this.eventPoint(e);
+      const now = e.timeStamp;
+      if (now - start.t > 500 || dist(p, start.p) > 14) {
+        this.lastTap = null;
+        return;
       }
-      if (this.tool === 'wall') this.finishChain();
-      if (this.drawingOutline) this.finishOutline();
-      if (this.tool === 'drain') this.finishDrainRun();
+      const last = this.lastTap;
+      if (last && now - last.t < 500 && dist(p, last.p) < 30) {
+        this.lastTap = null;
+        this.doubleTapped = performance.now();
+        this.doubleAt(p);
+      } else this.lastTap = { t: now, p };
     });
     window.addEventListener('keydown', (e) => this.onKey(e));
     new ResizeObserver(() => this.resize()).observe(container);
@@ -203,6 +221,61 @@ export class Editor2D {
       this.requestRender();
     });
     this.resize();
+  }
+
+  /** A double-click or double tap at screen point s. */
+  private doubleAt(s: Vec2) {
+    // On a corner of the selected patio, roof section or hedge: remove that corner.
+    const h = this.outlineHandleAt(s);
+    if (h && !h.insert) {
+      const pts = this.selectedOutline();
+      if (pts && pts.length > (this.selection?.kind === 'hedge' ? 2 : 3)) {
+        pts.splice(h.index, 1);
+        this.store.commit();
+        return;
+      }
+    }
+    if (this.tool === 'wall') this.finishChain();
+    if (this.drawingOutline) this.finishOutline();
+    if (this.tool === 'drain') this.finishDrainRun();
+  }
+
+  /**
+   * What is being drawn a click at a time, if anything: it needs finishing (Enter or a
+   * double-click with a keyboard and mouse; the Done button on an iPad).
+   */
+  get inProgress(): 'wall' | 'outline' | 'drain' | 'stair' | null {
+    if (this.drawStart) return 'wall';
+    if (this.sectionPts.length) return 'outline';
+    if (this.drainLast) return 'drain';
+    if (this.stairStart) return 'stair';
+    return null;
+  }
+
+  /** Finish what is being drawn (Done). */
+  finishCurrent() {
+    const p = this.inProgress;
+    if (p === 'wall') this.finishChain();
+    else if (p === 'outline') this.finishOutline();
+    else if (p === 'drain') this.finishDrainRun();
+    else if (p === 'stair') this.cancelCurrent();
+  }
+
+  /** Take back the last point of an outline, hedge or roof section being drawn (Back). */
+  backOne() {
+    if (!this.sectionPts.length) return;
+    this.sectionPts.pop();
+    this.requestRender();
+  }
+
+  /** Stop drawing, dropping what isn't finished (Cancel). Walls and drains already laid stay. */
+  cancelCurrent() {
+    const p = this.inProgress;
+    if (p === 'wall') this.finishChain();
+    else if (p === 'drain') this.finishDrainRun();
+    this.sectionPts = [];
+    this.stairStart = null;
+    this.requestRender();
   }
 
   get plan(): Level {
@@ -1511,7 +1584,11 @@ export class Editor2D {
       // Back to the start: a hedge goes all the way round; an outline closes.
       if (this.tool === 'hedge') this.sectionPts.push({ ...first });
       this.finishOutline();
-    } else this.sectionPts.push(s.p);
+    } else {
+      // The second tap of a double tap (or click of a double-click) lands on the last point.
+      const last = this.sectionPts[this.sectionPts.length - 1];
+      if (!last || dist(last, s.p) > 1e-3) this.sectionPts.push(s.p);
+    }
     this.requestRender();
   }
 
@@ -2381,6 +2458,7 @@ export class Editor2D {
       return;
     }
     this.drawNorth(C, W, H);
+    this.onRender?.();
     this.drawOutlineHandles(C);
     this.drawToolPreview(C);
     if (this.tool === 'stretch') this.drawStretch(C);

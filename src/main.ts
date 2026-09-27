@@ -154,7 +154,28 @@ $('#ortho').addEventListener('click', () => {
   editor.ortho = !editor.ortho;
   syncToolbar();
 });
-$('#finish').addEventListener('click', () => editor.finishChain());
+// While something is drawn a point at a time: Done, Back and Cancel, for when there is no
+// keyboard (an iPad) and a double-click is awkward.
+$('#drawDone').addEventListener('click', () => editor.finishCurrent());
+$('#drawBack').addEventListener('click', () => editor.backOne());
+$('#drawCancel').addEventListener('click', () => editor.cancelCurrent());
+const DRAWING: Record<string, string> = {
+  wall: 'Drawing walls',
+  outline: 'Drawing',
+  drain: 'Laying a drain run',
+  stair: 'Placing a stair: tap the way it goes up',
+};
+editor.onRender = () => {
+  const what = editor.inProgress;
+  const bar = $('#drawbar');
+  bar.hidden = !what;
+  $('#planPane').classList.toggle('drawing', !!what);
+  if (!what) return;
+  const label = what === 'outline' ? (editor.tool === 'hedge' ? 'Drawing a hedge' : editor.tool === 'patio' ? 'Drawing a patio' : 'Drawing a roof section') : DRAWING[what];
+  if ($('#drawbarText').textContent !== label) $('#drawbarText').textContent = label;
+  $('#drawBack').hidden = what !== 'outline';
+  $('#drawDone').hidden = what === 'stair';
+};
 try {
   editor.showDims = localStorage.getItem('arch3d.dims') === '1';
 } catch {
@@ -525,7 +546,6 @@ function syncToolbar() {
   for (const b of $$('#roofMode button')) b.classList.toggle('on', b.dataset.roofmode === editor.roofMode);
   for (const b of $$('#stairShape button')) b.classList.toggle('on', b.dataset.shape === editor.stairShape);
   $('#ortho').classList.toggle('on', editor.ortho);
-  $('#finish').hidden = !editor.drawing;
   ($('#undo') as HTMLButtonElement).disabled = !store.canUndo;
   ($('#redo') as HTMLButtonElement).disabled = !store.canRedo;
   for (const b of $$('#layout button')) b.classList.toggle('on', b.dataset.layout === layout);

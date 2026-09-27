@@ -932,3 +932,38 @@ button.icon {
     page-break-after: auto;
   }
 }
+
+/* Done / Back / Cancel while drawing a point at a time: big enough for a finger. */
+.drawbar {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 14px;
+  background: var(--bar);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.drawbar button {
+  min-height: 44px;
+  min-width: 64px;
+  font-weight: 600;
+}
+
+.drawbar #drawbarText {
+  margin-right: 6px;
+  color: var(--muted);
+}
+
+/* The bar says what the hint would, where the hint goes. */
+#planPane.drawing .hint {
+  display: none;
+}
