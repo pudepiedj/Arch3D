@@ -16,7 +16,10 @@ npm run build    # static site in dist/
   - Every save is a new, dated file: nothing is ever overwritten. The list shows which device each one came from.
   - Opening a drawing replaces what is on screen, but **Undo** brings it back.
   - Anyone on your home Wi-Fi who opens the app could also see the saved drawings.
-- **Export/Import JSON** still work for keeping or sending a copy elsewhere.
+- **Automatic backup:** while the computer is reachable, each device's drawing is backed up to it a few seconds after every change (one file per device, `drawings/autosave-<device>.json`, listed in **Open from computer…** as *Automatic backup*). The light next to **File** shows *Backed up 14:32*, *Backing up…* or *Not connected*.
+- **If the computer stops answering** (`npm run dev` stopped, Wi-Fi dropped), a red banner says so at once. Your changes are then kept only in that browser: start `npm run dev` again and the app backs up straight away (the page reloads itself), or press **Download a copy**. **Save to computer…** checks first and says plainly **NOT SAVED** rather than seeming to work, and the browser asks before you close or reload a page whose changes the computer hasn't got.
+- `npm run dev` always uses port 5173. If something else has it, it stops with a message rather than moving to another port, because the browser keeps its working copy per address, and on a new port your work would seem to have vanished.
+- **Export/Import JSON** save and open a file on the device you are using, for keeping or sending a copy elsewhere. Chrome and Edge ask where to put it; Safari always uses `Downloads` (a web page can't choose the folder there). **Save to computer** is the one that goes into this project's `drawings` folder, and its message shows the full path.
 - If the iPad can't connect, the computer's firewall may be asking whether to allow incoming connections to `node`. Allow it.
 
 After a `git pull`, run `npm install` again before `npm run dev`. If Vite says it can't resolve an import from one of the `src` files, a new package has been added that isn't installed yet.
@@ -77,6 +80,8 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 
 **Glazed gables:** set a sloping roof's **Gable ends** to **Glazed (triangular window)**. Each of its gable triangles above the wall plate is filled with glass in a slim anthracite frame, with upright glazing bars about every 80 cm, and the gable wall behind is cut away. Combined with a vaulted ceiling, the room gets light through the top of the gable.
 
+**Roof sections against the house:** an edge of a hand-drawn roof rests on the house (no overhang, no slope) wherever the house is beyond it. It doesn't need to be drawn exactly on a wall's centre line: on its outside face, a little inside it, or across a wall shared with an extension all work. A section drawn mostly outside the house (a canopy, lean-to or veranda) is cut back to the house's outside face wherever it was drawn over it, so a roof running past a corner overhangs only where it is clear of the house.
+
 **Roofs on pillars (verandas, terraces, carports):** draw the roof with the Roof tool's **Add section** over the open area. It snaps to the house wall, and its edge there rests on the wall. Set its type and **Eaves height**, then press **Add pillars**. Pillars go at every corner not resting on a wall, and along open edges so that no span is longer than 3.5 m. Their outer faces line up with the roof edge. Pillars are square or round, can be resized, and are solid in walk mode.
 
 **Chimneys:** a brick stack with a projecting cap and 1, 2 or 3 terracotta pots.
@@ -101,7 +106,8 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - The panel shows the sun's height and compass direction, and sunrise and sunset.
 - **Location and orientation:** latitude and longitude (from any online map, or **Use this device's location**, which works only over https or on the computer itself), and the compass direction the top of the plan faces. The plan shows a north arrow. These are saved with the drawing.
 - Floors hidden by Cutaway still cast their shadows during a sun study. Broad-leaved trees are in leaf from May to October, turn in autumn and are bare in winter.
-- With the Sun button off, a fixed light is used that shows the model well at any hour.
+- **Now** makes the sun live: it follows the clock, minute by minute, until you choose a date or time yourself (the Now button stays highlighted while it is live).
+- The **Sun** button opens and closes the panel; the sun stays where you set it (date and time) until you change it, and each device remembers it across reloads. **Plain light** in the panel switches back to a fixed light that shows the model well at any hour (and **Real sun** back again).
 
 **Patios, decks and gravel:**
 - Draw them right up to the house; they are cut back to the outside face of the walls.
@@ -125,13 +131,13 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - **Cross gables:** for a window bay or projection that is part of the house, click the bay's front edge of the main roof to make it a gable. The bay gets its own ridge, meeting the main roof in valleys.
 - **Extra roof sections:** Roof tool → **Add section**, then click the corners (they snap to walls). Use it for a porch canopy or a separate roof over part of the house. Sections can overlap other roofs, have their own gable ends, and can start lower (**Eaves height**).
 - **On the plan:** eaves are dashed, gable ends solid, and ridges, hips and valleys dotted.
-- **Seeing it in 3D:** in orbit view with **Cutaway** on, the roofs of the floor you are editing are lifted off with its ceiling. Turn Cutaway off to see the whole house.
+- **Seeing it in 3D:** in orbit view with **Cutaway** on, the roofs of the floor you are editing are lifted off with its ceiling. With it off (the default) you see the whole house.
 
 **Floors:** the floor list at the top right of the plan switches between storeys (Page Up/Page Down also work).
 - **+ Floor** adds a storey on top, starting with a copy of the outside walls of the floor below.
 - The floor below shows faintly under the plan, and new walls snap to its joints, so walls line up from floor to floor.
 - Click the current floor's name for its settings: name, floor-to-floor height and floor depth (the resulting ceiling height is shown), plus add or delete floors.
-- In 3D, **Cutaway** hides the floors above the one you are editing and lifts off its ceiling, doll's-house style. Walk mode puts you on the floor you are editing, with ceilings overhead.
+- In 3D, **Cutaway** hides the floors above the one you are editing and lifts off its ceiling, doll's-house style. It starts off (the whole house is shown), and each device remembers whether you last had it on. Walk mode puts you on the floor you are editing, with ceilings overhead.
 - Walls run the full floor-to-floor height by default. Changing a floor's height takes those walls with it.
 
 The panel edits exact sizes: wall thickness, height and length; opening width, height, sill and distance from the corner; door hinge side and swing direction.
@@ -139,6 +145,8 @@ The panel edits exact sizes: wall thickness, height and length; opening width, h
 **3D:** *Orbit* to look around the model; *Walk* to explore at eye height. On desktop, click the view to capture the mouse and use W A S D (Shift to hurry). On touch screens, use your left thumb to move and your right thumb to look. You can walk through open doorways, but not through walls.
 
 Plans save automatically in the browser. Use **File → Export/Import** to keep them as JSON files. Undo/redo: Ctrl/⌘+Z, Ctrl/⌘+Shift+Z.
+
+**Orbit movie:** **File → Make orbit movie…** circles the whole house once, from about 30° up, in the current light (the real sun included), and saves a small 640 × 360 video of about 12 seconds (an MP4 where the browser can make one, otherwise WebM), a few hundred kilobytes to a couple of megabytes, ready to send. Keep the window in front while it records.
 
 ## How it works (and why joints don't break)
 

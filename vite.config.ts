@@ -16,6 +16,9 @@ export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version()) },
   // Listen on the local network as well, so an iPad or phone on the same Wi-Fi can open
   // the app at the "Network:" address printed by `npm run dev`.
-  server: { host: true },
-  preview: { host: true },
+  // Always the same port: the browser keeps each site's work under its address, so if the
+  // port moved (5174 when 5173 is taken) the drawing kept in the browser would seem to vanish.
+  // If the port is busy, `npm run dev` stops with a message instead.
+  server: { host: true, port: 5173, strictPort: true },
+  preview: { host: true, port: 4173, strictPort: true },
 });

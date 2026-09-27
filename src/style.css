@@ -377,6 +377,74 @@ button.danger {
   font-size: 13px;
 }
 
+.overlay.recording {
+  top: 12px;
+  bottom: auto;
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.sync {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.sync::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.sync[data-state='connected']::before {
+  background: #3f9d5a;
+}
+
+.sync[data-state='pending']::before {
+  background: #d9a126;
+}
+
+.sync[data-state='offline'] {
+  color: var(--danger);
+}
+
+.sync[data-state='offline']::before {
+  background: var(--danger);
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: #fbe3e1;
+  color: #7a1f19;
+  border-bottom: 1px solid #efb5af;
+  font-size: 13px;
+  line-height: 1.4;
+  flex: none;
+}
+
+.banner span {
+  flex: 1;
+}
+
+.banner code {
+  font-size: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .banner {
+    background: #4a1c19;
+    color: #ffd9d5;
+    border-bottom-color: #7a2e28;
+  }
+}
+
 .menu-items .version {
   padding: 4px 10px 2px;
   color: var(--muted);

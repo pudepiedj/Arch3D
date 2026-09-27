@@ -5,6 +5,7 @@ import { View3D, type ViewMode } from './three/view3d';
 import { Editor2D, type Tool } from './ui/editor2d';
 import { Panel } from './ui/panel';
 import { SunPanel } from './ui/sunpanel';
+import { Sync, reachable } from './ui/sync';
 import { CATALOGUE, CATEGORIES } from './model/furniture';
 import { Store } from './ui/store';
 
@@ -155,8 +156,19 @@ view.onWalkLevelChange = (id) => {
   editor.select(null);
   store.setActive(id);
 };
+// Cutaway starts off (the whole house), and each device remembers the choice.
+try {
+  if (localStorage.getItem('arch3d.cutaway') === '1') view.setCutaway(true);
+} catch {
+  // No storage (private browsing): it stays off.
+}
 $('#cutaway').addEventListener('click', () => {
   view.setCutaway(!view.cutaway);
+  try {
+    localStorage.setItem('arch3d.cutaway', view.cutaway ? '1' : '0');
+  } catch {
+    // Not remembered; no matter.
+  }
   syncToolbar();
 });
 
@@ -241,10 +253,41 @@ const thisDevice = () =>
       ? 'tablet'
       : 'computer';
 const sharedUnavailable = () =>
-  alert('Saving to the computer only works while the app is running from "npm run dev" (or "npm run preview") on it.');
+  alert('Can\'t reach the computer running the app: opening from it only works while "npm run dev" (or "npm run preview") is running on it.');
+
+// Backs the drawing up to the computer as it changes, and shows whether it can.
+const sync = new Sync(store, thisDevice());
+const renderSync = () => {
+  const el = $('#sync');
+  const time = (d: Date) => d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  if (sync.state === 'offline') {
+    el.dataset.state = 'offline';
+    el.textContent = 'Not connected';
+  } else if (sync.state === 'checking') {
+    el.dataset.state = 'checking';
+    el.textContent = 'Checking…';
+  } else if (!sync.safe) {
+    el.dataset.state = 'pending';
+    el.textContent = 'Backing up…';
+  } else {
+    el.dataset.state = 'connected';
+    el.textContent = sync.lastBackup ? `Backed up ${time(sync.lastBackup)}` : 'Connected';
+  }
+  $('#offline').hidden = sync.state !== 'offline';
+};
+sync.onChange = renderSync;
+renderSync();
+$('#sync').addEventListener('click', () => void sync.check());
+$('#offlineExport').addEventListener('click', () => void exportCopy());
 
 $('#saveShared').addEventListener('click', async () => {
   closeMenu();
+  // Check the computer is there before asking for a name, and say plainly if it is not.
+  if (!(await reachable())) {
+    await sync.check();
+    if (confirm('NOT SAVED: the computer running the app isn\'t answering (has "npm run dev" stopped?).\n\nDownload a copy of the drawing to this device instead?')) void exportCopy();
+    return;
+  }
   const when = new Date().toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
   const name = prompt('Name for this saved drawing:', `House, ${when}`);
   if (name === null) return;
@@ -256,9 +299,11 @@ $('#saveShared').addEventListener('click', async () => {
     });
     if (!res.ok) throw new Error(`${res.status}`);
     const saved = await res.json();
-    alert(`Saved as a new drawing on the computer:\n${saved.file}`);
+    sync.saved();
+    alert(`Saved as a new drawing on the computer, in the project's drawings folder:\n${saved.path ?? saved.file}`);
   } catch {
-    sharedUnavailable();
+    await sync.check();
+    if (confirm('NOT SAVED: the computer stopped answering while saving.\n\nDownload a copy of the drawing to this device instead?')) void exportCopy();
   }
 });
 
@@ -307,14 +352,57 @@ $('#openShared').addEventListener('click', async () => {
   dialog.showModal();
 });
 
-$('#export').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(store.building, null, 2)], { type: 'application/json' });
+/** Save the drawing as a file on this device. */
+async function exportCopy() {
+  closeMenu();
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  await saveFile(new Blob([JSON.stringify(store.building, null, 2)], { type: 'application/json' }), `house-${stamp}.arch3d.json`, 'Arch3D drawing', '.json');
+}
+
+/**
+ * Save a file on this device. Where the browser can (Chrome, Edge) this asks where to put
+ * it; otherwise (Safari) it goes to the Downloads folder, as browsers insist.
+ */
+async function saveFile(blob: Blob, suggested: string, description: string, ext: string) {
+  const picker = (window as unknown as { showSaveFilePicker?: (o: unknown) => Promise<{ createWritable(): Promise<{ write(d: string): Promise<void>; close(): Promise<void> }> }> }).showSaveFilePicker;
+  if (picker) {
+    try {
+      const handle = await picker({ suggestedName: suggested, types: [{ description, accept: { [blob.type || 'application/octet-stream']: [ext] } }] });
+      const out = await handle.createWritable();
+      await out.write(blob as unknown as string);
+      await out.close();
+      return;
+    } catch (err) {
+      // Cancelled: nothing to do. Any other failure: fall back to a download.
+      if ((err as Error).name === 'AbortError') return;
+    }
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'plan.arch3d.json';
+  a.download = suggested;
   a.click();
-  URL.revokeObjectURL(a.href);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+$('#export').addEventListener('click', () => void exportCopy());
+
+// A short movie circling the house, to send to people.
+$('#movie').addEventListener('click', async () => {
   closeMenu();
+  if (layout === 'plan') setLayout('split');
+  const note = $('#recording');
+  note.hidden = false;
+  note.textContent = 'Recording the orbit movie… keep this window in front';
+  try {
+    const { blob, ext } = await view.recordOrbit(12, (f) => (note.textContent = `● Recording orbit movie ${Math.round(f * 100)}%`));
+    note.textContent = 'Saving the movie…';
+    const stamp = new Date().toISOString().slice(0, 10);
+    await saveFile(blob, `house-orbit-${stamp}.${ext}`, 'Video', `.${ext}`);
+  } catch (err) {
+    alert(`Could not make the movie: ${(err as Error).message}`);
+  } finally {
+    note.hidden = true;
+    syncToolbar();
+  }
 });
 $('#import').addEventListener('click', () => $('#importFile').click());
 $('#importFile').addEventListener('change', async (e) => {

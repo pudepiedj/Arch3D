@@ -135,30 +135,72 @@ export function levelRoofs(b: Building, level: Level): LevelRoof[] {
     let pts = simplify(s.points.map((p) => ({ x: p.x, y: p.y })));
     if (pts.length < 3) continue;
     if (polygonArea(pts) < 0) pts = pts.reverse();
-    // An edge drawn along a wall is moved to the wall's outside face: outwards if the
-    // section is over the building (a bay), inwards if it is outside it (a canopy).
     const inBuilding = (p: Vec2) => own.some((ring) => pointInPolygon(p, ring));
-    // Edges drawn along one of this floor's walls with the building beyond them are
-    // attached to the house: they stop at the wall's outside face and never overhang it.
+    /**
+     * Whether the building is found at distance d from edge a-b (d > 0 into the section,
+     * d < 0 beyond it): tested at several points along the edge and decided by majority, so
+     * an edge that only just meets a corner, or crosses a doorway, is judged by most of it.
+     */
+    const building = (a: Vec2, b2: Vec2, d: number) => {
+      const inward = perp(normalize(sub(b2, a)));
+      const hits = [0.2, 0.5, 0.8].filter((t) =>
+        inBuilding({ x: a.x + (b2.x - a.x) * t + inward.x * d, y: a.y + (b2.y - a.y) * t + inward.y * d }),
+      ).length;
+      return hits >= 2;
+    };
+    // An edge on one of this floor's walls is moved to the wall's outside face: outwards if
+    // the section is over the building (a bay), inwards if it is outside it (a canopy).
+    // Any edge with the building beyond it is attached to the house: it rests on it and
+    // never overhangs it, whether or not it was drawn exactly on a wall's centre line.
     const attached: boolean[] = [];
-    const ring = outsetLoop(
+    let ring = outsetLoop(
       pts,
       pts.map((a, k) => {
         const b2 = pts[(k + 1) % pts.length];
         const half = wallHalfThickness(level, a, b2);
-        attached[k] = false;
-        if (!half) return 0;
-        const m = { x: (a.x + b2.x) / 2, y: (a.y + b2.y) / 2 };
-        const inward = perp(normalize(sub(b2, a)));
-        const probe = (d: number) => inBuilding({ x: m.x + inward.x * d, y: m.y + inward.y * d });
-        // An edge on a wall with the section outside and the building beyond: the house wall.
-        if (!probe(half + 0.05) && probe(-(half + 0.05))) {
-          attached[k] = true;
-          return -half;
+        if (!half) {
+          // Off any wall. With the section outside and the house beyond, it rests on the
+          // house. Inside the house on both sides (the back of a cross gable over a bay), a
+          // flat roof also rests there rather than overhanging; a pitched one keeps the edge
+          // so it can be a gable end or an eave as set.
+          const beyond = building(a, b2, -0.05);
+          attached[k] = beyond && (!building(a, b2, 0.05) || s.roof.kind === 'flat');
+          return 0;
         }
-        return probe(0.3) ? half : -half;
+        const beyond = building(a, b2, -(half + 0.05));
+        const within = building(a, b2, half + 0.05);
+        attached[k] = beyond;
+        // The house on the far side only: stop at its outside face. On both sides (a wall
+        // shared with the rest of the house): stop at the wall's centre line.
+        if (beyond) return within ? 0 : -half;
+        return building(a, b2, 0.3) ? half : -half;
       }),
     );
+    // A section that is mostly outside the house (a canopy, lean-to or veranda) is cut back
+    // to the house's outside face wherever it was drawn over it, and the cut edges rest on
+    // the house. So a roof drawn a little into the house, or running past its corner,
+    // never covers any of it.
+    let overlap = 0;
+    try {
+      for (const o of own) for (const shape of intersectAll(pts, o)) overlap += Math.abs(polygonArea(shape[0]));
+    } catch {
+      overlap = 0;
+    }
+    if (own.length && overlap > 1e-6 && overlap < Math.abs(polygonArea(pts)) * 0.5) {
+      try {
+        const pieces = subtract(ring, own.map((o) => [o]))
+          .map((shape) => simplify(shape[0]))
+          .filter((r) => r.length >= 3)
+          .sort((p1, p2) => Math.abs(polygonArea(p2)) - Math.abs(polygonArea(p1)));
+        if (pieces[0]) {
+          ring = polygonArea(pieces[0]) < 0 ? pieces[0].reverse() : pieces[0];
+          attached.length = 0;
+          ring.forEach((a, k) => (attached[k] = building(a, ring[(k + 1) % ring.length], -0.03)));
+        }
+      } catch {
+        // Keep the uncut outline if the clipping fails.
+      }
+    }
     const walls = ring.map((p, k) => attached[k] || onAboveWall(p, ring[(k + 1) % ring.length]));
     out.push(makeRoof(`section:${s.id}`, ring, walls, s.roof, s.base ?? level.height));
   }
@@ -215,11 +257,29 @@ function makeRoof(id: string, rawRing: Vec2[], rawWalls: boolean[], roof: Roof, 
 }
 
 /** The parts of a floor with no floor above: its outline minus the outline of the next floor up. */
+/** Strips of a floor narrower than this, left along a wall of the floor above, are not roofed. */
+const SLIVER = 0.12;
+
 function uncoveredAreas(own: Vec2[][], above: Vec2[][]): Vec2[][] {
   let pieces: Vec2[][] = own;
   if (above.length) {
     try {
-      pieces = own.flatMap((ring) => subtract(ring, above.map((a) => [a])).map((shape) => shape[0]));
+      pieces = own.flatMap((ring) => {
+        const raw = subtract(ring, above.map((a) => [a])).map((shape) => shape[0]);
+        // Where the walls above do not quite line up with those below, subtracting leaves a
+        // hair-thin strip along them, and it may be joined to a real roof area (a garage
+        // beside the house). So work out the areas again with the floor above made a little
+        // bigger, which drops such strips, and keep only the parts of the real areas within
+        // reach of what is left: the areas are unchanged but for their thin strips.
+        const grown = above.map((a) => [outsetLoop(a, a.map(() => SLIVER))]);
+        const core = subtract(ring, grown)
+          .map((shape) => simplify(shape[0]))
+          .filter((r) => r.length >= 3)
+          .map((r) => (polygonArea(r) < 0 ? r.reverse() : r));
+        if (!core.length) return [];
+        const reach = unionAll(core.map((r) => outsetLoop(r, r.map(() => SLIVER * 1.5)))).map((shape) => shape[0]);
+        return raw.flatMap((piece) => reach.flatMap((r) => intersectAll(piece, r).map((shape) => shape[0])));
+      });
     } catch {
       pieces = [];
     }
@@ -502,7 +562,20 @@ export function outsetLoop(pts: Vec2[], by: number[]): Vec2[] {
     const dCur = normalize(sub(pts[(i + 1) % k], p));
     const a = sub(pts[prev], scale(perp(dPrev), by[prev]));
     const c = sub(p, scale(perp(dCur), by[i]));
-    return lineIntersect(a, dPrev, c, dCur) ?? c;
+    const corner = lineIntersect(a, dPrev, c, dCur);
+    // Two edges almost in line but moved by different amounts (a wall edge running on into
+    // an eave, through a joint slightly out of line) meet a very long way off: the corner
+    // would become a spike metres long. There, step between the two moved edges instead.
+    const reach = Math.max(Math.abs(by[prev]), Math.abs(by[i]));
+    const nearlyStraight = dPrev.x * dCur.x + dPrev.y * dCur.y > Math.cos((20 * Math.PI) / 180);
+    // A needle-sharp corner throws its point far out too: never further than a few times
+    // the distance the edges moved (the far push-outs of gable ends are left alone).
+    const needle = corner && dist(corner, p) > Math.max(1, 6 * reach);
+    if (!corner || needle || (nearlyStraight && Math.abs(by[prev] - by[i]) > 1e-9 && dist(corner, p) > 2 * reach + 0.01)) {
+      const endPrev = sub(p, scale(perp(dPrev), by[prev]));
+      return { x: (endPrev.x + c.x) / 2, y: (endPrev.y + c.y) / 2 };
+    }
+    return corner;
   });
 }
 
