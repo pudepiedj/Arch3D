@@ -3,7 +3,7 @@
 // close-board: posts, a gravel board and overlapping featheredge boards.
 
 import * as THREE from 'three';
-import { FENCE_BAY, hedgeSegments } from '../model/hedges';
+import { FENCE_BAY, type HedgeRun } from '../model/hedges';
 import type { Hedge } from '../model/types';
 import type { Season } from './build';
 
@@ -47,19 +47,23 @@ function wobble(x: number, y: number, z: number): number {
   return s - Math.floor(s) - 0.5;
 }
 
-export function buildHedge(h: Hedge, season: Season): THREE.Group {
+export function buildHedge(h: Hedge, runs: HedgeRun[], season: Season): THREE.Group {
   const g = new THREE.Group();
   g.name = `hedge:${h.id}`;
-  if (h.kind === 'fence') buildFence(g, h);
+  if (h.kind === 'fence') buildFence(g, h, runs);
   else {
     const mat = material(hedgeColour(h, season));
-    for (const [a, b] of hedgeSegments(h)) {
+    for (const { a, b, openA, openB } of runs) {
       const L = Math.hypot(b.x - a.x, b.y - a.y);
-      const len = L + h.width; // on past each end, to fill the corners
+      // On past a corner by half the thickness, to fill it; square where it meets a gate.
+      const e0 = openA ? 0 : h.width / 2;
+      const e1 = openB ? 0 : h.width / 2;
+      const len = L + e0 + e1;
       const geo = new THREE.BoxGeometry(len, h.height, h.width, Math.max(2, Math.round(len / 0.25)), Math.max(2, Math.round(h.height / 0.25)), 3);
       const angle = Math.atan2(b.y - a.y, b.x - a.x);
-      const cx = (a.x + b.x) / 2;
-      const cy = (a.y + b.y) / 2;
+      const mid = (e1 - e0) / 2 / (L || 1);
+      const cx = (a.x + b.x) / 2 + (b.x - a.x) * mid;
+      const cy = (a.y + b.y) / 2 + (b.y - a.y) * mid;
       // Lumpy faces, a slightly rounded top, and a narrower foot, from world positions so
       // that runs meeting at a corner match.
       const pos = geo.getAttribute('position') as THREE.BufferAttribute;
@@ -93,7 +97,7 @@ export function buildHedge(h: Hedge, season: Season): THREE.Group {
   return g;
 }
 
-function buildFence(g: THREE.Group, h: Hedge) {
+function buildFence(g: THREE.Group, h: Hedge, runs: HedgeRun[]) {
   const H = h.height;
   const boardW = 0.1;
   const boards: THREE.Matrix4[] = [];
@@ -104,7 +108,7 @@ function buildFence(g: THREE.Group, h: Hedge) {
     m.castShadow = m.receiveShadow = true;
     g.add(m);
   };
-  for (const [a, b] of hedgeSegments(h)) {
+  for (const { a, b } of runs) {
     const L = Math.hypot(b.x - a.x, b.y - a.y);
     const angle = Math.atan2(b.y - a.y, b.x - a.x);
     const ux = (b.x - a.x) / L;

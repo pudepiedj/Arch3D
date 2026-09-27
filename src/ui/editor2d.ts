@@ -19,7 +19,8 @@ import { getLevel, levelBelow } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
 import { addPatio, patioShapes } from '../model/patios';
 import { addTree, treeAt, trunkRadius } from '../model/trees';
-import { FENCE_BAY, addHedge, hedgeAt, hedgeSegments } from '../model/hedges';
+import { FENCE_BAY, addHedge, hedgeAt, hedgeRuns, onHedge, runFootprint } from '../model/hedges';
+import { isGate } from '../model/gates';
 import { siteOf } from '../model/sun';
 import { type Box, type Picked, boxFrom, inBox, stretch } from '../model/stretch';
 import { addDrainNode, addDrainPipe, deleteDrainNode, drainNodeAt, drainPipeAt, pipeFall, splitPipe } from '../model/drains';
@@ -737,6 +738,16 @@ export class Editor2D {
         const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
         f.x = cur.x0 + snapTo(w.x - cur.start.x);
         f.y = cur.y0 + snapTo(w.y - cur.start.y);
+        // A gate stays in the line of the hedge or fence it is dragged along.
+        const on = isGate(f.kind) ? onHedge(plan, f, 0.3) : null;
+        if (on) {
+          f.x = on.at.x;
+          f.y = on.at.y;
+          // Along the line either way round (turned 180° it swings to the other side).
+          if (Math.abs(Math.sin(on.angle - f.angle)) > 1e-3) f.angle = on.angle;
+          this.store.changed();
+          break;
+        }
         // Keep it tight against a wall it is square to and near.
         const wall = againstWall(this.fps.values(), f, f.depth, 0.12);
         if (wall && Math.abs(Math.sin(wall.angle - f.angle)) < 1e-3 && Math.cos(wall.angle - f.angle) > 0) {
@@ -891,6 +902,11 @@ export class Editor2D {
   private furniturePlacement(w: Vec2): { at: Vec2; angle: number } | null {
     const c = catalogueItem(this.furnitureKind);
     if (!c) return null;
+    // A gate goes into the line of a hedge or fence near it.
+    if (isGate(c.kind)) {
+      const on = onHedge(this.plan, w, 0.8);
+      if (on) return on;
+    }
     const wall = c.flat ? null : againstWall(this.fps.values(), w, c.depth);
     if (wall) return wall;
     const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
@@ -2002,7 +2018,10 @@ export class Editor2D {
     ctx.restore();
   }
 
-  /** Hedges as a band as thick as the hedge, in its green; fences as a line with posts. */
+  /**
+   * Hedges as a band as thick as the hedge, in its green, square at the corners and open
+   * where a gate stands in them; fences as a line with posts.
+   */
   private drawHedges(C: Record<string, string>) {
     const ctx = this.ctx;
     const colour: Record<HedgeKind, [string, string]> = {
@@ -2011,47 +2030,46 @@ export class Editor2D {
       beech: ['#aab06a', '#6d6a34'],
       fence: ['#9b7550', '#6f5237'],
     };
-    for (const h of Object.values(this.plan.hedges ?? {})) {
-      const sel = this.selection?.kind === 'hedge' && this.selection.id === h.id;
-      const [fill, ink] = colour[h.kind];
-      const trace = () => {
-        ctx.beginPath();
-        h.points.forEach((p, i) => {
-          const q = this.toScreen(p);
-          if (i) ctx.lineTo(q.x, q.y);
-          else ctx.moveTo(q.x, q.y);
-        });
-      };
-      ctx.lineJoin = 'round';
-      ctx.lineCap = h.kind === 'fence' ? 'butt' : 'round';
-      if (h.kind === 'fence') {
-        trace();
-        ctx.strokeStyle = sel ? C.accent : ink;
-        ctx.lineWidth = Math.max(2, h.width * this.view.scale);
-        ctx.stroke();
-        // Posts at each corner and at most every bay along the runs.
-        ctx.fillStyle = sel ? C.accent : ink;
-        const r = Math.max(2.5, 0.05 * this.view.scale);
-        for (const [a, b] of hedgeSegments(h)) {
-          const n = Math.max(1, Math.ceil(dist(a, b) / FENCE_BAY));
-          for (let k = 0; k <= n; k++) {
-            const q = this.toScreen({ x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n });
-            ctx.fillRect(q.x - r, q.y - r, r * 2, r * 2);
+    const plan = this.plan;
+    const hedges = Object.values(plan.hedges ?? {}).map((h) => ({ h, runs: hedgeRuns(h, plan), sel: this.selection?.kind === 'hedge' && this.selection.id === h.id }));
+    // Outlines first, then fills, so where runs overlap at a corner no line crosses the hedge.
+    for (const pass of ['ink', 'fill'] as const) {
+      for (const { h, runs, sel } of hedges) {
+        if (h.kind === 'fence') continue;
+        const [fill, ink] = colour[h.kind];
+        for (const r of runs) {
+          const q = runFootprint(r, h.width);
+          if (pass === 'ink') {
+            this.path(q);
+            ctx.strokeStyle = sel ? C.accent : ink;
+            ctx.lineWidth = sel ? 2.5 : 1.5;
+            ctx.stroke();
+          } else {
+            this.path(q);
+            ctx.fillStyle = sel ? hexAlpha(C.accent, 0.3) : fill;
+            ctx.fill();
           }
         }
-      } else {
-        trace();
-        ctx.strokeStyle = sel ? C.accent : ink;
-        ctx.lineWidth = h.width * this.view.scale + 2;
-        ctx.stroke();
-        trace();
-        ctx.strokeStyle = sel ? hexAlpha(C.accent, 0.35) : fill;
-        ctx.lineWidth = Math.max(1, h.width * this.view.scale - 1);
-        ctx.stroke();
       }
-      ctx.lineJoin = 'miter';
-      ctx.lineCap = 'butt';
     }
+    for (const { h, runs, sel } of hedges) {
+      if (h.kind !== 'fence') continue;
+      const ink = colour.fence[1];
+      ctx.strokeStyle = sel ? C.accent : ink;
+      ctx.fillStyle = sel ? C.accent : ink;
+      ctx.lineWidth = Math.max(2, h.width * this.view.scale);
+      const r = Math.max(2.5, 0.05 * this.view.scale);
+      for (const { a, b } of runs) {
+        this.line(a, b);
+        // Posts at each end and at most every bay along it.
+        const n = Math.max(1, Math.ceil(dist(a, b) / FENCE_BAY));
+        for (let k = 0; k <= n; k++) {
+          const q = this.toScreen({ x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n });
+          ctx.fillRect(q.x - r, q.y - r, r * 2, r * 2);
+        }
+      }
+    }
+    ctx.lineWidth = 1;
   }
 
   /** Trees, seen from above: a translucent crown, and the trunk. */

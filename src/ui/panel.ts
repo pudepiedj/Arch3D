@@ -7,6 +7,7 @@ import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
 import { PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
 import { TREE_DEFAULTS } from '../model/trees';
+import { MAX_LEAF, gateLeaves, isGate } from '../model/gates';
 import { HEDGE_DEFAULTS, HEDGE_NAMES, hedgeClosed, hedgeLength } from '../model/hedges';
 import { GRAND_MODELS, catalogueItem } from '../model/furniture';
 import { stretchSummary } from '../model/stretch';
@@ -534,9 +535,23 @@ export class Panel {
     this.note(
       f.kind === 'grand'
         ? 'The keyboard end is the front. The dashed box in front is the stool. Drag to move; [ and ] turn it.'
-        : 'Drag to move; it keeps tight to a wall it is square to. [ and ] turn it; Ctrl/⌘+D puts a copy alongside.',
+        : isGate(f.kind)
+          ? `Set on a hedge or fence, it sits in its line and makes its own gap; drag it along. ${f.kind === 'gate5' ? `Wider than ${MAX_LEAF + 0.3} m it becomes a pair of gates. ` : ''}Turn 180° to make it open the other way. Open, you can walk through it.`
+          : 'Drag to move; it keeps tight to a wall it is square to. [ and ] turn it; Ctrl/⌘+D puts a copy alongside.',
     );
     const btns: [string, () => void, boolean?][] = [];
+    if (isGate(f.kind)) {
+      btns.push([f.open ? 'Shut gate' : 'Open gate', () => {
+        f.open = !f.open || undefined;
+        this.done();
+      }]);
+      if (gateLeaves(f).length === 1) {
+        btns.push(['Hang on other post', () => {
+          f.flip = !f.flip || undefined;
+          this.done();
+        }]);
+      }
+    }
     if (f.kind === 'grand') {
       btns.push([f.open ? 'Close lid' : 'Open lid', () => {
         f.open = !f.open;

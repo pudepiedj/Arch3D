@@ -65,6 +65,8 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 
 **The grand piano** is modelled properly: the curved case with its straight bass side and bentside, rim, soundboard, gilt iron frame and strings, 88 keys, music desk, lyre and pedals, and the stool. The **Size** list has Blüthner's models (11, 10, 6, 4, 2 and 1, from 154 to 280 cm long). The widths are approximate, so check yours with a tape. The lid can be shown open on its stick or closed, the stool on or off, and the finish black, walnut, mahogany or white.
 
+**Gates** (Furniture → Garden): a **five-bar gate** (3 m to start; any width, and wider than about 4 m it becomes a pair meeting in the middle), a **picket path gate** (1 m wide, 1 m high) and a **close-board path gate** as tall as the fence. Place one on a hedge or fence and it sits square in its line and cuts its own gap; drag it along the line to move it. In the panel: **Open gate / Shut gate**, **Hang on other post**, and turn it 180° to make it open to the other side. The plan shows its posts, leaf and swing. In walk mode a shut gate stops you and an open one lets you through.
+
 **Hedges and fences:** privet stays green all year; hawthorn is in leaf from May to October and bare and twiggy in winter; beech is green in summer, copper in autumn, and keeps its russet leaves through the winter, following the Sun study's date like the trees. The fence is close-board: posts at most 1.8 m apart, a gravel board and featheredge boards. They cast shadows in a sun study, show on printed plans with the trees, and in walk mode you can't go through them.
 
 **Drains:** pipe runs below ground, drawn on the ground floor with flow arrows: brown for foul, blue for surface water.

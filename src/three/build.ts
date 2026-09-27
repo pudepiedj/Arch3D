@@ -30,6 +30,7 @@ import { standingHeight } from '../model/furniture';
 import { buildFurniture } from './furniture3d';
 import type { Building, Furniture, Hedge, Opening, Patio, Pillar, Plan, Tree } from '../model/types';
 import { buildHedge } from './hedges3d';
+import { type HedgeRun, hedgeRuns } from '../model/hedges';
 
 export interface Materials {
   wall: THREE.Material;
@@ -300,7 +301,7 @@ export interface LevelOptions {
   /** Patios, decks and gravel, with their outlines less the house. */
   patios?: { patio: Patio; shapes: Shape[] }[];
   trees?: Tree[];
-  hedges?: Hedge[];
+  hedges?: { hedge: Hedge; runs: HedgeRun[] }[];
   /** Furniture, each with the height of what it stands on (floor, patio or deck). */
   furniture?: (Furniture & { base: number })[];
   /** How leafy the broad-leaved trees are: 1 summer, 0 bare; `autumn` colours them. */
@@ -348,7 +349,7 @@ export function buildBuildingObject(
       roofs: roofs.flatMap((r) => (r.geometry ? [{ ...r.geometry, vaulted: !!r.roof.vaulted && r.roof.kind !== 'flat', glazedGables: !!r.roof.glazedGables && r.roof.kind !== 'flat' }] : [])),
       patios: Object.values(level.patios ?? {}).map((patio) => ({ patio, shapes: patioShapes(level, patio) })),
       trees: Object.values(level.trees ?? {}),
-      hedges: Object.values(level.hedges ?? {}),
+      hedges: Object.values(level.hedges ?? {}).map((hedge) => ({ hedge, runs: hedgeRuns(hedge, level) })),
       furniture: Object.values(level.furniture ?? {}).map((f) => ({ ...f, base: standingHeight(level, f) })),
       season,
     });
@@ -446,7 +447,7 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
 
   if (opts.patios?.length) group.add(buildPatios(opts.patios, mats));
   for (const t of opts.trees ?? []) group.add(buildTree(t, mats, opts.season ?? { leaf: 1, autumn: false }));
-  for (const h of opts.hedges ?? []) group.add(buildHedge(h, opts.season ?? { leaf: 1, autumn: false }));
+  for (const { hedge, runs } of opts.hedges ?? []) group.add(buildHedge(hedge, runs, opts.season ?? { leaf: 1, autumn: false }));
   for (const f of opts.furniture ?? []) {
     const obj = buildFurniture(f);
     // Just above the floor, so a piece never fights with it.
