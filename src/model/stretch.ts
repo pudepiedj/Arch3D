@@ -27,6 +27,15 @@ export function inBox(box: Box, p: Vec2): boolean {
 /** Stretch every floor (or just the given one) by d, moving what lies inside the box. */
 export function stretch(b: Building, box: Box, d: Vec2, onlyLevel?: string) {
   for (const level of b.levels) if (!onlyLevel || level.id === onlyLevel) stretchLevel(level, box, d);
+  // The drains belong to the ground: they move with the ground floor.
+  if (!onlyLevel || onlyLevel === b.levels[0]?.id) {
+    for (const n of Object.values(b.drains?.nodes ?? {})) {
+      if (inBox(box, n)) {
+        n.x += d.x;
+        n.y += d.y;
+      }
+    }
+  }
 }
 
 export function stretchLevel(level: Level, box: Box, d: Vec2) {

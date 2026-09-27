@@ -266,6 +266,35 @@ export interface Furniture {
   stool?: boolean;
 }
 
+export type DrainFitting = 'junction' | 'chamber' | 'gully' | 'downpipe' | 'soakaway' | 'sewer';
+export type DrainKind = 'foul' | 'surface';
+
+/** A point on the drains: a fitting, or just a bend or junction in the pipes. */
+export interface DrainNode {
+  id: string;
+  x: number;
+  y: number;
+  fitting: DrainFitting;
+  /** Depth of the pipe's invert (the inside bottom of the pipe) below the ground, in m. */
+  invert: number;
+}
+
+/** A pipe run from one drain node to another; water flows from `a` to `b`. */
+export interface DrainPipe {
+  id: string;
+  a: string;
+  b: string;
+  /** Bore in mm (100 for most house drains, 150 for shared or main runs). */
+  diameter: number;
+  kind: DrainKind;
+}
+
+/** The drains below ground, for the whole site. */
+export interface Drains {
+  nodes: Record<string, DrainNode>;
+  pipes: Record<string, DrainPipe>;
+}
+
 /** Where the house is, for the sun. */
 export interface Site {
   /** Degrees, north positive. */
@@ -283,6 +312,8 @@ export interface Building {
   nextId: number;
   /** Location and orientation, for the sun. */
   site?: Site;
+  /** Drains below ground (shown on the ground floor). */
+  drains?: Drains;
 }
 
 export const DEFAULTS = {

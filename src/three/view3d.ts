@@ -8,6 +8,7 @@ import { getLevel, levelElevation } from '../model/building';
 import type { Building, Level } from '../model/types';
 import { type SunPosition, seasonAt, siteOf, sunDirection, sunPosition } from '../model/sun';
 import { type Season, buildBuildingObject, createMaterials, disposeObject } from './build';
+import { buildDrains } from './drains3d';
 
 export type ViewMode = 'orbit' | 'walk';
 
@@ -32,6 +33,10 @@ export class View3D {
   sunStudy = false;
   sunTime = new Date();
   private season: Season = { leaf: 1, autumn: false };
+  /** Underground view: the ground and floors see-through, the drains shown, the camera free to go below. */
+  underground = false;
+  private groundMat!: THREE.MeshStandardMaterial;
+  private drainsObj: { below: THREE.Group; surface: THREE.Group } | null = null;
   /** Doors shown shut, which swing open in walk mode as the walker reaches them. */
   private doors: { pivot: THREE.Object3D; x: number; y: number; floor: number; open: number }[] = [];
   private world: WalkWorld | null = null;
@@ -82,10 +87,8 @@ export class View3D {
     this.sun.shadow.normalBias = 0.02;
     this.scene.add(this.sun, this.sun.target);
 
-    const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(200, 64),
-      new THREE.MeshStandardMaterial({ color: 0x9fb98f, roughness: 1 }),
-    );
+    this.groundMat = new THREE.MeshStandardMaterial({ color: 0x9fb98f, roughness: 1, side: THREE.DoubleSide });
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(200, 64), this.groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.01;
     ground.receiveShadow = true;
@@ -140,6 +143,25 @@ export class View3D {
   setCutaway(on: boolean) {
     this.cutaway = on;
     this.rebuild();
+  }
+
+  /**
+   * Show what is below ground: the ground, floors and patios become see-through, the drains
+   * appear, and the orbit view can go beneath the surface.
+   */
+  setUnderground(on: boolean) {
+    this.underground = on;
+    const see = (m: THREE.Material, opacity: number) => {
+      m.transparent = on;
+      m.opacity = on ? opacity : 1;
+      m.depthWrite = !on;
+      m.needsUpdate = true;
+    };
+    see(this.groundMat, 0.25);
+    for (const m of [this.mats.floor, this.mats.paving, this.mats.decking, this.mats.gravel, this.mats.paveEdge, this.mats.deckEdge]) see(m, 0.4);
+    if (this.drainsObj) this.drainsObj.below.visible = on;
+    this.orbit.maxPolarAngle = on ? Math.PI - 0.05 : Math.PI / 2 - 0.02;
+    if (!on && this.camera.position.y < 0.5) this.frame();
   }
 
   /** Turn the sun study on or off. */
@@ -204,6 +226,16 @@ export class View3D {
       this.scene.add(this.shadowObj);
     }
     this.world = new WalkWorld(b);
+    for (const g of [this.drainsObj?.below, this.drainsObj?.surface]) {
+      if (!g) continue;
+      this.scene.remove(g);
+      disposeObject(g);
+    }
+    this.drainsObj = b.drains ? buildDrains(b.drains) : null;
+    if (this.drainsObj) {
+      this.drainsObj.below.visible = this.underground;
+      this.scene.add(this.drainsObj.below, this.drainsObj.surface);
+    }
     this.placeSun();
     if (buildingBounds(b) && !this.framed) {
       this.frame();

@@ -42,6 +42,7 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 | **Tree** (E) | Choose Broadleaf or Conifer, then click to plant one. Drag the trunk to move it; set the height and crown spread in the panel. |
 | **Furniture** (F) | Opens the catalogue. Pick a piece, then click to place it: near a wall it turns its back to the wall and sits tight against it. [ and ] turn it in 15° steps. Esc when done. |
 | **Stretch** (Q) | Drag a box round the part of the house to move, then drag inside it (straight across or up and down; Shift for any direction), or type the total move in the panel. Everything inside moves together (joints, doors and windows, stairs, furniture, pillars, roof items, trees, patio and roof corners) and walls crossing the box's edge stretch or shrink, on every floor at once or just this one. So "this part is 1 m too long" is one move. Esc clears the box. |
+| **Drain** (J) | On the ground floor: choose Foul or Surface water, then click to lay a pipe run. Each new point is set 1 in 60 deeper than the last, so the pipe falls; click an existing chamber or pipe to join it. Double-click, Enter or Esc finishes the run. |
 | **Split** (X) | Click on a wall to add a joint, which is then selected so you can drag it (to make a bay, a nib or a step in the wall). |
 
 **Furniture:** about 50 pieces in nine groups:
@@ -58,6 +59,12 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 Select a piece to change its finish, width, depth and height, or to turn, duplicate or delete it. **Ctrl/⌘+D** puts a copy alongside, which is handy for a run of kitchen units. Pieces stand on patios and decks at the right height, and in walk mode you walk round them (except rugs).
 
 **The grand piano** is modelled properly: the curved case with its straight bass side and bentside, rim, soundboard, gilt iron frame and strings, 88 keys, music desk, lyre and pedals, and the stool. The **Size** list has Blüthner's models (11, 10, 6, 4, 2 and 1, from 154 to 280 cm long). The widths are approximate, so check yours with a tape. The lid can be shown open on its stick or closed, the stool on or off, and the finish black, walnut, mahogany or white.
+
+**Drains:** pipe runs below ground, drawn on the ground floor with flow arrows: brown for foul, blue for surface water.
+- Select a point to set its **fitting** (inspection chamber, gully, rainwater downpipe, soakaway, sewer connection, or just a bend or junction) and its **invert depth**: the depth of the inside bottom of the pipe below the ground.
+- Select a pipe to set what it carries and its bore (100, 150 or 225 mm), and to read its length and **fall** ("1 in 60"). It warns if a pipe runs uphill (backfall), is level, or is flatter or steeper than the usual guidance for house drains. Check real work against Building Regulations Part H and your building control officer. **Reverse flow** swaps its direction.
+- The **Underground** button (by Sun) makes the ground, floors and patios see-through, shows the pipes, chambers and soakaway at their depths, and lets the 3D view go below the surface. Chamber covers, gully gratings and downpipes show all the time.
+- The demo house has a foul run from the soil stack and kitchen gully to the sewer under the road, and rainwater from two downpipes to a soakaway in the garden.
 
 **Room dimensions:** the **Dimensions** button (or M) writes every room's inside measurements along its walls, face to face of the plaster line. The setting is remembered on each device.
 
