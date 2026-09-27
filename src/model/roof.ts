@@ -57,12 +57,8 @@ export interface RoofGeometry {
   /** Plan drawing: the eave outline, plus ridges, hips and valleys. */
   outline: Vec2[];
   lines: [Vec2, Vec2][];
-  /**
-   * A flat roof's parapet: its outside face on `outer` (the walls' outside faces), its inside
-   * face on `inner`, along the edges marked `on` (not against a taller wall), rising from the
-   * wall top `z0` to `z1`, with the roof surface at `roof` inside it.
-   */
-  parapet?: { outer: Vec2[]; inner: Vec2[]; on: boolean[]; z0: number; z1: number; roof: number };
+  /** A flat roof's parapet. */
+  parapet?: Parapet;
 }
 
 export type EdgeRole = 'eave' | 'gable' | 'wall';
@@ -71,6 +67,83 @@ export type EdgeRole = 'eave' | 'gable' | 'wall';
 export const DEFAULT_PARAPET = 0.25;
 /** A parapet is a little thinner than an outside wall. */
 export const PARAPET_THICKNESS = 0.2;
+
+/**
+ * A flat roof's parapet: straight runs of wall, each with its outside face from `a` to `b`
+ * (on the walls' outside faces) and its inside face from `ia` to `ib`, rising from the wall
+ * top `z0` to `z1`, with the roof surface at `roof` inside it.
+ */
+export interface Parapet {
+  runs: { a: Vec2; b: Vec2; ia: Vec2; ib: Vec2 }[];
+  z0: number;
+  z1: number;
+  roof: number;
+}
+
+/**
+ * The runs of parapet round `ring` (counter-clockwise): along the edges marked `on`, except
+ * where `covered` says there is roof beyond the edge (another roof it joins).
+ */
+function parapetRuns(ring: Vec2[], on: boolean[], covered: (p: Vec2) => boolean = () => false): Parapet['runs'] {
+  const inner = outsetLoop(ring, on.map((o) => (o ? -PARAPET_THICKNESS : 0)));
+  const n = ring.length;
+  const runs: Parapet['runs'] = [];
+  for (let i = 0; i < n; i++) {
+    if (!on[i]) continue;
+    const a = ring[i];
+    const b = ring[(i + 1) % n];
+    const len = dist(a, b);
+    if (len < 1e-6) continue;
+    const inward = perp(normalize(sub(b, a)));
+    const at = (t: number) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    // Is there roof just beyond the edge here?
+    const joined = (t: number) => covered({ x: at(t).x - inward.x * 0.05, y: at(t).y - inward.y * 0.05 });
+    // Walk along the edge in short steps, and find where it changes exactly by halving.
+    const steps = Math.max(4, Math.ceil(len / 0.1));
+    const cuts = [0];
+    let prev = joined(0.5 / steps);
+    for (let k = 1; k < steps; k++) {
+      const cur = joined((k + 0.5) / steps);
+      if (cur === prev) continue;
+      let lo = (k - 0.5) / steps;
+      let hi = (k + 0.5) / steps;
+      for (let it = 0; it < 14; it++) {
+        const mid = (lo + hi) / 2;
+        if (joined(mid) === prev) lo = mid;
+        else hi = mid;
+      }
+      cuts.push((lo + hi) / 2);
+      prev = cur;
+    }
+    cuts.push(1);
+    for (let k = 0; k + 1 < cuts.length; k++) {
+      const t0 = cuts[k];
+      const t1 = cuts[k + 1];
+      if ((t1 - t0) * len < 0.02 || joined((t0 + t1) / 2)) continue;
+      // Inside face: the mitred corner at the edge's ends, square across where a run stops.
+      const inside = (t: number, end: Vec2) => (t <= 1e-9 || t >= 1 - 1e-9 ? end : { x: at(t).x + inward.x * PARAPET_THICKNESS, y: at(t).y + inward.y * PARAPET_THICKNESS });
+      runs.push({ a: at(t0), b: at(t1), ia: inside(t0, inner[i]), ib: inside(t1, inner[(i + 1) % n]) });
+    }
+  }
+  return runs;
+}
+
+/**
+ * Where flat roofs meet or overlap (a roof carried on over pillars by a hand-drawn section,
+ * say), they are one roof: no parapet stands where there is roof at the same height or
+ * higher just beyond it.
+ */
+function joinParapets(roofs: LevelRoof[]) {
+  const flats = roofs.filter((r) => r.geometry?.faces[0]?.kind === 'flat');
+  for (const r of flats) {
+    const p = r.geometry!.parapet;
+    if (!p) continue;
+    const others = flats.filter((o) => o !== r && o.geometry!.faces[0].pts[0].z >= p.roof - 0.05);
+    if (!others.length) continue;
+    const on = r.roles.map((role) => role !== 'wall');
+    p.runs = parapetRuns(r.geometry!.outline, on, (q) => others.some((o) => pointInPolygon(q, o.geometry!.outline)));
+  }
+}
 
 /** Height of a roof's parapet above its surface (0 for none, and for pitched roofs). */
 export function parapetHeight(roof: Roof): number {
@@ -220,6 +293,7 @@ export function levelRoofs(b: Building, level: Level): LevelRoof[] {
     const walls = ring.map((p, k) => attached[k] || onAboveWall(p, ring[(k + 1) % ring.length]));
     out.push(makeRoof(`section:${s.id}`, ring, walls, s.roof, s.base ?? level.height));
   }
+  joinParapets(out);
   return out;
 }
 
@@ -421,9 +495,7 @@ export function buildRoof(ring: Vec2[], roles: EdgeRole[], roof: Roof, height: n
       outline: ring.slice(),
       lines: [],
       parapet: {
-        outer: ring.slice(),
-        inner: outsetLoop(ring, on.map((o) => (o ? -PARAPET_THICKNESS : 0))),
-        on,
+        runs: parapetRuns(ring, on),
         z0: height,
         z1: top + parapetHeight(roof),
         roof: top,

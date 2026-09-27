@@ -1539,10 +1539,9 @@ export class Editor2D {
       });
       // A parapet: its inside face, parallel to the wall face.
       if (g.parapet) {
-        const { inner, on } = g.parapet;
         ctx.lineWidth = selected ? 1.5 : 1;
         ctx.setLineDash([8, 5]);
-        inner.forEach((p, i) => on[i] && this.line(p, inner[(i + 1) % inner.length]));
+        for (const run of g.parapet.runs) this.line(run.ia, run.ib);
       }
       ctx.lineWidth = 1;
       ctx.setLineDash([2, 4]);

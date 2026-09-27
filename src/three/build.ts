@@ -1012,14 +1012,15 @@ function buildRoofObject(
   const parapet = new Mesher();
   const coping = new Mesher();
   if (r.parapet) {
-    const { outer, inner, on, z0, z1, roof } = r.parapet;
+    const { runs, z0, z1, roof } = r.parapet;
     const none = new THREE.Vector3(0, 0, 0);
-    for (let i = 0; i < outer.length; i++) {
-      if (!on[i]) continue;
-      const j = (i + 1) % outer.length;
-      parapet.vface(outer[i], outer[j], z0, z1, none);
-      parapet.vface(inner[i], inner[j], roof, z1, none);
-      coping.quad(w3(outer[i], z1), w3(outer[j], z1), w3(inner[j], z1), w3(inner[i], z1), up);
+    for (const { a, b, ia, ib } of runs) {
+      parapet.vface(a, b, z0, z1, none);
+      parapet.vface(ia, ib, roof, z1, none);
+      // Square ends where a run stops short of a corner (against the roof it joins).
+      parapet.vface(a, ia, roof, z1, none);
+      parapet.vface(b, ib, roof, z1, none);
+      coping.quad(w3(a, z1), w3(b, z1), w3(ib, z1), w3(ia, z1), up);
     }
   }
   for (const [m, mat] of [

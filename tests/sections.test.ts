@@ -134,17 +134,32 @@ describe('flat roof sections drawn over part of the house', () => {
     const p = r.geometry!.parapet!;
     expect(p.z1 - p.roof).toBeCloseTo(0.25);
     // No overhang: the parapet's outside face is the edge of the roof.
-    expect(Math.max(...p.outer.map((q) => q.y))).toBeLessThan(8.5 + 1e-6);
-    // Only the free edges get one, not those resting on the house.
-    expect(p.on.some((o) => o)).toBe(true);
-    expect(p.on.every((o, i) => o === (r.roles[i] !== 'wall'))).toBe(true);
+    expect(Math.max(...r.geometry!.outline.map((q) => q.y))).toBeLessThan(8.5 + 1e-6);
+    // The free edges (outside the house) have one; none stands inside the house.
+    expect(p.runs.length).toBeGreaterThan(0);
+    for (const run of p.runs) expect(Math.max(run.a.y, run.b.y)).toBeGreaterThan(8.15 - 1e-6);
     // Its inside face is 20 cm in from the outside.
-    const i = p.on.findIndex((o) => o);
-    const a = p.outer[i];
-    const c = p.outer[(i + 1) % p.outer.length];
-    const q = p.inner[i];
+    const { a, b: c, ia: q } = p.runs[0];
     const d = Math.abs((c.x - a.x) * (q.y - a.y) - (c.y - a.y) * (q.x - a.x)) / Math.hypot(c.x - a.x, c.y - a.y);
     expect(d).toBeCloseTo(0.2);
+  });
+
+  it('where a flat roof is carried on by a section, the parapet stops at the join', () => {
+    const { b, g } = bungalow();
+    // A veranda over pillars along part of the south side, joining the house's own flat roof.
+    g.roof = { ...FLAT };
+    section(g, [[2, 8.15], [6, 8.15], [6, 10.5], [2, 10.5]], { ...FLAT, parapet: undefined });
+    const roofs = levelRoofs(b, g);
+    const house = roofs.find((x) => x.id.startsWith('area:'))!.geometry!.parapet!;
+    const veranda = roofs.find((x) => x.id === 'section:s')!.geometry!.parapet!;
+    const onSouth = (run: { a: { y: number }; b: { y: number } }) => Math.abs(run.a.y - 8.15) < 1e-3 && Math.abs(run.b.y - 8.15) < 1e-3;
+    // The house's south parapet stops where the veranda joins it (x 2 to 6) and carries on either side.
+    const south = house.runs.filter(onSouth);
+    expect(south.length).toBe(2);
+    for (const run of south) for (const x of [run.a.x, run.b.x]) expect(x <= 2 + 0.01 || x >= 6 - 0.01).toBe(true);
+    // The veranda has none along the house, only round its three free sides.
+    expect(veranda.runs.some(onSouth)).toBe(false);
+    expect(veranda.runs.length).toBe(3);
   });
 
   it('a pitched roof, or a parapet of 0, has none', () => {
