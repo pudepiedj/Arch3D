@@ -32,7 +32,51 @@ export class Panel {
     });
   }
 
+  /** When Apply was last pressed, to show that it was. */
+  private appliedAt = -Infinity;
+
   render() {
+    this.renderBody();
+    this.addApply();
+  }
+
+  /**
+   * Every panel with fields gets an Apply button, first in its row of buttons. Changes are
+   * applied as they are made (a number when you leave its box), so Apply finishes whatever
+   * is being typed and shows that it has been applied: clear on an iPad with no Enter key.
+   */
+  private addApply() {
+    if (this.el.hidden || (this.editor.tool === 'stretch' && !this.editor.selection)) return;
+    if (!this.el.querySelector('input, select')) return;
+    let row = [...this.el.querySelectorAll<HTMLElement>('.buttons')].at(-1);
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'buttons';
+      this.el.append(row);
+    }
+    const b = document.createElement('button');
+    b.className = 'apply on';
+    const recent = performance.now() - this.appliedAt < 1500;
+    b.textContent = recent ? 'Applied ✓' : 'Apply';
+    b.title = 'Apply what you have typed (changes also apply as you go)';
+    // On the press, not the click: pressing it would otherwise take the focus from the box
+    // being typed in, which applies it and redraws the panel before the click arrives.
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.appliedAt = performance.now();
+      const a = document.activeElement as HTMLElement | null;
+      // Leaving the box applies what was typed, and redraws the panel.
+      if (a && this.el.contains(a)) a.blur();
+      if (b.isConnected) this.render();
+      setTimeout(() => {
+        const now = this.el.querySelector<HTMLButtonElement>('button.apply');
+        if (now) now.textContent = 'Apply';
+      }, 1500);
+    });
+    row.prepend(b);
+  }
+
+  private renderBody() {
     const sel = this.editor.selection;
     const plan = this.store.plan;
     this.el.replaceChildren();

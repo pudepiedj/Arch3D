@@ -161,7 +161,8 @@ document.addEventListener(
   (e) => {
     const a = document.activeElement as HTMLElement | null;
     if (!a || !(a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement)) return;
-    if (a.contains(e.target as Node) || (e.target as HTMLElement).closest?.('dialog')) return;
+    // Not for the panel's Apply button: that applies it itself, and says so.
+    if (a.contains(e.target as Node) || (e.target as HTMLElement).closest?.('dialog, button.apply')) return;
     a.blur();
   },
   true,
