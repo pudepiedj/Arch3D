@@ -257,11 +257,29 @@ function makeRoof(id: string, rawRing: Vec2[], rawWalls: boolean[], roof: Roof, 
 }
 
 /** The parts of a floor with no floor above: its outline minus the outline of the next floor up. */
+/** Strips of a floor narrower than this, left along a wall of the floor above, are not roofed. */
+const SLIVER = 0.12;
+
 function uncoveredAreas(own: Vec2[][], above: Vec2[][]): Vec2[][] {
   let pieces: Vec2[][] = own;
   if (above.length) {
     try {
-      pieces = own.flatMap((ring) => subtract(ring, above.map((a) => [a])).map((shape) => shape[0]));
+      pieces = own.flatMap((ring) => {
+        const raw = subtract(ring, above.map((a) => [a])).map((shape) => shape[0]);
+        // Where the walls above do not quite line up with those below, subtracting leaves a
+        // hair-thin strip along them, and it may be joined to a real roof area (a garage
+        // beside the house). So work out the areas again with the floor above made a little
+        // bigger, which drops such strips, and keep only the parts of the real areas within
+        // reach of what is left: the areas are unchanged but for their thin strips.
+        const grown = above.map((a) => [outsetLoop(a, a.map(() => SLIVER))]);
+        const core = subtract(ring, grown)
+          .map((shape) => simplify(shape[0]))
+          .filter((r) => r.length >= 3)
+          .map((r) => (polygonArea(r) < 0 ? r.reverse() : r));
+        if (!core.length) return [];
+        const reach = unionAll(core.map((r) => outsetLoop(r, r.map(() => SLIVER * 1.5)))).map((shape) => shape[0]);
+        return raw.flatMap((piece) => reach.flatMap((r) => intersectAll(piece, r).map((shape) => shape[0])));
+      });
     } catch {
       pieces = [];
     }
@@ -550,7 +568,10 @@ export function outsetLoop(pts: Vec2[], by: number[]): Vec2[] {
     // would become a spike metres long. There, step between the two moved edges instead.
     const reach = Math.max(Math.abs(by[prev]), Math.abs(by[i]));
     const nearlyStraight = dPrev.x * dCur.x + dPrev.y * dCur.y > Math.cos((20 * Math.PI) / 180);
-    if (!corner || (nearlyStraight && Math.abs(by[prev] - by[i]) > 1e-9 && dist(corner, p) > 2 * reach + 0.01)) {
+    // A needle-sharp corner throws its point far out too: never further than a few times
+    // the distance the edges moved (the far push-outs of gable ends are left alone).
+    const needle = corner && dist(corner, p) > Math.max(1, 6 * reach);
+    if (!corner || needle || (nearlyStraight && Math.abs(by[prev] - by[i]) > 1e-9 && dist(corner, p) > 2 * reach + 0.01)) {
       const endPrev = sub(p, scale(perp(dPrev), by[prev]));
       return { x: (endPrev.x + c.x) / 2, y: (endPrev.y + c.y) / 2 };
     }

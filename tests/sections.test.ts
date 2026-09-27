@@ -165,3 +165,39 @@ describe('outlines with nearly lined-up edges', () => {
     expect(bleed(b, g, 's')).toBeLessThan(1e-3);
   });
 });
+
+describe('roof areas next to a floor above that does not quite line up', () => {
+  /**
+   * A two-storey 10 x 8 house whose first-floor back wall is not exactly over the ground-floor
+   * one (a slight slant, 3 cm at one end), and a single-storey garage on the side.
+   */
+  function slanted(): { b: Building; g: Level } {
+    const b = createBuilding();
+    const g = b.levels[0];
+    box(g, [[0, 0], [10, 0], [16, 0], [16, 8], [10, 8], [0, 8]]);
+    addWall(g, { x: 10, y: 0 }, { x: 10, y: 8 }, { thickness: 0.3, height: g.height });
+    const f = addLevelOnTop(b, false);
+    box(f, [[0, 0], [10, 0], [10, 7.97], [0, 8]]);
+    return { b, g };
+  }
+
+  it('leaves no sliver of roof along the wall below', () => {
+    const { b, g } = slanted();
+    g.roofAreas = [{ x: 13, y: 4, roof: FLAT }];
+    const roofs = levelRoofs(b, g);
+    expect(roofs).toHaveLength(1);
+    const out = roofs[0].geometry!.outline;
+    // The garage roof stays over the garage: nothing reaches back along the house.
+    expect(Math.min(...out.map((p) => p.x))).toBeGreaterThan(9.5);
+    expect(Math.max(...out.map((p) => p.x))).toBeLessThan(16.5);
+    expect(Math.max(...out.map((p) => p.y))).toBeLessThan(8.5);
+  });
+
+  it('keeps the garage roof reaching right up to the house wall above', () => {
+    const { b, g } = slanted();
+    g.roofAreas = [{ x: 13, y: 4, roof: FLAT }];
+    const out = levelRoofs(b, g)[0].geometry!.outline;
+    // The first floor's side wall has its outside face at x = 10.15.
+    expect(Math.min(...out.map((p) => p.x))).toBeLessThan(10.15 + 1e-3);
+  });
+});
