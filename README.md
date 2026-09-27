@@ -41,6 +41,8 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 | **Patio** (T) | Choose Paving, Decking or Gravel, then click the corners of the area. Click the first corner, double-click or press Enter to finish. |
 | **Tree** (E) | Choose Broadleaf or Conifer, then click to plant one. Drag the trunk to move it; set the height and crown spread in the panel. |
 | **Furniture** (F) | Opens the catalogue. Pick a piece, then click to place it: near a wall it turns its back to the wall and sits tight against it. [ and ] turn it in 15° steps. Esc when done. |
+| **Stretch** (Q) | Drag a box round the part of the house to move; the joints and furniture inside are marked and the panel lists what will move. Then drag inside it (straight across or up and down; Shift for any direction), or type how far to move in the panel. Everything inside moves together (joints, doors and windows, stairs, furniture, pillars, roof items, trees, patio and roof corners, drains) and walls crossing the box's edge stretch or shrink, on every floor at once or just this one. The box then follows what it moved, so typing −0.8 twice moves 1.6 m in all. After an Undo or another edit, draw the box again. Esc clears it. |
+| **Drain** (J) | On the ground floor: choose Foul or Surface water, then click to lay a pipe run. Each new point is set 1 in 60 deeper than the last, so the pipe falls; click an existing chamber or pipe to join it. Double-click, Enter or Esc finishes the run. |
 | **Split** (X) | Click on a wall to add a joint, which is then selected so you can drag it (to make a bay, a nib or a step in the wall). |
 
 **Furniture:** about 50 pieces in nine groups:
@@ -57,6 +59,14 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 Select a piece to change its finish, width, depth and height, or to turn, duplicate or delete it. **Ctrl/⌘+D** puts a copy alongside, which is handy for a run of kitchen units. Pieces stand on patios and decks at the right height, and in walk mode you walk round them (except rugs).
 
 **The grand piano** is modelled properly: the curved case with its straight bass side and bentside, rim, soundboard, gilt iron frame and strings, 88 keys, music desk, lyre and pedals, and the stool. The **Size** list has Blüthner's models (11, 10, 6, 4, 2 and 1, from 154 to 280 cm long). The widths are approximate, so check yours with a tape. The lid can be shown open on its stick or closed, the stool on or off, and the finish black, walnut, mahogany or white.
+
+**Drains:** pipe runs below ground, drawn on the ground floor with flow arrows: brown for foul, blue for surface water.
+- Select a point to set its **fitting** (inspection chamber, gully, rainwater downpipe, soakaway, sewer connection, **sewage treatment plant**, or just a bend or junction) and its **invert depth**: the depth of the inside bottom of the pipe below the ground.
+- Select a pipe to set what it carries and its bore (100, 150 or 225 mm), and to read its length and **fall** ("1 in 60"). It warns if a pipe runs uphill (backfall), is level, or is flatter or steeper than the usual guidance for house drains. Check real work against Building Regulations Part H and your building control officer. **Reverse flow** swaps its direction.
+- Inspection chambers can be **square or round** (set in the panel).
+- A **sewage treatment plant** is a round or rectangular tank (about 2 m³ to start with: set its diameter or width and depth, and the panel gives the volume), with three access lids for pump-out and desludging and the blower kiosk beside it. Draw the foul drain into it and the treated outflow on to a soakaway, drainage field or ditch.
+- The **Underground** button (by Sun) makes the ground, floors and patios see-through, shows the pipes, chambers and soakaway at their depths, and lets the 3D view go below the surface. Chamber covers, gully gratings and downpipes show all the time.
+- The demo house has a foul run from the soil stack and kitchen gully to the sewer under the road, and rainwater from two downpipes to a soakaway in the garden.
 
 **Room dimensions:** the **Dimensions** button (or M) writes every room's inside measurements along its walls, face to face of the plaster line. The setting is remembered on each device.
 
@@ -115,7 +125,8 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - **Decking:** grooved timber boards with staggered joints on a frame, 15 cm up (one step) with a timber fascia round the edge.
 - **Gravel:** a gravel scatter.
 - **Panel settings:** the surface, the height, the slab size or board width, and which way the courses or boards run (**Turn 90°**). It also shows the area.
-- Drag a patio to move it. In walk mode you step up onto it. A deck higher than a step (over 35 cm) is solid, so it needs steps to get onto it.
+- **Reshape** a selected patio by its corners: drag a white square to move that corner (it snaps like a wall joint), drag a small circle in the middle of an edge to add a corner there, and double-click a corner to remove it (a patio keeps at least three). If furniture stands on the patio, click again to pick the patio underneath.
+- Drag a patio anywhere else to move it. In walk mode you step up onto it. A deck higher than a step (over 35 cm) is solid, so it needs steps to get onto it.
 
 **Stairs:**
 - The number of steps and their height come from the floor-to-floor height: the fewest steps that keep each one under 19 cm, e.g. 16 steps of 18.1 cm for 2.9 m.
@@ -129,7 +140,7 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - **Different roofs for different parts:** choose the **Roof** tool (R) and click a roof area to give it its own type, pitch and overhang. For example, one extension gabled and the others flat.
 - **Gable ends where you want them:** with a roof selected, click any of its edges to switch it between a sloping eave and a vertical gable end. By default a roof is gabled at both ends of its main ridge. A roof against a taller wall runs its ridge into the wall, with its gable at the far end.
 - **Cross gables:** for a window bay or projection that is part of the house, click the bay's front edge of the main roof to make it a gable. The bay gets its own ridge, meeting the main roof in valleys.
-- **Extra roof sections:** Roof tool → **Add section**, then click the corners (they snap to walls). Use it for a porch canopy or a separate roof over part of the house. Sections can overlap other roofs, have their own gable ends, and can start lower (**Eaves height**).
+- **Extra roof sections:** Roof tool → **Add section**, then click the corners (they snap to walls). Use it for a porch canopy or a separate roof over part of the house. Sections can overlap other roofs, have their own gable ends, and can start lower (**Eaves height**). Select a section to reshape it the same way as a patio: drag its corners, drag an edge's middle circle to add a corner, double-click a corner to remove it.
 - **On the plan:** eaves are dashed, gable ends solid, and ridges, hips and valleys dotted.
 - **Seeing it in 3D:** in orbit view with **Cutaway** on, the roofs of the floor you are editing are lifted off with its ceiling. With it off (the default) you see the whole house.
 

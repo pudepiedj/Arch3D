@@ -20,6 +20,8 @@ import { addPillar, pillarAt } from '../model/pillars';
 import { addPatio, patioShapes } from '../model/patios';
 import { addTree, treeAt, trunkRadius } from '../model/trees';
 import { siteOf } from '../model/sun';
+import { type Box, type Picked, boxFrom, inBox, stretch } from '../model/stretch';
+import { addDrainNode, addDrainPipe, deleteDrainNode, drainNodeAt, drainPipeAt, pipeFall, splitPipe } from '../model/drains';
 import { addFurniture, againstWall, catalogueItem, footprint } from '../model/furniture';
 import { drawFurnitureSymbol } from './furniture2d';
 import { addChimney, addRooflight, addSolarArray, chimneyFootprint, rooflightGeometry, solarGeometry } from '../model/roofitems';
@@ -48,12 +50,12 @@ import {
   splitWallAt,
 } from '../model/plan';
 import { detectRooms } from '../model/rooms';
-import type { Furniture, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind } from '../model/types';
+import type { DrainKind, Furniture, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture';
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain';
 export type Selection = {
-  kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture';
+  kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'drainNode' | 'drainPipe';
   id: string;
 } | null;
 
@@ -65,6 +67,10 @@ type Gesture =
   | { kind: 'dragOpening'; id: string }
   | { kind: 'dragStair'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'dragPillar'; id: string }
+  | { kind: 'dragDrain'; id: string }
+  | { kind: 'dragCorner'; index: number; insert: boolean }
+  | { kind: 'stretchBox'; start: Vec2 }
+  | { kind: 'stretchMove'; start: Vec2 }
   | { kind: 'dragFurniture'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'dragPatio'; id: string; start: Vec2; pts0: Vec2[] }
   | { kind: 'dragRoofItem'; what: 'chimney' | 'solar' | 'rooflight' | 'tree'; id: string; start: Vec2; x0: number; y0: number }
@@ -102,6 +108,22 @@ export class Editor2D {
   /** Catalogue entry the Furniture tool places, and the angle it is placed at. */
   furnitureKind = 'grand';
   furnitureAngle = 0;
+  /**
+   * Stretch tool: the box round what moves, and the one being drawn. After a stretch the box
+   * follows what it moved and remembers exactly what that was (`stretchPicked`), so a repeat
+   * moves the same things again; `stretchLeft` is the drawing as that stretch left it.
+   */
+  stretchBox: Box | null = null;
+  stretchPicked: Picked | null = null;
+  private stretchLeft: string | null = null;
+  private pendingPicked: Picked | null = null;
+  private stretchDraft: Box | null = null;
+  private stretchBy: Vec2 | null = null;
+  /** Stretch every floor (true) or only the one being edited. */
+  stretchAll = true;
+  /** Drain tool: foul or surface water, and the last node of the run being drawn. */
+  drainKind: DrainKind = 'foul';
+  private drainLast: string | null = null;
   /** A copied door or window: its exact type and size. */
   clipboard: OpeningTemplate | null = null;
   ortho = false;
@@ -147,9 +169,20 @@ export class Editor2D {
     });
     c.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     c.addEventListener('contextmenu', (e) => e.preventDefault());
-    c.addEventListener('dblclick', () => {
+    c.addEventListener('dblclick', (e) => {
+      // Double-click a corner of the selected patio or roof section: remove that corner.
+      const h = this.outlineHandleAt(this.eventPoint(e));
+      if (h && !h.insert) {
+        const pts = this.selectedOutline();
+        if (pts && pts.length > 3) {
+          pts.splice(h.index, 1);
+          this.store.commit();
+          return;
+        }
+      }
       if (this.tool === 'wall') this.finishChain();
       if (this.drawingOutline) this.finishOutline();
+      if (this.tool === 'drain') this.finishDrainRun();
     });
     window.addEventListener('keydown', (e) => this.onKey(e));
     new ResizeObserver(() => this.resize()).observe(container);
@@ -173,6 +206,8 @@ export class Editor2D {
     if (this.tool === 'wall' && t !== 'wall') this.finishChain();
     this.stairStart = null;
     this.sectionPts = [];
+    if (t !== 'stretch' && this.stretchBox) this.setStretchBox(null);
+    this.drainLast = null;
     this.tool = t;
     this.onToolChange?.();
     this.requestRender();
@@ -227,7 +262,7 @@ export class Editor2D {
     return vec((p.x - this.view.ox) / this.view.scale, (p.y - this.view.oy) / this.view.scale);
   }
 
-  private eventPoint(e: PointerEvent | WheelEvent): Vec2 {
+  private eventPoint(e: MouseEvent): Vec2 {
     const r = this.canvas.getBoundingClientRect();
     return vec(e.clientX - r.left, e.clientY - r.top);
   }
@@ -394,6 +429,13 @@ export class Editor2D {
     const patios = Object.values(plan.patios ?? {}).filter((pt) => pointInPolygon(w, pt.points));
     patios.sort((a, b) => b.height - a.height);
     for (const pt of patios) out.push({ kind: 'patio', id: pt.id });
+    if (this.onGround) {
+      const b = this.store.building;
+      const node = drainNodeAt(b, w, 10 / this.view.scale);
+      if (node) out.push({ kind: 'drainNode', id: node });
+      const pipe = drainPipeAt(b, w, 6 / this.view.scale);
+      if (pipe) out.push({ kind: 'drainPipe', id: pipe });
+    }
     return out;
   }
 
@@ -440,6 +482,24 @@ export class Editor2D {
       return;
     }
 
+    // The corners of the selected patio or roof section can be dragged to reshape it, and
+    // the handles midway along its edges dragged out to add a corner.
+    if (this.tool === 'select' || this.tool === 'roof' || this.tool === 'patio') {
+      const h = this.outlineHandleAt(s);
+      if (h && !this.sectionPts.length) {
+        this.gesture = { kind: 'dragCorner', index: h.index, insert: h.insert };
+        return;
+      }
+    }
+
+    if (this.tool === 'stretch') {
+      // Inside the box: drag to stretch. Anywhere else: drag out a new box.
+      const w = this.toWorld(s);
+      const onBox = this.stretchBox && inBox(this.stretchBox, w);
+      this.gesture = onBox && this.stretchStillValid() ? { kind: 'stretchMove', start: w } : { kind: 'stretchBox', start: w };
+      return;
+    }
+
     if (this.tool === 'select') {
       // Pressing on what is already selected keeps it (to drag it); clicking it again without
       // dragging then moves on to the next thing underneath (see onUp).
@@ -460,6 +520,7 @@ export class Editor2D {
         this.gesture = { kind: 'dragStair', id: hit.id, start: this.toWorld(s), x0: st.x, y0: st.y };
       }
       else if (hit?.kind === 'opening') this.gesture = { kind: 'dragOpening', id: hit.id };
+      else if (hit?.kind === 'drainNode') this.gesture = { kind: 'dragDrain', id: hit.id };
       else if (hit?.kind === 'furniture') {
         const f = this.plan.furniture![hit.id];
         this.gesture = { kind: 'dragFurniture', id: hit.id, start: this.toWorld(s), x0: f.x, y0: f.y };
@@ -517,6 +578,21 @@ export class Editor2D {
     const plan = this.plan;
     const cur = this.gesture!;
     switch (cur.kind) {
+      case 'stretchBox': {
+        const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
+        this.stretchDraft = boxFrom(cur.start, { x: snapTo(w.x), y: snapTo(w.y) });
+        this.requestRender();
+        break;
+      }
+      case 'stretchMove': {
+        // Straight across or straight up and down (Shift for any direction), to the grid.
+        let d = sub(w, cur.start);
+        if (!e.shiftKey) d = Math.abs(d.x) >= Math.abs(d.y) ? { x: d.x, y: 0 } : { x: 0, y: d.y };
+        const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
+        d = { x: snapTo(d.x), y: snapTo(d.y) };
+        this.previewStretch(d);
+        break;
+      }
       case 'pan':
         this.view.ox += s.x - cur.last.x;
         this.view.oy += s.y - cur.last.y;
@@ -579,6 +655,30 @@ export class Editor2D {
         this.store.changed();
         break;
       }
+      case 'dragCorner': {
+        const pts = this.selectedOutline();
+        if (!pts) break;
+        if (cur.insert) {
+          // First movement of a midpoint handle: it becomes a new corner.
+          pts.splice(cur.index + 1, 0, { x: w.x, y: w.y });
+          cur.index += 1;
+          cur.insert = false;
+        }
+        const snap = this.snap(w);
+        pts[cur.index] = { x: snap.p.x, y: snap.p.y };
+        this.lastGuides = snap.guides;
+        this.store.changed();
+        break;
+      }
+      case 'dragDrain': {
+        const n = this.store.building.drains?.nodes[cur.id];
+        if (!n) break;
+        const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
+        n.x = snapTo(w.x);
+        n.y = snapTo(w.y);
+        this.store.changed();
+        break;
+      }
       case 'dragPillar': {
         const q = plan.pillars?.[cur.id];
         if (!q) break;
@@ -625,7 +725,9 @@ export class Editor2D {
     this.gesture = null;
     this.lastGuides = [];
     if (cancelled) {
-      if (this.dragging && g.kind.startsWith('drag')) this.store.revert();
+      if (this.dragging && (g.kind.startsWith('drag') || g.kind === 'stretchMove')) this.store.revert();
+      this.stretchBy = null;
+      this.stretchDraft = null;
       return;
     }
     const plan = this.plan;
@@ -653,10 +755,29 @@ export class Editor2D {
       case 'dragRoofItem':
       case 'dragPatio':
       case 'dragFurniture':
+      case 'dragCorner':
+        // A plain click on a handle (no drag) does what a click there always did.
+        if (this.dragging) this.store.commit();
+        else if (this.tool !== 'select') this.click(this.toWorld(this.eventPoint(e)));
+        break;
+      case 'dragDrain':
         if (this.dragging) this.store.commit();
         break;
       case 'click':
         if (!this.dragging) this.click(this.toWorld(this.eventPoint(e)));
+        break;
+      case 'stretchBox': {
+        const b = this.stretchDraft;
+        this.stretchDraft = null;
+        // A click (no drag), or a tiny box, clears the box.
+        this.setStretchBox(this.dragging && b && b.x1 - b.x0 > 0.1 && b.y1 - b.y0 > 0.1 ? b : null);
+        this.requestRender();
+        break;
+      }
+      case 'stretchMove':
+        if (this.dragging && this.stretchBy) this.finishStretch();
+        else this.store.revert();
+        this.stretchBy = null;
         break;
     }
     // A click (no drag) on the selected thing: select the next thing under it.
@@ -729,6 +850,140 @@ export class Editor2D {
     if (bx) guides.push({ from: bx, to: out });
     if (by) guides.push({ from: by, to: out });
     return { p: out, guides };
+  }
+
+  /** The corner list of the selected patio or hand-drawn roof section, if one is selected. */
+  private selectedOutline(): { x: number; y: number }[] | null {
+    const s = this.selection;
+    if (s?.kind === 'patio') return this.plan.patios?.[s.id]?.points ?? null;
+    if (s?.kind === 'roof' && s.id.startsWith('section:')) return this.plan.roofSections?.[s.id.slice(8)]?.points ?? null;
+    return null;
+  }
+
+  /** The corner (or edge-midpoint) handle of the selected outline under screen point s. */
+  private outlineHandleAt(s: Vec2): { index: number; insert: boolean } | null {
+    const pts = this.selectedOutline();
+    if (!pts) return null;
+    const near = (p: Vec2) => dist(this.toScreen(p), s) < 9;
+    const corner = pts.findIndex(near);
+    if (corner >= 0) return { index: corner, insert: false };
+    const mid = pts.findIndex((p, i) => near(scale(add(p, pts[(i + 1) % pts.length]), 0.5)));
+    return mid >= 0 ? { index: mid, insert: true } : null;
+  }
+
+  /** Handles on the selected outline: squares at the corners, small circles midway along edges. */
+  private drawOutlineHandles(C: Record<string, string>) {
+    const pts = this.selectedOutline();
+    if (!pts) return;
+    const ctx = this.ctx;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = C.accent;
+    pts.forEach((p, i) => {
+      const m = this.toScreen(scale(add(p, pts[(i + 1) % pts.length]), 0.5));
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = C.bg;
+      ctx.fill();
+      ctx.stroke();
+    });
+    for (const p of pts) {
+      const q = this.toScreen(p);
+      ctx.fillStyle = C.bg;
+      ctx.fillRect(q.x - 5, q.y - 5, 10, 10);
+      ctx.strokeRect(q.x - 5, q.y - 5, 10, 10);
+    }
+  }
+
+  /** True if the floor being edited is the ground floor (where the drains are drawn). */
+  private get onGround(): boolean {
+    return this.store.building.levels[0]?.id === this.store.activeId;
+  }
+
+  /**
+   * Drain tool: a click on an existing node or pipe joins the run to it; elsewhere it adds a
+   * node. Each click after the first lays a pipe from the last one; new nodes are set deeper
+   * than the one before so the pipe falls at 1 in 60.
+   */
+  private drainClick(w: Vec2) {
+    if (!this.onGround) {
+      this.flash('Drains are drawn on the ground floor', w);
+      return;
+    }
+    const b = this.store.building;
+    const tol = 10 / this.view.scale;
+    let id = drainNodeAt(b, w, tol);
+    if (!id) {
+      const pipe = drainPipeAt(b, w, 6 / this.view.scale);
+      if (pipe) id = splitPipe(b, pipe, w)?.id;
+    }
+    const last = this.drainLast ? b.drains?.nodes[this.drainLast] : undefined;
+    if (!id) {
+      const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
+      const p = { x: snapTo(w.x), y: snapTo(w.y) };
+      const fitting = last ? 'junction' : this.drainKind === 'surface' ? 'downpipe' : 'gully';
+      id = addDrainNode(b, p, fitting, last ? last.invert + dist(last, p) / 60 : undefined).id;
+    }
+    if (last && last.id !== id) addDrainPipe(b, last.id, id, this.drainKind);
+    this.drainLast = id;
+    this.store.commit();
+    this.select({ kind: 'drainNode', id });
+  }
+
+  finishDrainRun() {
+    this.drainLast = null;
+    this.requestRender();
+  }
+
+  /** Start (or clear) a stretch box. */
+  setStretchBox(b: Box | null) {
+    this.stretchBox = b;
+    this.stretchPicked = null;
+    this.stretchLeft = null;
+    this.onToolChange?.();
+    this.requestRender();
+  }
+
+  /**
+   * If the drawing has changed since the last stretch (Undo, or an edit), what the box moved
+   * may no longer be where it was: clear the box rather than guess. True if still usable.
+   */
+  private stretchStillValid(): boolean {
+    if (!this.stretchPicked) return true;
+    if (JSON.stringify(this.store.building) === this.stretchLeft) return true;
+    const b = this.stretchBox;
+    this.setStretchBox(null);
+    if (b) this.flash('The drawing changed since the last stretch: draw the box again', { x: b.x0, y: b.y0 });
+    return false;
+  }
+
+  /** Show the drawing stretched by d (from the drawing as it is now), live. */
+  private previewStretch(d: Vec2) {
+    if (!this.stretchBox) return;
+    this.store.revert();
+    this.pendingPicked = stretch(this.store.building, this.stretchBox, d, this.stretchAll ? undefined : this.store.activeId, this.stretchPicked ?? undefined);
+    this.stretchBy = d;
+    this.store.changed();
+  }
+
+  /** Keep the stretch; the box moves with what it moved, ready to do it again. */
+  private finishStretch() {
+    const d = this.stretchBy;
+    const b = this.stretchBox;
+    if (!d || !b) return;
+    this.store.commit();
+    this.stretchBox = { x0: b.x0 + d.x, y0: b.y0 + d.y, x1: b.x1 + d.x, y1: b.y1 + d.y };
+    this.stretchPicked = this.pendingPicked;
+    this.stretchLeft = JSON.stringify(this.store.building);
+    this.stretchBy = null;
+    this.onToolChange?.();
+    this.requestRender();
+  }
+
+  /** Stretch by an exact amount (from the panel). */
+  applyStretch(d: Vec2) {
+    if (!this.stretchBox || (!d.x && !d.y) || !this.stretchStillValid()) return;
+    this.previewStretch(d);
+    this.finishStretch();
   }
 
   /** Turn the selected piece (or the one about to be placed) by a step. */
@@ -813,6 +1068,9 @@ export class Editor2D {
         this.select({ kind: 'furniture', id: f.id });
         break;
       }
+      case 'drain':
+        this.drainClick(w);
+        break;
       case 'tree': {
         const t = addTree(plan, this.snap(w).p, this.treeKind);
         this.store.commit();
@@ -950,10 +1208,15 @@ export class Editor2D {
     }
     switch (e.key) {
       case 'Enter':
+        if (this.drainLast) this.finishDrainRun();
         if (this.sectionPts.length) this.finishOutline();
         break;
       case 'Escape':
-        if (this.sectionPts.length) {
+        if (this.drainLast) {
+          this.finishDrainRun();
+        } else if (this.stretchBox) {
+          this.setStretchBox(null);
+        } else if (this.sectionPts.length) {
           this.sectionPts = [];
           this.requestRender();
         } else if (this.stairStart) {
@@ -1009,6 +1272,12 @@ export class Editor2D {
         break;
       case 'k':
         this.setTool('glazed');
+        break;
+      case 'q':
+        this.setTool('stretch');
+        break;
+      case 'j':
+        this.setTool('drain');
         break;
       case 'f':
         this.onOpenCatalogue?.();
@@ -1400,6 +1669,204 @@ export class Editor2D {
     ctx.restore();
   }
 
+  /** The stretch box, with the joints that will move marked, and the size of the move. */
+  private drawStretch(C: Record<string, string>) {
+    const ctx = this.ctx;
+    const b = this.stretchDraft ?? this.stretchBox;
+    if (!b) return;
+    // While dragging, the box is shown where its contents are going.
+    const by = this.stretchBy;
+    const shown = by ? { x0: b.x0 + by.x, y0: b.y0 + by.y, x1: b.x1 + by.x, y1: b.y1 + by.y } : b;
+    const p = this.toScreen({ x: shown.x0, y: shown.y0 });
+    const q = this.toScreen({ x: shown.x1, y: shown.y1 });
+    ctx.fillStyle = hexAlpha(C.accent, 0.08);
+    ctx.fillRect(p.x, p.y, q.x - p.x, q.y - p.y);
+    ctx.strokeStyle = C.accent;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(p.x, p.y, q.x - p.x, q.y - p.y);
+    ctx.setLineDash([]);
+    if (!by) {
+      // What will move: the joints inside (walls to them stretch) and the furniture inside.
+      ctx.fillStyle = C.accent;
+      const picked = this.stretchPicked;
+      const L = this.store.activeId;
+      const goes = (p: Vec2, id?: string) =>
+        picked ? (id ? picked.ids.has(`${L}:${id}`) : picked.points.has(`${L}@${p.x.toFixed(5)},${p.y.toFixed(5)}`)) : inBox(b, p);
+      for (const n of Object.values(this.plan.nodes)) {
+        if (!goes(n)) continue;
+        const s = this.toScreen(n);
+        ctx.fillRect(s.x - 3.5, s.y - 3.5, 7, 7);
+      }
+      ctx.strokeStyle = C.accent;
+      ctx.lineWidth = 2;
+      for (const f of Object.values(this.plan.furniture ?? {})) {
+        if (!goes(f, f.id)) continue;
+        this.path(footprint(f));
+        ctx.stroke();
+      }
+    }
+    const d = by;
+    if (d && (d.x || d.y)) {
+      const len = Math.hypot(d.x, d.y);
+      const sign = (d.x || d.y) < 0 ? '−' : '+';
+      ctx.font = '600 13px system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(`${sign}${len.toFixed(2)} m`, q.x + 8, p.y + 16);
+    }
+  }
+
+  /**
+   * Drains: dashed pipes (brown foul, blue surface water) with an arrow showing the flow,
+   * and the usual symbols: a chamber is a square with a cross, a gully a circle with a dot,
+   * a downpipe a small filled circle, a soakaway a large dashed circle, the sewer a ringed S.
+   */
+  private drawDrains(C: Record<string, string>) {
+    const d = this.store.building.drains;
+    if (!d) return;
+    const ctx = this.ctx;
+    const k = this.view.scale;
+    const focus = this.tool === 'drain' || this.selection?.kind === 'drainNode' || this.selection?.kind === 'drainPipe';
+    ctx.save();
+    ctx.globalAlpha = focus ? 1 : 0.6;
+    for (const p of Object.values(d.pipes)) {
+      const a = d.nodes[p.a];
+      const b = d.nodes[p.b];
+      if (!a || !b) continue;
+      const sel = this.selection?.kind === 'drainPipe' && this.selection.id === p.id;
+      const colour = sel ? C.accent : p.kind === 'foul' ? '#9a6a3a' : '#2f7fd0';
+      const sa = this.toScreen(a);
+      const sb = this.toScreen(b);
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = sel ? 3 : 2;
+      ctx.setLineDash([8, 4]);
+      ctx.beginPath();
+      ctx.moveTo(sa.x, sa.y);
+      ctx.lineTo(sb.x, sb.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // The arrow at the middle, pointing downstream.
+      const len = Math.hypot(sb.x - sa.x, sb.y - sa.y);
+      if (len > 30) {
+        const ux = (sb.x - sa.x) / len;
+        const uy = (sb.y - sa.y) / len;
+        const mx = (sa.x + sb.x) / 2;
+        const my = (sa.y + sb.y) / 2;
+        ctx.fillStyle = colour;
+        ctx.beginPath();
+        ctx.moveTo(mx + ux * 7, my + uy * 7);
+        ctx.lineTo(mx - ux * 5 - uy * 5, my - uy * 5 + ux * 5);
+        ctx.lineTo(mx - ux * 5 + uy * 5, my - uy * 5 - ux * 5);
+        ctx.closePath();
+        ctx.fill();
+        const f = pipeFall(d, p);
+        if (focus && len > 90 && f.oneIn) {
+          ctx.font = '11px system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = f.verdict === 'ok' ? C.text : C.danger;
+          ctx.fillText(f.verdict === 'backfall' ? 'backfall!' : `1:${Math.round(f.oneIn)}`, mx - uy * 12, my + ux * 12);
+        }
+      }
+    }
+    for (const n of Object.values(d.nodes)) {
+      const sel = this.selection?.kind === 'drainNode' && this.selection.id === n.id;
+      const s = this.toScreen(n);
+      const ink = sel ? C.accent : C.ink;
+      ctx.strokeStyle = ink;
+      ctx.fillStyle = C.bg;
+      ctx.lineWidth = sel ? 2 : 1.3;
+      const r = (m: number, min: number) => Math.max(min, (m / 2) * k);
+      ctx.beginPath();
+      switch (n.fitting) {
+        case 'chamber': {
+          const h = r(0.6, 6);
+          // Square: a square with a cross; round: a circle with a cross.
+          const c = n.round ? h * Math.SQRT1_2 : h;
+          if (n.round) ctx.arc(s.x, s.y, h, 0, Math.PI * 2);
+          else ctx.rect(s.x - h, s.y - h, h * 2, h * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(s.x - c, s.y - c);
+          ctx.lineTo(s.x + c, s.y + c);
+          ctx.moveTo(s.x + c, s.y - c);
+          ctx.lineTo(s.x - c, s.y + c);
+          ctx.stroke();
+          break;
+        }
+        case 'gully':
+          ctx.arc(s.x, s.y, r(0.3, 5), 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, 1.5, 0, Math.PI * 2);
+          ctx.fillStyle = ink;
+          ctx.fill();
+          break;
+        case 'downpipe':
+          ctx.arc(s.x, s.y, r(0.1, 4), 0, Math.PI * 2);
+          ctx.fillStyle = ink;
+          ctx.fill();
+          break;
+        case 'soakaway':
+          ctx.setLineDash([4, 3]);
+          ctx.arc(s.x, s.y, r(1.2, 10), 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.font = '600 10px system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = ink;
+          ctx.fillText('SA', s.x, s.y);
+          break;
+        case 'treatment': {
+          // The tank outline, its three lids, and STP.
+          const t = n.tank ?? { shape: 'round', width: 1.3, depth: 1.6 };
+          const h = r(t.width, 12);
+          if (t.shape === 'round') ctx.arc(s.x, s.y, h, 0, Math.PI * 2);
+          else ctx.rect(s.x - h, s.y - h, h * 2, h * 2);
+          ctx.fill();
+          ctx.stroke();
+          const gap = Math.max(0.45, t.width * 0.33) * k;
+          for (const kx of [-1, 0, 1]) {
+            ctx.beginPath();
+            ctx.arc(s.x + kx * gap, s.y, Math.max(2, 0.2 * k), 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          ctx.font = '600 10px system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = ink;
+          ctx.fillText('STP', s.x, s.y + h * 0.55);
+          break;
+        }
+        case 'sewer':
+          ctx.arc(s.x, s.y, r(0.4, 8), 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.font = '600 10px system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = ink;
+          ctx.fillText('S', s.x, s.y + 0.5);
+          break;
+        default:
+          ctx.arc(s.x, s.y, sel ? 4 : 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = ink;
+          ctx.fill();
+      }
+      // Invert level beside chambers and the ends, when there is room.
+      if (focus && n.fitting !== 'junction' && k > 25) {
+        ctx.font = '11px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = C.text;
+        ctx.fillText(`IL −${n.invert.toFixed(2)}`, s.x + (n.fitting === 'treatment' ? r(n.tank?.width ?? 1.3, 12) : r(0.6, 6)) + 4, s.y);
+      }
+    }
+    ctx.restore();
+  }
+
   /** Trees, seen from above: a translucent crown, and the trunk. */
   private drawTrees(C: Record<string, string>) {
     const ctx = this.ctx;
@@ -1480,6 +1947,8 @@ export class Editor2D {
     else if (s.kind === 'patio') delete this.plan.patios?.[s.id];
     else if (s.kind === 'tree') delete this.plan.trees?.[s.id];
     else if (s.kind === 'furniture') delete this.plan.furniture?.[s.id];
+    else if (s.kind === 'drainNode') deleteDrainNode(this.store.building, s.id);
+    else if (s.kind === 'drainPipe') delete this.store.building.drains?.pipes[s.id];
     else if (s.kind === 'roof') {
       if (s.id.startsWith('section:')) delete this.plan.roofSections?.[s.id.slice(8)];
       else {
@@ -1507,7 +1976,9 @@ export class Editor2D {
       (s.kind === 'rooflight' && p.rooflights?.[s.id]) ||
       (s.kind === 'patio' && p.patios?.[s.id]) ||
       (s.kind === 'tree' && p.trees?.[s.id]) ||
-      (s.kind === 'furniture' && p.furniture?.[s.id]);
+      (s.kind === 'furniture' && p.furniture?.[s.id]) ||
+      (s.kind === 'drainNode' && this.store.building.drains?.nodes[s.id]) ||
+      (s.kind === 'drainPipe' && this.store.building.drains?.pipes[s.id]);
     if (!exists) this.select(null);
   }
 
@@ -1575,6 +2046,7 @@ export class Editor2D {
     }
 
     this.drawFurniture(C);
+    if (this.onGround) this.drawDrains(C);
 
     // The floor below, faintly, as a guide for placing walls above it.
     const below = this.below();
@@ -1709,7 +2181,9 @@ export class Editor2D {
 
     this.drawTrees(C);
     this.drawNorth(C, W, H);
+    this.drawOutlineHandles(C);
     this.drawToolPreview(C);
+    if (this.tool === 'stretch') this.drawStretch(C);
 
     for (const g of this.lastGuides) this.guide(g.from, g.to, C.accent);
     const sel = this.selection;
@@ -1788,6 +2262,25 @@ export class Editor2D {
           ctx.fillStyle = C.accent;
           ctx.fillRect(q.x - 3, q.y - 3, 6, 6);
         }
+      }
+    } else if (this.tool === 'drain' && h && this.drainLast) {
+      // The next pipe of the run, with its length and fall.
+      const last = this.store.building.drains?.nodes[this.drainLast];
+      if (last) {
+        const a = this.toScreen(last);
+        const b = this.toScreen(h);
+        ctx.strokeStyle = this.drainKind === 'foul' ? '#9a6a3a' : '#2f7fd0';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 4]);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = '600 12px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = C.text;
+        ctx.fillText(`${dist(last, h).toFixed(2)} m, falling 1 in 60`, b.x + 12, b.y - 10);
       }
     } else if (this.tool === 'furniture' && h) {
       const at = this.furniturePlacement(h);

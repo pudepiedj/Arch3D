@@ -94,6 +94,17 @@ for (const cat of CATEGORIES) {
 const openCatalogue = () => catalogue.showModal();
 $('#furnitureBtn').addEventListener('click', openCatalogue);
 editor.onOpenCatalogue = openCatalogue;
+for (const b of $$('#drainKind button')) {
+  b.addEventListener('click', () => {
+    editor.drainKind = b.dataset.kind as typeof editor.drainKind;
+    editor.setTool('drain');
+  });
+}
+$('#underground').addEventListener('click', () => {
+  view.setUnderground(!view.underground);
+  if (view.underground && layout === 'plan') setLayout('split');
+  syncToolbar();
+});
 for (const b of $$('#treeKind button')) {
   b.addEventListener('click', () => {
     editor.treeKind = b.dataset.kind as typeof editor.treeKind;
@@ -433,6 +444,8 @@ const HINTS: Record<Tool, string> = {
   chimney: 'Click on the roof to place a chimney stack (on the floor whose roof it goes through)',
   solar: 'Click on a roof slope to lay a solar array on it (on the floor the roof belongs to)',
   rooflight: 'Click on a roof: a flat roof gets a rooflight box, a sloping roof a window in the slope',
+  drain: 'Click to lay a pipe run (it falls at 1 in 60 as it goes) · click a chamber or pipe to join it · double-click, Enter or Esc to finish · set fittings and depths in the panel',
+  stretch: 'Drag a box round the part to move · then drag inside it (straight; Shift for any direction), or type the distance in the panel · Esc clears the box',
   furniture: 'Click to place it (near a wall it backs onto the wall) · [ and ] turn it · Esc when done',
   tree: 'Click to plant a tree; drag it to move it, set its size in the panel',
   patio: 'Click the corners of the patio (snaps to walls; the house is cut out) · click the first corner, double-click or Enter to finish',
@@ -447,6 +460,9 @@ function syncToolbar() {
   $('#ortho').hidden = editor.tool !== 'wall' && editor.tool !== 'stair' && editor.tool !== 'patio';
   $('#patioSurface').hidden = editor.tool !== 'patio';
   $('#treeKind').hidden = editor.tool !== 'tree';
+  $('#drainKind').hidden = editor.tool !== 'drain';
+  for (const b of $$('#drainKind button')) b.classList.toggle('on', b.dataset.kind === editor.drainKind);
+  $('#underground').classList.toggle('on', view.underground);
   for (const b of $$('#treeKind button')) b.classList.toggle('on', b.dataset.kind === editor.treeKind);
   $('#sun').classList.toggle('on', sunPanel.open);
   $('#dims').classList.toggle('on', editor.showDims);

@@ -4,11 +4,12 @@ import { addPatio } from './patios';
 import { addTree } from './trees';
 import { addFurniture, againstWall } from './furniture';
 import { computeFootprints } from './joints';
+import { addDrainNode, addDrainPipe } from './drains';
 import { addChimney, addRooflight, addSolarArray } from './roofitems';
 import { addStair } from './stairs';
 import { addWall, deleteWall, findWallInterior } from './plan';
 import { placeOpening } from './openings';
-import { DEFAULTS, type Building, type Level, type OpeningKind, type Plan } from './types';
+import { DEFAULTS, type Building, type DrainFitting, type DrainKind, type DrainNode, type Level, type OpeningKind, type Plan } from './types';
 
 /**
  * A two-storey house showing the main features: a gabled main roof with a cross gable
@@ -186,6 +187,38 @@ export function demoBuilding(): Building {
   addFurniture(ground, 'parasol', { x: 2.2, y: 9.7 }, 0);
   addFurniture(ground, 'lounger', { x: 11.2, y: 8.6 }, 0);
   addFurniture(ground, 'bench', { x: 5.0, y: 10.9 }, Math.PI);
+  // Drains: foul from the soil stack and the kitchen gully, through inspection chambers,
+  // to the sewer under the road; rainwater from two downpipes to a soakaway in the garden.
+  const drain = (kind: DrainKind, stops: [number, number, DrainFitting][], join?: string) => {
+    let last: DrainNode | undefined = join ? b.drains?.nodes[join] : undefined;
+    const ids: string[] = [];
+    for (const [x, y, fitting] of stops) {
+      const invert = last ? last.invert + Math.hypot(x - last.x, y - last.y) / 60 : undefined;
+      const n = addDrainNode(b, { x, y }, fitting, invert);
+      if (last) addDrainPipe(b, last.id, n.id, kind);
+      ids.push(n.id);
+      last = n;
+    }
+    return ids;
+  };
+  const [, , , front] = drain('foul', [
+    [10.45, 7.4, 'gully'],
+    [13.6, 7.4, 'chamber'],
+    [13.6, -1.6, 'chamber'],
+    [5.5, -1.6, 'chamber'],
+  ]);
+  // The kitchen branch joins the front chamber at 1 in 45; the sewer is 1 in 50 beyond it.
+  const fc = b.drains!.nodes[front];
+  const sink = addDrainNode(b, { x: 7.9, y: -0.45 }, 'gully', fc.invert - Math.hypot(7.9 - fc.x, -0.45 - fc.y) / 45);
+  addDrainPipe(b, sink.id, front, 'foul');
+  const sewer = addDrainNode(b, { x: 5.5, y: -6 }, 'sewer', fc.invert + 4.4 / 50);
+  addDrainPipe(b, front, sewer.id, 'foul');
+  const [, soak] = drain('surface', [
+    [-0.35, 8.4, 'downpipe'],
+    [2.5, 14.5, 'soakaway'],
+  ]);
+  const [pipe2] = drain('surface', [[6.3, 8.35, 'downpipe']]);
+  addDrainPipe(b, pipe2, soak, 'surface');
   return b;
 }
 

@@ -20,6 +20,7 @@
         <button data-tool="garage" title="Place a garage roller door (G)">Garage</button>
         <button data-tool="glazed" title="Place floor-to-ceiling glass doors: French, sliding or bi-fold (K)">Glass door</button>
         <button data-tool="split" title="Add a joint to a wall (X)">Split</button>
+        <button data-tool="stretch" title="Move a whole part of the house, stretching the walls that cross into it (Q)">Stretch</button>
         <button data-tool="stair" title="Place a stair up to the next floor (S)">Stair</button>
         <button data-tool="roof" title="Set up roofs: types, gable ends, extra roof sections (R)">Roof</button>
         <button data-tool="pillar" title="Place a pillar, e.g. under a veranda roof (P)">Pillar</button>
@@ -28,6 +29,7 @@
         <button data-tool="rooflight" title="Roof windows, or a rooflight box on a flat roof">Rooflight</button>
         <button data-tool="patio" title="Draw a paved patio, a deck or a gravelled area (T)">Patio</button>
         <button data-tool="tree" title="Plant a tree (E)">Tree</button>
+        <button data-tool="drain" title="Draw drains below ground, on the ground floor (J)">Drain</button>
         <button id="furnitureBtn" title="Choose furniture to place (F)">Furniture</button>
         <button data-tool="paste" id="pasteTool" title="Place exact copies of the copied door/window (Ctrl/⌘+V)" hidden>Paste</button>
       </div>
@@ -49,6 +51,10 @@
         <button data-surface="paving" title="600 mm paving slabs">Paving</button>
         <button data-surface="decking" title="Timber decking, one step up">Decking</button>
         <button data-surface="gravel" title="Gravel">Gravel</button>
+      </div>
+      <div class="group" id="drainKind" aria-label="Drain">
+        <button data-kind="foul" title="Foul drains: WCs, sinks, baths">Foul</button>
+        <button data-kind="surface" title="Surface water: roofs, yards, gullies">Surface water</button>
       </div>
       <div class="group" id="treeKind" aria-label="Tree">
         <button data-kind="deciduous" title="Broad-leaved: bare in winter">Broadleaf</button>
@@ -74,6 +80,7 @@
         <button data-mode="orbit" title="Orbit around the model">Orbit</button>
         <button data-mode="walk" title="Walk through at eye level">Walk</button>
       </div>
+      <button id="underground" class="toggle" title="See the drains below ground: the ground becomes see-through and the view can go beneath it">Underground</button>
       <button id="sun" class="toggle" title="Sun study: the real sun for a date, time and place, with shadows">Sun</button>
       <button id="cutaway" class="toggle" title="In orbit view, hide the floors above the one you are editing">Cutaway</button>
       <button id="sync" class="sync" title="Whether the computer running the app is reachable, and when this drawing was last backed up to it">Checking…</button>

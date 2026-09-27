@@ -8,12 +8,14 @@ import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
 import { PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
 import { TREE_DEFAULTS } from '../model/trees';
 import { GRAND_MODELS, catalogueItem } from '../model/furniture';
+import { stretchSummary } from '../model/stretch';
+import { DEFAULT_INVERT, DEFAULT_TANK, FITTING_NAMES, deleteDrainNode, pipeFall, pipeLength, tankVolume } from '../model/drains';
 import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { stairGeometry } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
 import { deleteNode, deleteOpening, deleteWall, finishNodeMove, moveNode, normalize, setWallLength, splitWallAt } from '../model/plan';
-import { DEFAULTS, type OpeningKind, type GlazedStyle, type PatioSurface, type Pillar, type TreeKind, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
+import { DEFAULTS, type OpeningKind, type DrainFitting, type DrainKind, type GlazedStyle, type PatioSurface, type Pillar, type TreeKind, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
 import type { Editor2D } from './editor2d';
 import type { Store } from './store';
 
@@ -34,7 +36,7 @@ export class Panel {
     const plan = this.store.plan;
     this.el.replaceChildren();
     // Only show the panel when there is something to edit, so it doesn't cover the plan.
-    this.el.hidden = !sel && this.editor.tool !== 'wall';
+    this.el.hidden = !sel && this.editor.tool !== 'wall' && this.editor.tool !== 'stretch';
     if (!sel) return this.renderDefaults();
 
     if (sel.kind === 'wall') {
@@ -79,6 +81,8 @@ export class Panel {
     if (sel.kind === 'patio') return this.renderPatio(sel.id);
     if (sel.kind === 'tree') return this.renderTree(sel.id);
     if (sel.kind === 'furniture') return this.renderFurniture(sel.id);
+    if (sel.kind === 'drainNode') return this.renderDrainNode(sel.id);
+    if (sel.kind === 'drainPipe') return this.renderDrainPipe(sel.id);
 
     if (sel.kind === 'node') {
       const n = plan.nodes[sel.id];
@@ -502,6 +506,166 @@ export class Panel {
     this.buttons(btns);
   }
 
+  private renderDrainNode(id: string) {
+    const b = this.store.building;
+    const d = b.drains;
+    const n = d?.nodes[id];
+    if (!d || !n) return;
+    this.title(FITTING_NAMES[n.fitting]);
+    this.select('Fitting', n.fitting, (Object.keys(FITTING_NAMES) as DrainFitting[]).map((f): [string, string] => [f, FITTING_NAMES[f]]), (v) => {
+      const was = n.fitting;
+      n.fitting = v as DrainFitting;
+      // A fresh soakaway or sewer connection takes its usual depth.
+      if ((n.fitting === 'soakaway' || n.fitting === 'sewer') && n.invert < DEFAULT_INVERT[n.fitting] && was !== n.fitting) n.invert = DEFAULT_INVERT[n.fitting];
+      if (n.fitting === 'treatment') n.tank ??= { ...DEFAULT_TANK };
+      this.store.commit();
+      this.render();
+    });
+    this.number('Invert depth', n.invert, 0.01, 0.1, 6, (v) => {
+      n.invert = v;
+      this.store.commit();
+      this.render();
+    }, 'm', n.fitting === 'treatment' ? 'Depth of the inlet pipe below the ground' : 'Depth of the inside bottom of the pipe below the ground here');
+    if (n.fitting === 'chamber') {
+      this.select('Shape', n.round ? 'round' : 'square', [
+        ['square', 'Square'],
+        ['round', 'Round'],
+      ], (v) => {
+        n.round = v === 'round' || undefined;
+        this.store.commit();
+        this.render();
+      });
+    }
+    if (n.fitting === 'treatment') {
+      const t = (n.tank ??= { ...DEFAULT_TANK });
+      this.select('Tank', t.shape, [
+        ['round', 'Round'],
+        ['box', 'Rectangular'],
+      ], (v) => {
+        t.shape = v as 'round' | 'box';
+        this.store.commit();
+        this.render();
+      });
+      this.number(t.shape === 'round' ? 'Diameter' : 'Width', t.width, 0.05, 0.5, 5, (v) => {
+        t.width = v;
+        this.store.commit();
+        this.render();
+      }, 'm');
+      this.number('Tank depth', t.depth, 0.05, 0.5, 5, (v) => {
+        t.depth = v;
+        this.store.commit();
+        this.render();
+      }, 'm');
+      this.note(`About ${tankVolume(t).toFixed(1)} m³. Shown with three access lids (for pump-out and desludging) and the blower kiosk; draw the treated outflow on to a soakaway, drainage field or ditch.`);
+    }
+    const pipes = Object.values(d.pipes).filter((p) => p.a === id || p.b === id);
+    const bad = pipes.map((p) => pipeFall(d, p)).filter((f) => f.verdict !== 'ok');
+    this.note(
+      `${pipes.length} pipe${pipes.length === 1 ? '' : 's'} connected.` +
+        (bad.length ? ` ${bad.length} of them ${bad.some((f) => f.verdict === 'backfall') ? 'run uphill (backfall) or are' : 'are'} outside the usual falls: select a pipe for details.` : '') +
+        ' Drag to move it.',
+    );
+    this.buttons([
+      ['Delete', () => {
+        deleteDrainNode(b, id);
+        this.editor.select(null);
+        this.store.commit();
+      }, true],
+    ]);
+  }
+
+  private renderDrainPipe(id: string) {
+    const d = this.store.building.drains;
+    const p = d?.pipes[id];
+    if (!d || !p) return;
+    this.title('Drain pipe');
+    this.select('Carries', p.kind, [
+      ['foul', 'Foul water'],
+      ['surface', 'Surface water'],
+    ], (v) => {
+      p.kind = v as DrainKind;
+      this.store.commit();
+      this.render();
+    });
+    this.select('Bore', String(p.diameter), [
+      ['100', '100 mm'],
+      ['150', '150 mm'],
+      ['225', '225 mm'],
+    ], (v) => {
+      p.diameter = Number(v);
+      this.store.commit();
+      this.render();
+    });
+    const f = pipeFall(d, p);
+    const a = d.nodes[p.a];
+    const c = d.nodes[p.b];
+    const fall = f.oneIn ? `1 in ${Math.round(f.oneIn)}` : 'level';
+    const verdict = {
+      ok: 'within the usual range.',
+      flat: `flatter than usual (aim for 1 in 40 to 1 in ${p.diameter >= 150 ? 150 : 80}, 1 in 110 at most for 100 mm with a WC on it).`,
+      steep: 'steeper than 1 in 40: fine for short runs, but solids can be left behind.',
+      backfall: 'it runs UPHILL (backfall): make the lower end deeper, or reverse the flow.',
+      level: 'it is level: water will not flow.',
+    }[f.verdict];
+    this.note(`${pipeLength(d, p).toFixed(2)} m long, from ${a.invert.toFixed(2)} m to ${c.invert.toFixed(2)} m deep: a fall of ${fall}, ${verdict}`);
+    this.buttons([
+      ['Reverse flow', () => {
+        [p.a, p.b] = [p.b, p.a];
+        this.store.commit();
+        this.render();
+      }],
+      ['Delete', () => {
+        delete d.pipes[id];
+        this.editor.select(null);
+        this.store.commit();
+      }, true],
+    ]);
+  }
+
+  /** The Stretch tool: what it will move, and moving by an exact amount. */
+  private renderStretch() {
+    const ed = this.editor;
+    this.title('Stretch');
+    if (!ed.stretchBox) {
+      this.note('Drag a box round the part of the house to move: everything inside it moves, and walls crossing its edge stretch or shrink. E.g. to take 1 m out of the middle, box the whole of one end.');
+    } else {
+      const b = ed.stretchBox;
+      const c = stretchSummary(this.store.building, b, ed.stretchAll ? undefined : this.store.activeId);
+      const parts = [
+        `${c.joints} joint${c.joints === 1 ? '' : 's'}`,
+        c.openings && `${c.openings} door${c.openings === 1 ? '' : 's'}/window${c.openings === 1 ? '' : 's'}`,
+        c.furniture && `${c.furniture} piece${c.furniture === 1 ? '' : 's'} of furniture`,
+        c.other && `${c.other} other item${c.other === 1 ? '' : 's'}`,
+        c.drains && `${c.drains} drain point${c.drains === 1 ? '' : 's'}`,
+      ].filter(Boolean);
+      this.note(
+        ed.stretchPicked
+          ? 'Stretched. The box has moved with what it moved: type another amount (or drag again) to move the same things further, or draw a new box.'
+          : `Inside the box (${ed.stretchAll ? 'all floors' : 'this floor'}): ${parts.join(', ')}. Drag inside it, or type how far to move them:`,
+      );
+      const move = { x: 0, y: 0 };
+      this.number('Across (X)', 0, 0.01, -100, 100, (v) => (move.x = v), 'm', 'Positive moves right on the plan, negative left');
+      this.number('Up/down (Y)', 0, 0.01, -100, 100, (v) => (move.y = v), 'm', 'Positive moves down the plan, negative up');
+      this.buttons([
+        ['Stretch', () => {
+          ed.applyStretch(move);
+          this.render();
+        }],
+        ['Clear box', () => {
+          ed.setStretchBox(null);
+          this.render();
+        }],
+      ]);
+    }
+    this.select('Floors', ed.stretchAll ? 'all' : 'this', [
+      ['all', 'All floors'],
+      ['this', 'This floor only'],
+    ], (v) => {
+      ed.stretchAll = v === 'all';
+      this.render();
+    });
+  }
+
   private renderTree(id: string) {
     const level = this.store.plan;
     const t = level.trees?.[id];
@@ -748,6 +912,7 @@ export class Panel {
 
   private renderDefaults() {
     const ed = this.editor;
+    if (ed.tool === 'stretch') return this.renderStretch();
     this.title('New wall');
     this.number('Thickness', ed.wallProps.thickness, 0.01, 0.05, 1, (v) => {
       ed.wallProps.thickness = v;

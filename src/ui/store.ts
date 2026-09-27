@@ -66,6 +66,12 @@ export class Store {
     this.emit();
   }
 
+  /** Show a building as a live edit, from which `commit` or `revert` follow. */
+  preview(b: Building) {
+    this.building = b;
+    this.emit();
+  }
+
   /** Abandon uncommitted live edits. */
   revert() {
     this.restore(this.committed);
