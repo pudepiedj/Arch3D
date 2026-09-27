@@ -377,6 +377,13 @@ button.danger {
   font-size: 13px;
 }
 
+.overlay.recording {
+  top: 12px;
+  bottom: auto;
+  color: var(--danger);
+  font-weight: 600;
+}
+
 .sync {
   display: flex;
   align-items: center;

@@ -106,6 +106,7 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - The panel shows the sun's height and compass direction, and sunrise and sunset.
 - **Location and orientation:** latitude and longitude (from any online map, or **Use this device's location**, which works only over https or on the computer itself), and the compass direction the top of the plan faces. The plan shows a north arrow. These are saved with the drawing.
 - Floors hidden by Cutaway still cast their shadows during a sun study. Broad-leaved trees are in leaf from May to October, turn in autumn and are bare in winter.
+- **Now** makes the sun live: it follows the clock, minute by minute, until you choose a date or time yourself (the Now button stays highlighted while it is live).
 - The **Sun** button opens and closes the panel; the sun stays where you set it (date and time) until you change it, and each device remembers it across reloads. **Plain light** in the panel switches back to a fixed light that shows the model well at any hour (and **Real sun** back again).
 
 **Patios, decks and gravel:**
@@ -144,6 +145,8 @@ The panel edits exact sizes: wall thickness, height and length; opening width, h
 **3D:** *Orbit* to look around the model; *Walk* to explore at eye height. On desktop, click the view to capture the mouse and use W A S D (Shift to hurry). On touch screens, use your left thumb to move and your right thumb to look. You can walk through open doorways, but not through walls.
 
 Plans save automatically in the browser. Use **File → Export/Import** to keep them as JSON files. Undo/redo: Ctrl/⌘+Z, Ctrl/⌘+Shift+Z.
+
+**Orbit movie:** **File → Make orbit movie…** circles the whole house once, from about 30° up, in the current light (the real sun included), and saves a small 640 × 360 video of about 12 seconds (an MP4 where the browser can make one, otherwise WebM), a few hundred kilobytes to a couple of megabytes, ready to send. Keep the window in front while it records.
 
 ## How it works (and why joints don't break)
 

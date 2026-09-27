@@ -87,6 +87,8 @@
           <hr />
           <button id="export" title="Save a file on this device: you choose where in Chrome and Edge; Safari puts it in Downloads">Export JSON (to this device)…</button>
           <button id="import">Import JSON…</button>
+          <hr />
+          <button id="movie" title="A short, small video circling the house from about 30 degrees up, to send to people">Make orbit movie…</button>
           <input id="importFile" type="file" accept="application/json,.json" hidden />
           <hr />
           <span class="version" id="version"></span>
@@ -111,6 +113,7 @@
       <section class="pane" id="viewPane">
         <aside class="panel sunpanel" id="sunPanel" hidden></aside>
         <div class="overlay" id="walkHint" hidden></div>
+        <div class="overlay recording" id="recording" hidden></div>
       </section>
     </main>
     <dialog id="catalogueDialog">

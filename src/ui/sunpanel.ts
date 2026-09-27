@@ -26,6 +26,9 @@ export class SunPanel {
   private siteFields = new Map<'latitude' | 'longitude' | 'north', HTMLInputElement>();
   private message!: HTMLElement;
   private lightBtn!: HTMLButtonElement;
+  private nowBtn!: HTMLButtonElement;
+  /** Following the clock (set by Now) rather than a moment chosen by hand. */
+  private live = false;
 
   constructor(
     private el: HTMLElement,
@@ -35,12 +38,22 @@ export class SunPanel {
     this.build();
     // Come back as it was left: the real sun at the moment last set (on this device).
     try {
-      const saved = JSON.parse(localStorage.getItem(REMEMBER) ?? 'null') as { on: boolean; time: number } | null;
-      if (saved?.time) this.view.setSunTime(new Date(saved.time));
+      const saved = JSON.parse(localStorage.getItem(REMEMBER) ?? 'null') as { on: boolean; time: number; live?: boolean } | null;
+      this.live = !!saved?.live;
+      if (this.live) this.view.setSunTime(new Date());
+      else if (saved?.time) this.view.setSunTime(new Date(saved.time));
       if (saved?.on) this.view.setSunStudy(true);
     } catch {
       // Nothing remembered: plain light, the time now.
     }
+    this.sync();
+    // Live: keep the sun on the clock, checked twice a minute.
+    setInterval(() => {
+      if (!this.live) return;
+      this.view.setSunTime(new Date());
+      this.remember();
+      if (this.open) this.sync();
+    }, 30000);
     store.subscribe(() => {
       if (!this.el.hidden && !this.el.contains(document.activeElement)) this.sync();
     });
@@ -70,7 +83,7 @@ export class SunPanel {
 
   private remember() {
     try {
-      localStorage.setItem(REMEMBER, JSON.stringify({ on: this.view.sunStudy, time: this.view.sunTime.getTime() }));
+      localStorage.setItem(REMEMBER, JSON.stringify({ on: this.view.sunStudy, time: this.view.sunTime.getTime(), live: this.live }));
     } catch {
       // Not remembered; no matter.
     }
@@ -80,7 +93,9 @@ export class SunPanel {
     return this.view.sunTime;
   }
 
-  private setTime(t: Date) {
+  /** Move the sun to a moment; `live` keeps it following the clock from there (Now). */
+  private setTime(t: Date, live = false) {
+    this.live = live;
     this.view.setSunTime(t);
     if (!this.view.sunStudy) this.view.setSunStudy(true);
     this.remember();
@@ -111,7 +126,9 @@ export class SunPanel {
         this.setTime(new Date(t.getFullYear(), m, d, t.getHours(), t.getMinutes()));
       }));
     }
-    quick.append(this.button('Now', () => this.setTime(new Date())));
+    this.nowBtn = this.button('Now', () => this.setTime(new Date(), true));
+    this.nowBtn.title = 'The sun as it is now, following the clock until you choose another date or time';
+    quick.append(this.nowBtn);
     el.append(quick);
 
     // Time of day, in 5 minute steps.
@@ -248,6 +265,7 @@ export class SunPanel {
   /** Put the controls and read-out in step with the current time and site. */
   private sync() {
     this.lightBtn.textContent = this.view.sunStudy ? 'Plain light' : 'Real sun';
+    this.nowBtn.classList.toggle('on', this.live);
     const t = this.time;
     const start = new Date(t.getFullYear(), 0, 1);
     this.dateInput.value = String(Math.round((new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime() - start.getTime()) / DAY));
@@ -265,6 +283,7 @@ export class SunPanel {
     } else lines.push('The sun is below the horizon');
     lines.push(rise && set ? `Sunrise ${hm(rise)} · sunset ${hm(set)}` : 'No sunrise or sunset today');
     if (!this.store.building.site) lines.push(`Location not set: showing ${DEFAULT_SITE.latitude}° N (London)`);
+    if (this.live) lines.push('Live: following the clock');
     if (!this.view.sunStudy) lines.push('Plain light is on: press Real sun (or move a slider) to see the sun for this time');
     this.readout.replaceChildren(...lines.map((l) => Object.assign(document.createElement('span'), { textContent: l })));
   }

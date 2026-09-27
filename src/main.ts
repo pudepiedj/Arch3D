@@ -352,21 +352,24 @@ $('#openShared').addEventListener('click', async () => {
   dialog.showModal();
 });
 
-/**
- * Save the drawing as a file on this device. Where the browser can (Chrome, Edge) this asks
- * where to put it; otherwise (Safari) it goes to the Downloads folder, as browsers insist.
- */
+/** Save the drawing as a file on this device. */
 async function exportCopy() {
   closeMenu();
-  const text = JSON.stringify(store.building, null, 2);
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
-  const suggested = `house-${stamp}.arch3d.json`;
+  await saveFile(new Blob([JSON.stringify(store.building, null, 2)], { type: 'application/json' }), `house-${stamp}.arch3d.json`, 'Arch3D drawing', '.json');
+}
+
+/**
+ * Save a file on this device. Where the browser can (Chrome, Edge) this asks where to put
+ * it; otherwise (Safari) it goes to the Downloads folder, as browsers insist.
+ */
+async function saveFile(blob: Blob, suggested: string, description: string, ext: string) {
   const picker = (window as unknown as { showSaveFilePicker?: (o: unknown) => Promise<{ createWritable(): Promise<{ write(d: string): Promise<void>; close(): Promise<void> }> }> }).showSaveFilePicker;
   if (picker) {
     try {
-      const handle = await picker({ suggestedName: suggested, types: [{ description: 'Arch3D drawing', accept: { 'application/json': ['.json'] } }] });
+      const handle = await picker({ suggestedName: suggested, types: [{ description, accept: { [blob.type || 'application/octet-stream']: [ext] } }] });
       const out = await handle.createWritable();
-      await out.write(text);
+      await out.write(blob as unknown as string);
       await out.close();
       return;
     } catch (err) {
@@ -375,12 +378,32 @@ async function exportCopy() {
     }
   }
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  a.href = URL.createObjectURL(blob);
   a.download = suggested;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 $('#export').addEventListener('click', () => void exportCopy());
+
+// A short movie circling the house, to send to people.
+$('#movie').addEventListener('click', async () => {
+  closeMenu();
+  if (layout === 'plan') setLayout('split');
+  const note = $('#recording');
+  note.hidden = false;
+  note.textContent = 'Recording the orbit movie… keep this window in front';
+  try {
+    const { blob, ext } = await view.recordOrbit(12, (f) => (note.textContent = `● Recording orbit movie ${Math.round(f * 100)}%`));
+    note.textContent = 'Saving the movie…';
+    const stamp = new Date().toISOString().slice(0, 10);
+    await saveFile(blob, `house-orbit-${stamp}.${ext}`, 'Video', `.${ext}`);
+  } catch (err) {
+    alert(`Could not make the movie: ${(err as Error).message}`);
+  } finally {
+    note.hidden = true;
+    syncToolbar();
+  }
+});
 $('#import').addEventListener('click', () => $('#importFile').click());
 $('#importFile').addEventListener('change', async (e) => {
   const f = (e.target as HTMLInputElement).files?.[0];

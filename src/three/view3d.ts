@@ -357,9 +357,79 @@ export class View3D {
     if (this.touchLook?.id === e.pointerId) this.touchLook = null;
   }
 
+  /** While an orbit movie is being made: where the camera is on its circle. */
+  private flight: { centre: THREE.Vector3; radius: number; height: number; start: number; seconds: number } | null = null;
+
+  /**
+   * Make a movie of the camera circling the whole house once, from about 30 degrees up,
+   * in the current light. Low resolution (640 x 360) so the file is small enough to send.
+   * Resolves with the video, and its file extension (mp4 where the browser can, else webm).
+   */
+  async recordOrbit(seconds = 12, onProgress?: (f: number) => void): Promise<{ blob: Blob; ext: string }> {
+    const canvas = this.renderer.domElement;
+    const types = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
+    const type = types.find((t) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t));
+    if (!type || !canvas.captureStream) throw new Error('This browser cannot record video from the page.');
+    // The whole house, from outside.
+    const wasMode = this.mode;
+    const wasCutaway = this.cutaway;
+    if (wasMode === 'walk') this.setMode('orbit');
+    if (wasCutaway) this.setCutaway(false);
+    const box = new THREE.Box3().setFromObject(this.planObj!);
+    const centre = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const fitRadius = Math.max(size.x, size.z, size.y * 1.6) / 2;
+    const distance = (fitRadius / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) * 0.9;
+    const up = THREE.MathUtils.degToRad(30);
+    const saved = { pos: this.camera.position.clone(), target: this.orbit.target.clone() };
+    // Record at a small size, whatever the window is.
+    this.renderer.setPixelRatio(1);
+    this.renderer.setSize(640, 360, false);
+    this.camera.aspect = 640 / 360;
+    this.camera.updateProjectionMatrix();
+    this.orbit.enabled = false;
+    this.flight = { centre, radius: distance * Math.cos(up), height: distance * Math.sin(up), start: performance.now(), seconds };
+    const stream = canvas.captureStream(30);
+    const recorder = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 1_500_000 });
+    const chunks: Blob[] = [];
+    recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    const done = new Promise<void>((ok) => (recorder.onstop = () => ok()));
+    recorder.start(500);
+    await new Promise<void>((ok) => {
+      const step = () => {
+        const f = (performance.now() - this.flight!.start) / (seconds * 1000);
+        onProgress?.(Math.min(1, f));
+        if (f >= 1) ok();
+        else requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+    recorder.stop();
+    await done;
+    stream.getTracks().forEach((t) => t.stop());
+    // Put everything back as it was.
+    this.flight = null;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.resize();
+    this.camera.position.copy(saved.pos);
+    this.orbit.target.copy(saved.target);
+    this.orbit.enabled = this.mode === 'orbit';
+    if (wasCutaway) this.setCutaway(true);
+    if (wasMode === 'walk') this.setMode('walk');
+    return { blob: new Blob(chunks, { type: type.split(';')[0] }), ext: type.startsWith('video/mp4') ? 'mp4' : 'webm' };
+  }
+
   private tick() {
     this.timer.update();
     const dt = Math.min(this.timer.getDelta(), 0.1);
+    if (this.flight) {
+      const f = this.flight;
+      const a = ((performance.now() - f.start) / (f.seconds * 1000)) * Math.PI * 2;
+      this.camera.position.set(f.centre.x + Math.cos(a) * f.radius, f.centre.y + f.height, f.centre.z + Math.sin(a) * f.radius);
+      this.camera.lookAt(f.centre);
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
     if (this.mode === 'orbit') this.orbit.update();
     else this.walk(dt);
     this.swingDoors(dt);
@@ -430,6 +500,7 @@ export class View3D {
   }
 
   private resize() {
+    if (this.flight) return; // recording a movie at its own size
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
     if (!w || !h) return;
