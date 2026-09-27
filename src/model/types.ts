@@ -171,6 +171,11 @@ export interface Roof {
   /** Gable ends glazed: a window filling each gable triangle above the wall plate. */
   glazedGables?: boolean;
   /**
+   * Flat roofs: height of the parapet wall round the open edges, above the roof surface.
+   * Unset means the usual 25 cm; 0 means none (the roof overhangs its walls instead).
+   */
+  parapet?: number;
+  /**
    * Edges set by hand to a sloping eave or a vertical gable end, identified by the
    * midpoint of the edge (so they survive small edits to the walls).
    */

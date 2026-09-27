@@ -139,6 +139,7 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 
 **Roofs:** every floor is roofed wherever nothing is built above it, so a house can have several roofs:
 - **Defaults:** the top floor gets a gable roof, and single-storey parts of lower floors (extensions) get flat roofs. Change a floor's default with **Floor & roof…**: Gable, Hipped, Flat or None, plus pitch and overhang.
+- **Parapets:** every flat roof has a 25 cm parapet round its open edges: the outside walls carried up past the roof, rendered like them, 20 cm thick with a coping on top, and no overhang. Edges against a taller wall don't get one. Set its height in the roof's panel (**Parapet**); 0 removes it, and the roof overhangs its walls as before (the **Overhang** field comes back).
 - **Different roofs for different parts:** choose the **Roof** tool (R) and click a roof area to give it its own type, pitch and overhang. For example, one extension gabled and the others flat.
 - **Gable ends where you want them:** with a roof selected, click any of its edges to switch it between a sloping eave and a vertical gable end. By default a roof is gabled at both ends of its main ridge. A roof against a taller wall runs its ridge into the wall, with its gable at the far end.
 - **Cross gables:** for a window bay or projection that is part of the house, click the bay's front edge of the main roof to make it a gable. The bay gets its own ridge, meeting the main roof in valleys.

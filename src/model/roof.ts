@@ -57,9 +57,25 @@ export interface RoofGeometry {
   /** Plan drawing: the eave outline, plus ridges, hips and valleys. */
   outline: Vec2[];
   lines: [Vec2, Vec2][];
+  /**
+   * A flat roof's parapet: its outside face on `outer` (the walls' outside faces), its inside
+   * face on `inner`, along the edges marked `on` (not against a taller wall), rising from the
+   * wall top `z0` to `z1`, with the roof surface at `roof` inside it.
+   */
+  parapet?: { outer: Vec2[]; inner: Vec2[]; on: boolean[]; z0: number; z1: number; roof: number };
 }
 
 export type EdgeRole = 'eave' | 'gable' | 'wall';
+
+/** Flat roofs have a parapet this high round their open edges unless told otherwise. */
+export const DEFAULT_PARAPET = 0.25;
+/** A parapet is a little thinner than an outside wall. */
+export const PARAPET_THICKNESS = 0.2;
+
+/** Height of a roof's parapet above its surface (0 for none, and for pitched roofs). */
+export function parapetHeight(roof: Roof): number {
+  return roof.kind === 'flat' ? Math.max(0, roof.parapet ?? DEFAULT_PARAPET) : 0;
+}
 
 /** One roof on a floor: an uncovered area of the floor, or a hand-drawn section. */
 export interface LevelRoof {
@@ -394,6 +410,26 @@ export function buildRoof(ring: Vec2[], roles: EdgeRole[], roof: Roof, height: n
   // Eaves overhang the walls; gable ends and wall edges stay in the wall plane.
   const eave = outsetLoop(ring, roles.map((r) => (r === 'eave' ? roof.overhang : 0)));
   const out: RoofGeometry = { faces: [], eaves: [], outline: eave, lines: [] };
+
+  if (roof.kind === 'flat' && parapetHeight(roof) > 0) {
+    // The walls carry on up past the roof as a parapet: no overhang, and no fascia.
+    const top = height + FLAT_THICKNESS;
+    const on = roles.map((r) => r !== 'wall');
+    return {
+      faces: [{ pts: ring.map((p) => ({ ...p, z: top })), kind: 'flat' }],
+      eaves: [],
+      outline: ring.slice(),
+      lines: [],
+      parapet: {
+        outer: ring.slice(),
+        inner: outsetLoop(ring, on.map((o) => (o ? -PARAPET_THICKNESS : 0))),
+        on,
+        z0: height,
+        z1: top + parapetHeight(roof),
+        roof: top,
+      },
+    };
+  }
 
   if (roof.kind === 'flat') {
     const top = height + FLAT_THICKNESS;

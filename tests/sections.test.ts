@@ -117,7 +117,7 @@ describe('flat roof sections drawn over part of the house', () => {
 
   it('one drawn mostly over the house does not overhang its edges inside the house', () => {
     const { b, g } = bungalow();
-    section(g, [[2, 5], [6, 5], [6, 8.5], [2, 8.5]]);
+    section(g, [[2, 5], [6, 5], [6, 8.5], [2, 8.5]], { ...FLAT, parapet: 0 });
     const r = levelRoofs(b, g).find((x) => x.id === 'section:s')!;
     const out = r.geometry!.outline;
     // Its inner edge (y = 5) and sides inside the house stay where they were drawn...
@@ -125,6 +125,32 @@ describe('flat roof sections drawn over part of the house', () => {
     expect(Math.min(...out.map((p) => p.x))).toBeGreaterThan(2 - 1e-6);
     // ...while the free edge outside the house still overhangs.
     expect(Math.max(...out.map((p) => p.y))).toBeGreaterThan(8.5 + 0.2);
+  });
+
+  it('flat roofs have a 25 cm parapet round their open edges, flush with the walls', () => {
+    const { b, g } = bungalow();
+    section(g, [[2, 5], [6, 5], [6, 8.5], [2, 8.5]]);
+    const r = levelRoofs(b, g).find((x) => x.id === 'section:s')!;
+    const p = r.geometry!.parapet!;
+    expect(p.z1 - p.roof).toBeCloseTo(0.25);
+    // No overhang: the parapet's outside face is the edge of the roof.
+    expect(Math.max(...p.outer.map((q) => q.y))).toBeLessThan(8.5 + 1e-6);
+    // Only the free edges get one, not those resting on the house.
+    expect(p.on.some((o) => o)).toBe(true);
+    expect(p.on.every((o, i) => o === (r.roles[i] !== 'wall'))).toBe(true);
+    // Its inside face is 20 cm in from the outside.
+    const i = p.on.findIndex((o) => o);
+    const a = p.outer[i];
+    const c = p.outer[(i + 1) % p.outer.length];
+    const q = p.inner[i];
+    const d = Math.abs((c.x - a.x) * (q.y - a.y) - (c.y - a.y) * (q.x - a.x)) / Math.hypot(c.x - a.x, c.y - a.y);
+    expect(d).toBeCloseTo(0.2);
+  });
+
+  it('a pitched roof, or a parapet of 0, has none', () => {
+    const { b, g } = bungalow();
+    section(g, [[2, 5], [6, 5], [6, 8.5], [2, 8.5]], { ...FLAT, parapet: 0 });
+    expect(levelRoofs(b, g).find((x) => x.id === 'section:s')!.geometry!.parapet).toBeUndefined();
   });
 
   it('pitched sections keep their edges inside the house for gables', () => {

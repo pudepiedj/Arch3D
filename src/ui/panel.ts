@@ -2,7 +2,7 @@
 // clean-up (normalize), so e.g. thickening a wall re-mitres its corners and re-fits its openings.
 
 import { addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
-import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, roofAreaRings, setAreaRoof } from '../model/roof';
+import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, parapetHeight, roofAreaRings, setAreaRoof } from '../model/roof';
 import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
 import { PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
@@ -898,7 +898,10 @@ export class Panel {
         ['glazed', 'Glazed (triangular window)'],
       ], (v) => set({ glazedGables: v === 'glazed' || undefined }));
     }
-    if (roof.kind !== 'none') {
+    if (roof.kind === 'flat') {
+      this.number('Parapet', parapetHeight(roof), 0.05, 0, 1.2, (v) => set({ parapet: v }), 'm', 'Height of the low wall round the edge of the flat roof, above the roof; 0 for none (the roof overhangs the walls instead)');
+    }
+    if (roof.kind !== 'none' && !parapetHeight(roof)) {
       this.number('Overhang', roof.overhang, 0.05, 0, 1.5, (v) => set({ overhang: v }), 'm', 'How far the eaves project past the walls');
     }
   }
