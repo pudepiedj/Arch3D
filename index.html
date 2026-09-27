@@ -157,6 +157,12 @@
         <aside class="panel sunpanel" id="sunPanel" hidden></aside>
         <div class="overlay" id="walkHint" hidden></div>
         <div class="overlay recording" id="recording" hidden></div>
+        <div class="glcrash" id="glcrash" hidden>
+          <strong>The 3D view has stopped.</strong>
+          <p>The browser's graphics crashed or ran out of memory, so it switched the 3D view off. Your drawing is safe: it is kept in this browser and backed up to the computer.</p>
+          <p>Restart the 3D view to carry on. If it stops again straight away, quit the browser completely and open it again (Chrome turns 3D off for a page after repeated crashes until it restarts).</p>
+          <button id="glRestart" class="on">Restart the 3D view</button>
+        </div>
       </section>
     </main>
     <dialog id="catalogueDialog">

@@ -1007,3 +1007,30 @@ button.icon {
 #planPane.drawing .hint {
   display: none;
 }
+
+/* Shown over the 3D view if the browser's graphics give out. */
+.glcrash {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 32px max(24px, 12%);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+}
+
+.glcrash p {
+  margin: 4px 0;
+  max-width: 52ch;
+  color: var(--muted);
+}
+
+.glcrash button {
+  margin-top: 10px;
+  min-height: 44px;
+}

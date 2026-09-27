@@ -1273,5 +1273,7 @@ export function disposeObject(obj: THREE.Object3D) {
   obj.traverse((o) => {
     const m = o as THREE.Mesh;
     if (m.isMesh) m.geometry.dispose();
+    // An instanced mesh (fence boards) has its own buffers besides its geometry.
+    if ((o as THREE.InstancedMesh).isInstancedMesh) (o as THREE.InstancedMesh).dispose();
   });
 }
