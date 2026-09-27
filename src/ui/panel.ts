@@ -34,7 +34,7 @@ export class Panel {
     const plan = this.store.plan;
     this.el.replaceChildren();
     // Only show the panel when there is something to edit, so it doesn't cover the plan.
-    this.el.hidden = !sel && this.editor.tool !== 'wall';
+    this.el.hidden = !sel && this.editor.tool !== 'wall' && this.editor.tool !== 'stretch';
     if (!sel) return this.renderDefaults();
 
     if (sel.kind === 'wall') {
@@ -502,6 +502,37 @@ export class Panel {
     this.buttons(btns);
   }
 
+  /** The Stretch tool: what it will move, and moving by an exact amount. */
+  private renderStretch() {
+    const ed = this.editor;
+    this.title('Stretch');
+    if (!ed.stretchBox) {
+      this.note('Drag a box round the part of the house to move: everything inside it moves, and walls crossing its edge stretch or shrink. E.g. to take 1 m out of the middle, box the whole of one end.');
+    } else {
+      const b = ed.stretchBox;
+      this.note(`Box ${(b.x1 - b.x0).toFixed(2)} × ${(b.y1 - b.y0).toFixed(2)} m. Drag inside it to stretch, or type the total move from where it started:`);
+      const move = { ...ed.stretchTotal };
+      this.number('Across (X)', move.x, 0.01, -100, 100, (v) => (move.x = v), 'm', 'Positive moves right on the plan, negative left');
+      this.number('Up/down (Y)', move.y, 0.01, -100, 100, (v) => (move.y = v), 'm', 'Positive moves down the plan, negative up');
+      this.buttons([
+        ['Stretch', () => {
+          ed.applyStretch(move);
+          this.render();
+        }],
+        ['Clear box', () => {
+          ed.setStretchBox(null);
+          this.render();
+        }],
+      ]);
+    }
+    this.select('Floors', ed.stretchAll ? 'all' : 'this', [
+      ['all', 'All floors'],
+      ['this', 'This floor only'],
+    ], (v) => {
+      ed.stretchAll = v === 'all';
+    });
+  }
+
   private renderTree(id: string) {
     const level = this.store.plan;
     const t = level.trees?.[id];
@@ -748,6 +779,7 @@ export class Panel {
 
   private renderDefaults() {
     const ed = this.editor;
+    if (ed.tool === 'stretch') return this.renderStretch();
     this.title('New wall');
     this.number('Thickness', ed.wallProps.thickness, 0.01, 0.05, 1, (v) => {
       ed.wallProps.thickness = v;

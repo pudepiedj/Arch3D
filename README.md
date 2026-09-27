@@ -41,6 +41,7 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 | **Patio** (T) | Choose Paving, Decking or Gravel, then click the corners of the area. Click the first corner, double-click or press Enter to finish. |
 | **Tree** (E) | Choose Broadleaf or Conifer, then click to plant one. Drag the trunk to move it; set the height and crown spread in the panel. |
 | **Furniture** (F) | Opens the catalogue. Pick a piece, then click to place it: near a wall it turns its back to the wall and sits tight against it. [ and ] turn it in 15° steps. Esc when done. |
+| **Stretch** (Q) | Drag a box round the part of the house to move, then drag inside it (straight across or up and down; Shift for any direction), or type the total move in the panel. Everything inside moves together (joints, doors and windows, stairs, furniture, pillars, roof items, trees, patio and roof corners) and walls crossing the box's edge stretch or shrink, on every floor at once or just this one. So "this part is 1 m too long" is one move. Esc clears the box. |
 | **Split** (X) | Click on a wall to add a joint, which is then selected so you can drag it (to make a bay, a nib or a step in the wall). |
 
 **Furniture:** about 50 pieces in nine groups:

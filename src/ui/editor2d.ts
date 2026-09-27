@@ -20,6 +20,7 @@ import { addPillar, pillarAt } from '../model/pillars';
 import { addPatio, patioShapes } from '../model/patios';
 import { addTree, treeAt, trunkRadius } from '../model/trees';
 import { siteOf } from '../model/sun';
+import { type Box, boxFrom, inBox, stretch } from '../model/stretch';
 import { addFurniture, againstWall, catalogueItem, footprint } from '../model/furniture';
 import { drawFurnitureSymbol } from './furniture2d';
 import { addChimney, addRooflight, addSolarArray, chimneyFootprint, rooflightGeometry, solarGeometry } from '../model/roofitems';
@@ -51,7 +52,7 @@ import { detectRooms } from '../model/rooms';
 import type { Furniture, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture';
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch';
 export type Selection = {
   kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture';
   id: string;
@@ -65,6 +66,8 @@ type Gesture =
   | { kind: 'dragOpening'; id: string }
   | { kind: 'dragStair'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'dragPillar'; id: string }
+  | { kind: 'stretchBox'; start: Vec2 }
+  | { kind: 'stretchMove'; start: Vec2 }
   | { kind: 'dragFurniture'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'dragPatio'; id: string; start: Vec2; pts0: Vec2[] }
   | { kind: 'dragRoofItem'; what: 'chimney' | 'solar' | 'rooflight' | 'tree'; id: string; start: Vec2; x0: number; y0: number }
@@ -102,6 +105,20 @@ export class Editor2D {
   /** Catalogue entry the Furniture tool places, and the angle it is placed at. */
   furnitureKind = 'grand';
   furnitureAngle = 0;
+  /**
+   * Stretch tool. The box is where it was drawn; every stretch is measured from the drawing
+   * as it was then (`stretchBase`), so the box always moves exactly what it first enclosed,
+   * and `stretchTotal` is the whole move so far (the box is shown moved by it).
+   */
+  stretchBox: Box | null = null;
+  stretchTotal: Vec2 = { x: 0, y: 0 };
+  private stretchBase: string | null = null;
+  /** The drawing as the last stretch left it: if it has changed since, start again from it. */
+  private stretchLeft: string | null = null;
+  private stretchDraft: Box | null = null;
+  private stretchBy: Vec2 | null = null;
+  /** Stretch every floor (true) or only the one being edited. */
+  stretchAll = true;
   /** A copied door or window: its exact type and size. */
   clipboard: OpeningTemplate | null = null;
   ortho = false;
@@ -173,6 +190,7 @@ export class Editor2D {
     if (this.tool === 'wall' && t !== 'wall') this.finishChain();
     this.stairStart = null;
     this.sectionPts = [];
+    if (t !== 'stretch' && this.stretchBox) this.setStretchBox(null);
     this.tool = t;
     this.onToolChange?.();
     this.requestRender();
@@ -440,6 +458,14 @@ export class Editor2D {
       return;
     }
 
+    if (this.tool === 'stretch') {
+      // Inside the box: drag to stretch. Anywhere else: drag out a new box.
+      const w = this.toWorld(s);
+      const shown = this.shownStretchBox();
+      this.gesture = shown && inBox(shown, w) ? { kind: 'stretchMove', start: w } : { kind: 'stretchBox', start: w };
+      return;
+    }
+
     if (this.tool === 'select') {
       // Pressing on what is already selected keeps it (to drag it); clicking it again without
       // dragging then moves on to the next thing underneath (see onUp).
@@ -517,6 +543,21 @@ export class Editor2D {
     const plan = this.plan;
     const cur = this.gesture!;
     switch (cur.kind) {
+      case 'stretchBox': {
+        const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
+        this.stretchDraft = boxFrom(cur.start, { x: snapTo(w.x), y: snapTo(w.y) });
+        this.requestRender();
+        break;
+      }
+      case 'stretchMove': {
+        // Straight across or straight up and down (Shift for any direction), to the grid.
+        let d = sub(w, cur.start);
+        if (!e.shiftKey) d = Math.abs(d.x) >= Math.abs(d.y) ? { x: d.x, y: 0 } : { x: 0, y: d.y };
+        const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
+        d = { x: snapTo(d.x), y: snapTo(d.y) };
+        this.previewStretch({ x: this.stretchTotal.x + d.x, y: this.stretchTotal.y + d.y });
+        break;
+      }
       case 'pan':
         this.view.ox += s.x - cur.last.x;
         this.view.oy += s.y - cur.last.y;
@@ -625,7 +666,9 @@ export class Editor2D {
     this.gesture = null;
     this.lastGuides = [];
     if (cancelled) {
-      if (this.dragging && g.kind.startsWith('drag')) this.store.revert();
+      if (this.dragging && (g.kind.startsWith('drag') || g.kind === 'stretchMove')) this.store.revert();
+      this.stretchBy = null;
+      this.stretchDraft = null;
       return;
     }
     const plan = this.plan;
@@ -657,6 +700,19 @@ export class Editor2D {
         break;
       case 'click':
         if (!this.dragging) this.click(this.toWorld(this.eventPoint(e)));
+        break;
+      case 'stretchBox': {
+        const b = this.stretchDraft;
+        this.stretchDraft = null;
+        // A click (no drag), or a tiny box, clears the box.
+        this.setStretchBox(this.dragging && b && b.x1 - b.x0 > 0.1 && b.y1 - b.y0 > 0.1 ? b : null);
+        this.requestRender();
+        break;
+      }
+      case 'stretchMove':
+        if (this.dragging && this.stretchBy) this.finishStretch();
+        else this.store.revert();
+        this.stretchBy = null;
         break;
     }
     // A click (no drag) on the selected thing: select the next thing under it.
@@ -729,6 +785,59 @@ export class Editor2D {
     if (bx) guides.push({ from: bx, to: out });
     if (by) guides.push({ from: by, to: out });
     return { p: out, guides };
+  }
+
+  /** Start (or clear) a stretch box: later stretches are measured from the drawing as it is now. */
+  setStretchBox(b: Box | null) {
+    this.stretchBox = b;
+    this.stretchTotal = { x: 0, y: 0 };
+    this.stretchBase = b ? JSON.stringify(this.store.building) : null;
+    this.stretchLeft = this.stretchBase;
+    this.onToolChange?.();
+    this.requestRender();
+  }
+
+  /** The box as shown: where it was drawn, moved by the stretch so far. */
+  private shownStretchBox(): Box | null {
+    const b = this.stretchBox;
+    if (!b) return null;
+    const d = this.stretchBy ?? this.stretchTotal;
+    return { x0: b.x0 + d.x, y0: b.y0 + d.y, x1: b.x1 + d.x, y1: b.y1 + d.y };
+  }
+
+  /** Show the drawing stretched by a total move d from when the box was drawn, live. */
+  private previewStretch(d: Vec2) {
+    if (!this.stretchBox) return;
+    // Edited (or undone) since the last stretch: carry on from the drawing as it is now.
+    if (JSON.stringify(this.store.building) !== this.stretchLeft && !this.stretchBy) {
+      const b = this.shownStretchBox()!;
+      d = { x: d.x - this.stretchTotal.x, y: d.y - this.stretchTotal.y };
+      this.stretchBox = b;
+      this.stretchTotal = { x: 0, y: 0 };
+      this.stretchBase = JSON.stringify(this.store.building);
+    }
+    this.store.preview(JSON.parse(this.stretchBase!));
+    stretch(this.store.building, this.stretchBox, d, this.stretchAll ? undefined : this.store.activeId);
+    this.stretchBy = d;
+    this.store.changed();
+  }
+
+  /** Keep the stretch shown. */
+  private finishStretch() {
+    const d = this.stretchBy;
+    if (!d || !this.stretchBox) return;
+    this.store.commit();
+    this.stretchTotal = d;
+    this.stretchBy = null;
+    this.stretchLeft = JSON.stringify(this.store.building);
+    this.onToolChange?.();
+  }
+
+  /** Stretch so that the total move since the box was drawn is d (from the panel). */
+  applyStretch(d: Vec2) {
+    if (!this.stretchBox) return;
+    this.previewStretch(d);
+    this.finishStretch();
   }
 
   /** Turn the selected piece (or the one about to be placed) by a step. */
@@ -953,7 +1062,9 @@ export class Editor2D {
         if (this.sectionPts.length) this.finishOutline();
         break;
       case 'Escape':
-        if (this.sectionPts.length) {
+        if (this.stretchBox) {
+          this.setStretchBox(null);
+        } else if (this.sectionPts.length) {
           this.sectionPts = [];
           this.requestRender();
         } else if (this.stairStart) {
@@ -1009,6 +1120,9 @@ export class Editor2D {
         break;
       case 'k':
         this.setTool('glazed');
+        break;
+      case 'q':
+        this.setTool('stretch');
         break;
       case 'f':
         this.onOpenCatalogue?.();
@@ -1400,6 +1514,37 @@ export class Editor2D {
     ctx.restore();
   }
 
+  /** The stretch box, with the joints that will move marked, and the size of the move. */
+  private drawStretch(C: Record<string, string>) {
+    const ctx = this.ctx;
+    const b = this.stretchDraft ?? this.shownStretchBox();
+    if (!b) return;
+    const p = this.toScreen({ x: b.x0, y: b.y0 });
+    const q = this.toScreen({ x: b.x1, y: b.y1 });
+    ctx.fillStyle = hexAlpha(C.accent, 0.08);
+    ctx.fillRect(p.x, p.y, q.x - p.x, q.y - p.y);
+    ctx.strokeStyle = C.accent;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(p.x, p.y, q.x - p.x, q.y - p.y);
+    ctx.setLineDash([]);
+    // The joints inside (they move; walls to them stretch).
+    ctx.fillStyle = C.accent;
+    for (const n of Object.values(this.plan.nodes)) {
+      if (!inBox(b, n)) continue;
+      const s = this.toScreen(n);
+      ctx.fillRect(s.x - 3.5, s.y - 3.5, 7, 7);
+    }
+    const d = this.stretchBy ?? this.stretchTotal;
+    if (d.x || d.y) {
+      const len = Math.hypot(d.x, d.y);
+      const sign = (d.x || d.y) < 0 ? '−' : '+';
+      ctx.font = '600 13px system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(`${sign}${len.toFixed(2)} m`, q.x + 8, p.y + 16);
+    }
+  }
+
   /** Trees, seen from above: a translucent crown, and the trunk. */
   private drawTrees(C: Record<string, string>) {
     const ctx = this.ctx;
@@ -1710,6 +1855,7 @@ export class Editor2D {
     this.drawTrees(C);
     this.drawNorth(C, W, H);
     this.drawToolPreview(C);
+    if (this.tool === 'stretch') this.drawStretch(C);
 
     for (const g of this.lastGuides) this.guide(g.from, g.to, C.accent);
     const sel = this.selection;
