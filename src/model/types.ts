@@ -266,7 +266,7 @@ export interface Furniture {
   stool?: boolean;
 }
 
-export type DrainFitting = 'junction' | 'chamber' | 'gully' | 'downpipe' | 'soakaway' | 'sewer';
+export type DrainFitting = 'junction' | 'chamber' | 'gully' | 'downpipe' | 'soakaway' | 'sewer' | 'treatment';
 export type DrainKind = 'foul' | 'surface';
 
 /** A point on the drains: a fitting, or just a bend or junction in the pipes. */
@@ -277,6 +277,8 @@ export interface DrainNode {
   fitting: DrainFitting;
   /** Depth of the pipe's invert (the inside bottom of the pipe) below the ground, in m. */
   invert: number;
+  /** Treatment plant: tank shape, width (or diameter) and depth, in m. */
+  tank?: { shape: 'round' | 'box'; width: number; depth: number };
 }
 
 /** A pipe run from one drain node to another; water flows from `a` to `b`. */

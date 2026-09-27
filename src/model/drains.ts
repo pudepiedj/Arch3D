@@ -13,7 +13,16 @@ export const DEFAULT_INVERT: Record<DrainFitting, number> = {
   downpipe: 0.45,
   soakaway: 1.2,
   sewer: 1.5,
+  treatment: 0.75,
 };
+
+/** A new treatment plant's tank: about 2 m³. */
+export const DEFAULT_TANK = { shape: 'round' as const, width: 1.3, depth: 1.6 };
+
+/** Volume of a treatment plant's tank, in m³. */
+export function tankVolume(t: { shape: 'round' | 'box'; width: number; depth: number }): number {
+  return t.shape === 'round' ? Math.PI * (t.width / 2) ** 2 * t.depth : t.width * t.width * t.depth;
+}
 
 export const FITTING_NAMES: Record<DrainFitting, string> = {
   junction: 'Bend or junction',
@@ -22,6 +31,7 @@ export const FITTING_NAMES: Record<DrainFitting, string> = {
   downpipe: 'Rainwater downpipe',
   soakaway: 'Soakaway',
   sewer: 'Sewer connection',
+  treatment: 'Sewage treatment plant',
 };
 
 export function drainsOf(b: Building): Drains {
@@ -33,6 +43,7 @@ export function addDrainNode(b: Building, p: Vec2, fitting: DrainFitting = 'junc
   const d = drainsOf(b);
   const id = `dn${b.nextId++}`;
   const n: DrainNode = { id, x: p.x, y: p.y, fitting, invert: invert ?? DEFAULT_INVERT[fitting] };
+  if (fitting === 'treatment') n.tank = { ...DEFAULT_TANK };
   d.nodes[id] = n;
   return n;
 }

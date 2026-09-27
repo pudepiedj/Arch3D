@@ -16,6 +16,9 @@ const M = {
   downpipe: mat(0x2b2d31, { roughness: 0.5 }),
   soakaway: mat(0x4f8fd0, { transparent: true, opacity: 0.35, depthWrite: false }),
   sewer: mat(0x5a4a3a),
+  tank: mat(0x5f7d5a, { transparent: true, opacity: 0.6, depthWrite: false }),
+  lid: mat(0x2f4f35, { roughness: 0.6 }),
+  kiosk: mat(0x3f5f45, { roughness: 0.6 }),
 };
 
 export function buildDrains(d: Drains): { below: THREE.Group; surface: THREE.Group } {
@@ -66,6 +69,24 @@ export function buildDrains(d: Drains): { below: THREE.Group; surface: THREE.Gro
       case 'sewer':
         add(below, new THREE.SphereGeometry(0.2, 16, 12), M.sewer, n.x, -depth, n.y);
         break;
+      case 'treatment': {
+        // The tank: its top a little below ground, its inlet at the invert.
+        const t = n.tank ?? { shape: 'round', width: 1.3, depth: 1.6 };
+        const top = -Math.max(0.25, depth - 0.35);
+        const geo =
+          t.shape === 'round' ? new THREE.CylinderGeometry(t.width / 2, t.width / 2, t.depth, 32) : new THREE.BoxGeometry(t.width, t.depth, t.width);
+        add(below, geo, M.tank, n.x, top - t.depth / 2, n.y);
+        // Three access risers and lids in a row across the top (primary, treatment, final).
+        const gap = Math.max(0.45, t.width * 0.33);
+        for (const k of [-1, 0, 1]) {
+          const x = n.x + k * gap;
+          add(below, new THREE.CylinderGeometry(0.18, 0.18, -top, 20), M.concrete, x, top / 2, n.y);
+          add(surface, new THREE.CylinderGeometry(0.2, 0.2, 0.03, 24), M.lid, x, 0.015, n.y);
+        }
+        // The air blower's kiosk beside it.
+        add(surface, new THREE.BoxGeometry(0.5, 0.6, 0.4), M.kiosk, n.x + t.width / 2 + 0.6, 0.3, n.y);
+        break;
+      }
       default:
         add(below, new THREE.SphereGeometry(0.06, 12, 8), M.concrete, n.x, -depth + 0.05, n.y);
     }

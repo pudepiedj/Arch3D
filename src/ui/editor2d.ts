@@ -1719,6 +1719,27 @@ export class Editor2D {
           ctx.fillStyle = ink;
           ctx.fillText('SA', s.x, s.y);
           break;
+        case 'treatment': {
+          // The tank outline, its three lids, and STP.
+          const t = n.tank ?? { shape: 'round', width: 1.3, depth: 1.6 };
+          const h = r(t.width, 12);
+          if (t.shape === 'round') ctx.arc(s.x, s.y, h, 0, Math.PI * 2);
+          else ctx.rect(s.x - h, s.y - h, h * 2, h * 2);
+          ctx.fill();
+          ctx.stroke();
+          const gap = Math.max(0.45, t.width * 0.33) * k;
+          for (const kx of [-1, 0, 1]) {
+            ctx.beginPath();
+            ctx.arc(s.x + kx * gap, s.y, Math.max(2, 0.2 * k), 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          ctx.font = '600 10px system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = ink;
+          ctx.fillText('STP', s.x, s.y + h * 0.55);
+          break;
+        }
         case 'sewer':
           ctx.arc(s.x, s.y, r(0.4, 8), 0, Math.PI * 2);
           ctx.fill();
@@ -1740,7 +1761,7 @@ export class Editor2D {
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = C.text;
-        ctx.fillText(`IL −${n.invert.toFixed(2)}`, s.x + r(0.6, 6) + 4, s.y);
+        ctx.fillText(`IL −${n.invert.toFixed(2)}`, s.x + (n.fitting === 'treatment' ? r(n.tank?.width ?? 1.3, 12) : r(0.6, 6)) + 4, s.y);
       }
     }
     ctx.restore();

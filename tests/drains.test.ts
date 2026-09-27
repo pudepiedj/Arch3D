@@ -52,3 +52,16 @@ describe('the demo house drains', () => {
     for (const p of Object.values(d.pipes)) expect(pipeFall(d, p).verdict).toBe('ok');
   });
 });
+
+describe('a sewage treatment plant', () => {
+  it('starts as a tank of about 2 m³, and its size can be set', async () => {
+    const { tankVolume } = await import('../src/model/drains');
+    const b = createBuilding();
+    const stp = addDrainNode(b, { x: 20, y: 5 }, 'treatment');
+    expect(stp.tank).toBeTruthy();
+    expect(tankVolume(stp.tank!)).toBeGreaterThan(1.9);
+    expect(tankVolume(stp.tank!)).toBeLessThan(2.4);
+    stp.tank = { shape: 'box', width: 1.25, depth: 1.3 };
+    expect(tankVolume(stp.tank)).toBeCloseTo(2.03, 2);
+  });
+});

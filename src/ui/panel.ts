@@ -8,7 +8,7 @@ import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
 import { PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
 import { TREE_DEFAULTS } from '../model/trees';
 import { GRAND_MODELS, catalogueItem } from '../model/furniture';
-import { DEFAULT_INVERT, FITTING_NAMES, deleteDrainNode, pipeFall, pipeLength } from '../model/drains';
+import { DEFAULT_INVERT, DEFAULT_TANK, FITTING_NAMES, deleteDrainNode, pipeFall, pipeLength, tankVolume } from '../model/drains';
 import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { stairGeometry } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
@@ -516,6 +516,7 @@ export class Panel {
       n.fitting = v as DrainFitting;
       // A fresh soakaway or sewer connection takes its usual depth.
       if ((n.fitting === 'soakaway' || n.fitting === 'sewer') && n.invert < DEFAULT_INVERT[n.fitting] && was !== n.fitting) n.invert = DEFAULT_INVERT[n.fitting];
+      if (n.fitting === 'treatment') n.tank ??= { ...DEFAULT_TANK };
       this.store.commit();
       this.render();
     });
@@ -523,7 +524,29 @@ export class Panel {
       n.invert = v;
       this.store.commit();
       this.render();
-    }, 'm', 'Depth of the inside bottom of the pipe below the ground here');
+    }, 'm', n.fitting === 'treatment' ? 'Depth of the inlet pipe below the ground' : 'Depth of the inside bottom of the pipe below the ground here');
+    if (n.fitting === 'treatment') {
+      const t = (n.tank ??= { ...DEFAULT_TANK });
+      this.select('Tank', t.shape, [
+        ['round', 'Round'],
+        ['box', 'Rectangular'],
+      ], (v) => {
+        t.shape = v as 'round' | 'box';
+        this.store.commit();
+        this.render();
+      });
+      this.number(t.shape === 'round' ? 'Diameter' : 'Width', t.width, 0.05, 0.5, 5, (v) => {
+        t.width = v;
+        this.store.commit();
+        this.render();
+      }, 'm');
+      this.number('Tank depth', t.depth, 0.05, 0.5, 5, (v) => {
+        t.depth = v;
+        this.store.commit();
+        this.render();
+      }, 'm');
+      this.note(`About ${tankVolume(t).toFixed(1)} m³. Shown with three access lids (for pump-out and desludging) and the blower kiosk; draw the treated outflow on to a soakaway, drainage field or ditch.`);
+    }
     const pipes = Object.values(d.pipes).filter((p) => p.a === id || p.b === id);
     const bad = pipes.map((p) => pipeFall(d, p)).filter((f) => f.verdict !== 'ok');
     this.note(
