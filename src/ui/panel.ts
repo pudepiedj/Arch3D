@@ -8,6 +8,7 @@ import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
 import { PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
 import { TREE_DEFAULTS } from '../model/trees';
 import { GRAND_MODELS, catalogueItem } from '../model/furniture';
+import { stretchSummary } from '../model/stretch';
 import { DEFAULT_INVERT, DEFAULT_TANK, FITTING_NAMES, deleteDrainNode, pipeFall, pipeLength, tankVolume } from '../model/drains';
 import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { stairGeometry } from '../model/stairs';
@@ -629,10 +630,22 @@ export class Panel {
       this.note('Drag a box round the part of the house to move: everything inside it moves, and walls crossing its edge stretch or shrink. E.g. to take 1 m out of the middle, box the whole of one end.');
     } else {
       const b = ed.stretchBox;
-      this.note(`Box ${(b.x1 - b.x0).toFixed(2)} × ${(b.y1 - b.y0).toFixed(2)} m. Drag inside it to stretch, or type the total move from where it started:`);
-      const move = { ...ed.stretchTotal };
-      this.number('Across (X)', move.x, 0.01, -100, 100, (v) => (move.x = v), 'm', 'Positive moves right on the plan, negative left');
-      this.number('Up/down (Y)', move.y, 0.01, -100, 100, (v) => (move.y = v), 'm', 'Positive moves down the plan, negative up');
+      const c = stretchSummary(this.store.building, b, ed.stretchAll ? undefined : this.store.activeId);
+      const parts = [
+        `${c.joints} joint${c.joints === 1 ? '' : 's'}`,
+        c.openings && `${c.openings} door${c.openings === 1 ? '' : 's'}/window${c.openings === 1 ? '' : 's'}`,
+        c.furniture && `${c.furniture} piece${c.furniture === 1 ? '' : 's'} of furniture`,
+        c.other && `${c.other} other item${c.other === 1 ? '' : 's'}`,
+        c.drains && `${c.drains} drain point${c.drains === 1 ? '' : 's'}`,
+      ].filter(Boolean);
+      this.note(
+        ed.stretchPicked
+          ? 'Stretched. The box has moved with what it moved: type another amount (or drag again) to move the same things further, or draw a new box.'
+          : `Inside the box (${ed.stretchAll ? 'all floors' : 'this floor'}): ${parts.join(', ')}. Drag inside it, or type how far to move them:`,
+      );
+      const move = { x: 0, y: 0 };
+      this.number('Across (X)', 0, 0.01, -100, 100, (v) => (move.x = v), 'm', 'Positive moves right on the plan, negative left');
+      this.number('Up/down (Y)', 0, 0.01, -100, 100, (v) => (move.y = v), 'm', 'Positive moves down the plan, negative up');
       this.buttons([
         ['Stretch', () => {
           ed.applyStretch(move);
@@ -649,6 +662,7 @@ export class Panel {
       ['this', 'This floor only'],
     ], (v) => {
       ed.stretchAll = v === 'all';
+      this.render();
     });
   }
 

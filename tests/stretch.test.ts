@@ -80,3 +80,20 @@ describe('stretch', () => {
     expect(planBounds(f)!.max.y).toBeCloseTo(8, 9);
   });
 });
+
+describe('repeating a stretch', () => {
+  it('moves exactly the same things again, not what the box edge lands on', () => {
+    const { b, g } = house();
+    const sofa = addFurniture(g, 'sofa3', { x: 8, y: 4 });
+    // Box from x = 6.5: the partition at x = 5 is outside it.
+    const first = stretch(b, { x0: 6.5, y0: -1, x1: 11, y1: 9 }, { x: -1.5, y: 0 });
+    // The moved box's edge is now at x = 5, right on the partition; repeat with what moved.
+    stretch(b, { x0: 5, y0: -1, x1: 9.5, y1: 9 }, { x: -0.5, y: 0 }, undefined, first);
+    expect(planBounds(g)!.max.x).toBeCloseTo(8, 9);
+    expect(g.furniture![sofa.id].x).toBeCloseTo(6, 9);
+    // The partition has stayed at x = 5.
+    const partition = Object.values(g.walls).find((w) => w.thickness < 0.2)!;
+    expect(g.nodes[partition.a].x).toBeCloseTo(5, 9);
+    expect(g.nodes[partition.b].x).toBeCloseTo(5, 9);
+  });
+});

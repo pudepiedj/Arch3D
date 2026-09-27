@@ -20,7 +20,7 @@ import { addPillar, pillarAt } from '../model/pillars';
 import { addPatio, patioShapes } from '../model/patios';
 import { addTree, treeAt, trunkRadius } from '../model/trees';
 import { siteOf } from '../model/sun';
-import { type Box, boxFrom, inBox, stretch } from '../model/stretch';
+import { type Box, type Picked, boxFrom, inBox, stretch } from '../model/stretch';
 import { addDrainNode, addDrainPipe, deleteDrainNode, drainNodeAt, drainPipeAt, pipeFall, splitPipe } from '../model/drains';
 import { addFurniture, againstWall, catalogueItem, footprint } from '../model/furniture';
 import { drawFurnitureSymbol } from './furniture2d';
@@ -108,15 +108,14 @@ export class Editor2D {
   furnitureKind = 'grand';
   furnitureAngle = 0;
   /**
-   * Stretch tool. The box is where it was drawn; every stretch is measured from the drawing
-   * as it was then (`stretchBase`), so the box always moves exactly what it first enclosed,
-   * and `stretchTotal` is the whole move so far (the box is shown moved by it).
+   * Stretch tool: the box round what moves, and the one being drawn. After a stretch the box
+   * follows what it moved and remembers exactly what that was (`stretchPicked`), so a repeat
+   * moves the same things again; `stretchLeft` is the drawing as that stretch left it.
    */
   stretchBox: Box | null = null;
-  stretchTotal: Vec2 = { x: 0, y: 0 };
-  private stretchBase: string | null = null;
-  /** The drawing as the last stretch left it: if it has changed since, start again from it. */
+  stretchPicked: Picked | null = null;
   private stretchLeft: string | null = null;
+  private pendingPicked: Picked | null = null;
   private stretchDraft: Box | null = null;
   private stretchBy: Vec2 | null = null;
   /** Stretch every floor (true) or only the one being edited. */
@@ -475,8 +474,8 @@ export class Editor2D {
     if (this.tool === 'stretch') {
       // Inside the box: drag to stretch. Anywhere else: drag out a new box.
       const w = this.toWorld(s);
-      const shown = this.shownStretchBox();
-      this.gesture = shown && inBox(shown, w) ? { kind: 'stretchMove', start: w } : { kind: 'stretchBox', start: w };
+      const onBox = this.stretchBox && inBox(this.stretchBox, w);
+      this.gesture = onBox && this.stretchStillValid() ? { kind: 'stretchMove', start: w } : { kind: 'stretchBox', start: w };
       return;
     }
 
@@ -570,7 +569,7 @@ export class Editor2D {
         if (!e.shiftKey) d = Math.abs(d.x) >= Math.abs(d.y) ? { x: d.x, y: 0 } : { x: 0, y: d.y };
         const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
         d = { x: snapTo(d.x), y: snapTo(d.y) };
-        this.previewStretch({ x: this.stretchTotal.x + d.x, y: this.stretchTotal.y + d.y });
+        this.previewStretch(d);
         break;
       }
       case 'pan':
@@ -852,55 +851,54 @@ export class Editor2D {
     this.requestRender();
   }
 
-  /** Start (or clear) a stretch box: later stretches are measured from the drawing as it is now. */
+  /** Start (or clear) a stretch box. */
   setStretchBox(b: Box | null) {
     this.stretchBox = b;
-    this.stretchTotal = { x: 0, y: 0 };
-    this.stretchBase = b ? JSON.stringify(this.store.building) : null;
-    this.stretchLeft = this.stretchBase;
+    this.stretchPicked = null;
+    this.stretchLeft = null;
     this.onToolChange?.();
     this.requestRender();
   }
 
-  /** The box as shown: where it was drawn, moved by the stretch so far. */
-  private shownStretchBox(): Box | null {
+  /**
+   * If the drawing has changed since the last stretch (Undo, or an edit), what the box moved
+   * may no longer be where it was: clear the box rather than guess. True if still usable.
+   */
+  private stretchStillValid(): boolean {
+    if (!this.stretchPicked) return true;
+    if (JSON.stringify(this.store.building) === this.stretchLeft) return true;
     const b = this.stretchBox;
-    if (!b) return null;
-    const d = this.stretchBy ?? this.stretchTotal;
-    return { x0: b.x0 + d.x, y0: b.y0 + d.y, x1: b.x1 + d.x, y1: b.y1 + d.y };
+    this.setStretchBox(null);
+    if (b) this.flash('The drawing changed since the last stretch: draw the box again', { x: b.x0, y: b.y0 });
+    return false;
   }
 
-  /** Show the drawing stretched by a total move d from when the box was drawn, live. */
+  /** Show the drawing stretched by d (from the drawing as it is now), live. */
   private previewStretch(d: Vec2) {
     if (!this.stretchBox) return;
-    // Edited (or undone) since the last stretch: carry on from the drawing as it is now.
-    if (JSON.stringify(this.store.building) !== this.stretchLeft && !this.stretchBy) {
-      const b = this.shownStretchBox()!;
-      d = { x: d.x - this.stretchTotal.x, y: d.y - this.stretchTotal.y };
-      this.stretchBox = b;
-      this.stretchTotal = { x: 0, y: 0 };
-      this.stretchBase = JSON.stringify(this.store.building);
-    }
-    this.store.preview(JSON.parse(this.stretchBase!));
-    stretch(this.store.building, this.stretchBox, d, this.stretchAll ? undefined : this.store.activeId);
+    this.store.revert();
+    this.pendingPicked = stretch(this.store.building, this.stretchBox, d, this.stretchAll ? undefined : this.store.activeId, this.stretchPicked ?? undefined);
     this.stretchBy = d;
     this.store.changed();
   }
 
-  /** Keep the stretch shown. */
+  /** Keep the stretch; the box moves with what it moved, ready to do it again. */
   private finishStretch() {
     const d = this.stretchBy;
-    if (!d || !this.stretchBox) return;
+    const b = this.stretchBox;
+    if (!d || !b) return;
     this.store.commit();
-    this.stretchTotal = d;
-    this.stretchBy = null;
+    this.stretchBox = { x0: b.x0 + d.x, y0: b.y0 + d.y, x1: b.x1 + d.x, y1: b.y1 + d.y };
+    this.stretchPicked = this.pendingPicked;
     this.stretchLeft = JSON.stringify(this.store.building);
+    this.stretchBy = null;
     this.onToolChange?.();
+    this.requestRender();
   }
 
-  /** Stretch so that the total move since the box was drawn is d (from the panel). */
+  /** Stretch by an exact amount (from the panel). */
   applyStretch(d: Vec2) {
-    if (!this.stretchBox) return;
+    if (!this.stretchBox || (!d.x && !d.y) || !this.stretchStillValid()) return;
     this.previewStretch(d);
     this.finishStretch();
   }
@@ -1591,10 +1589,13 @@ export class Editor2D {
   /** The stretch box, with the joints that will move marked, and the size of the move. */
   private drawStretch(C: Record<string, string>) {
     const ctx = this.ctx;
-    const b = this.stretchDraft ?? this.shownStretchBox();
+    const b = this.stretchDraft ?? this.stretchBox;
     if (!b) return;
-    const p = this.toScreen({ x: b.x0, y: b.y0 });
-    const q = this.toScreen({ x: b.x1, y: b.y1 });
+    // While dragging, the box is shown where its contents are going.
+    const by = this.stretchBy;
+    const shown = by ? { x0: b.x0 + by.x, y0: b.y0 + by.y, x1: b.x1 + by.x, y1: b.y1 + by.y } : b;
+    const p = this.toScreen({ x: shown.x0, y: shown.y0 });
+    const q = this.toScreen({ x: shown.x1, y: shown.y1 });
     ctx.fillStyle = hexAlpha(C.accent, 0.08);
     ctx.fillRect(p.x, p.y, q.x - p.x, q.y - p.y);
     ctx.strokeStyle = C.accent;
@@ -1602,15 +1603,28 @@ export class Editor2D {
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(p.x, p.y, q.x - p.x, q.y - p.y);
     ctx.setLineDash([]);
-    // The joints inside (they move; walls to them stretch).
-    ctx.fillStyle = C.accent;
-    for (const n of Object.values(this.plan.nodes)) {
-      if (!inBox(b, n)) continue;
-      const s = this.toScreen(n);
-      ctx.fillRect(s.x - 3.5, s.y - 3.5, 7, 7);
+    if (!by) {
+      // What will move: the joints inside (walls to them stretch) and the furniture inside.
+      ctx.fillStyle = C.accent;
+      const picked = this.stretchPicked;
+      const L = this.store.activeId;
+      const goes = (p: Vec2, id?: string) =>
+        picked ? (id ? picked.ids.has(`${L}:${id}`) : picked.points.has(`${L}@${p.x.toFixed(5)},${p.y.toFixed(5)}`)) : inBox(b, p);
+      for (const n of Object.values(this.plan.nodes)) {
+        if (!goes(n)) continue;
+        const s = this.toScreen(n);
+        ctx.fillRect(s.x - 3.5, s.y - 3.5, 7, 7);
+      }
+      ctx.strokeStyle = C.accent;
+      ctx.lineWidth = 2;
+      for (const f of Object.values(this.plan.furniture ?? {})) {
+        if (!goes(f, f.id)) continue;
+        this.path(footprint(f));
+        ctx.stroke();
+      }
     }
-    const d = this.stretchBy ?? this.stretchTotal;
-    if (d.x || d.y) {
+    const d = by;
+    if (d && (d.x || d.y)) {
       const len = Math.hypot(d.x, d.y);
       const sign = (d.x || d.y) < 0 ? '−' : '+';
       ctx.font = '600 13px system-ui, sans-serif';
