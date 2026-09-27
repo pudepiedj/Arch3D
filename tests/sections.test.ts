@@ -3,7 +3,7 @@ import { addLevelOnTop, createBuilding } from '../src/model/building';
 import { intersectAll } from '../src/model/clip';
 import { polygonArea } from '../src/model/geom';
 import { addWall } from '../src/model/plan';
-import { levelRoofs, outerFaces, outsetLoop } from '../src/model/roof';
+import { levelRoofs, outerFaces, outsetLoop, toggleParapet } from '../src/model/roof';
 import type { Building, Level, Roof } from '../src/model/types';
 
 function box(level: Level, pts: [number, number][]) {
@@ -117,7 +117,7 @@ describe('flat roof sections drawn over part of the house', () => {
 
   it('one drawn mostly over the house does not overhang its edges inside the house', () => {
     const { b, g } = bungalow();
-    section(g, [[2, 5], [6, 5], [6, 8.5], [2, 8.5]]);
+    section(g, [[2, 5], [6, 5], [6, 8.5], [2, 8.5]], { ...FLAT, parapet: 0 });
     const r = levelRoofs(b, g).find((x) => x.id === 'section:s')!;
     const out = r.geometry!.outline;
     // Its inner edge (y = 5) and sides inside the house stay where they were drawn...
@@ -125,6 +125,61 @@ describe('flat roof sections drawn over part of the house', () => {
     expect(Math.min(...out.map((p) => p.x))).toBeGreaterThan(2 - 1e-6);
     // ...while the free edge outside the house still overhangs.
     expect(Math.max(...out.map((p) => p.y))).toBeGreaterThan(8.5 + 0.2);
+  });
+
+  it('flat roofs have a 25 cm parapet round their open edges, flush with the walls', () => {
+    const { b, g } = bungalow();
+    section(g, [[2, 5], [6, 5], [6, 8.5], [2, 8.5]]);
+    const r = levelRoofs(b, g).find((x) => x.id === 'section:s')!;
+    const p = r.geometry!.parapet!;
+    expect(p.z1 - p.roof).toBeCloseTo(0.25);
+    // No overhang: the parapet's outside face is the edge of the roof.
+    expect(Math.max(...r.geometry!.outline.map((q) => q.y))).toBeLessThan(8.5 + 1e-6);
+    // The free edges (outside the house) have one; none stands inside the house.
+    expect(p.runs.length).toBeGreaterThan(0);
+    for (const run of p.runs) expect(Math.max(run.a.y, run.b.y)).toBeGreaterThan(8.15 - 1e-6);
+    // Its inside face is 20 cm in from the outside.
+    const { a, b: c, ia: q } = p.runs[0];
+    const d = Math.abs((c.x - a.x) * (q.y - a.y) - (c.y - a.y) * (q.x - a.x)) / Math.hypot(c.x - a.x, c.y - a.y);
+    expect(d).toBeCloseTo(0.2);
+  });
+
+  it('where a flat roof is carried on by a section, the parapet stops at the join', () => {
+    const { b, g } = bungalow();
+    // A veranda over pillars along part of the south side, joining the house's own flat roof.
+    g.roof = { ...FLAT };
+    section(g, [[2, 8.15], [6, 8.15], [6, 10.5], [2, 10.5]], { ...FLAT, parapet: undefined });
+    const roofs = levelRoofs(b, g);
+    const house = roofs.find((x) => x.id.startsWith('area:'))!.geometry!.parapet!;
+    const veranda = roofs.find((x) => x.id === 'section:s')!.geometry!.parapet!;
+    const onSouth = (run: { a: { y: number }; b: { y: number } }) => Math.abs(run.a.y - 8.15) < 1e-3 && Math.abs(run.b.y - 8.15) < 1e-3;
+    // The house's south parapet stops where the veranda joins it (x 2 to 6) and carries on either side.
+    const south = house.runs.filter(onSouth);
+    expect(south.length).toBe(2);
+    for (const run of south) for (const x of [run.a.x, run.b.x]) expect(x <= 2 + 0.01 || x >= 6 - 0.01).toBe(true);
+    // The veranda has none along the house, only round its three free sides.
+    expect(veranda.runs.some(onSouth)).toBe(false);
+    expect(veranda.runs.length).toBe(3);
+  });
+
+  it('an edge can have its parapet taken off by hand, and put back', () => {
+    const { b, g } = bungalow();
+    g.roof = { ...FLAT };
+    const area = () => levelRoofs(b, g).find((x) => x.id.startsWith('area:'))!;
+    const runs = () => area().geometry!.parapet!.runs.length;
+    expect(runs()).toBe(4);
+    const east = area().ring.findIndex((p, i, r) => Math.abs(p.x - 10.15) < 1e-3 && Math.abs(r[(i + 1) % r.length].x - 10.15) < 1e-3);
+    g.roof.edges = toggleParapet(area(), east);
+    expect(runs()).toBe(3);
+    expect(area().geometry!.parapet!.runs.some((r) => Math.abs(r.a.x - 10.15) < 1e-3 && Math.abs(r.b.x - 10.15) < 1e-3)).toBe(false);
+    g.roof.edges = toggleParapet(area(), east);
+    expect(runs()).toBe(4);
+  });
+
+  it('a pitched roof, or a parapet of 0, has none', () => {
+    const { b, g } = bungalow();
+    section(g, [[2, 5], [6, 5], [6, 8.5], [2, 8.5]], { ...FLAT, parapet: 0 });
+    expect(levelRoofs(b, g).find((x) => x.id === 'section:s')!.geometry!.parapet).toBeUndefined();
   });
 
   it('pitched sections keep their edges inside the house for gables', () => {

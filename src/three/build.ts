@@ -1007,6 +1007,22 @@ function buildRoofObject(
   // Fascia: a board below each eave (the full slab edge for a flat roof).
   const flat = r.faces.some((f) => f.kind === 'flat');
   for (const [a, b] of r.eaves) trim.vface(a, b, a.z - (flat ? FLAT_THICKNESS : 0.18), a.z, new THREE.Vector3(0, 0, 0));
+  // A flat roof's parapet: the wall carried up round the edge, rendered like the walls, with
+  // a coping along its top.
+  const parapet = new Mesher();
+  const coping = new Mesher();
+  if (r.parapet) {
+    const { runs, z0, z1, roof } = r.parapet;
+    const none = new THREE.Vector3(0, 0, 0);
+    for (const { a, b, ia, ib } of runs) {
+      parapet.vface(a, b, z0, z1, none);
+      parapet.vface(ia, ib, roof, z1, none);
+      // Square ends where a run stops short of a corner (against the roof it joins).
+      parapet.vface(a, ia, roof, z1, none);
+      parapet.vface(b, ib, roof, z1, none);
+      coping.quad(w3(a, z1), w3(b, z1), w3(ib, z1), w3(ia, z1), up);
+    }
+  }
   for (const [m, mat] of [
     [covering, mats.roof],
     [flatTop, mats.flatRoof],
@@ -1015,6 +1031,8 @@ function buildRoofObject(
     [lining, mats.ceiling],
     [gableFrames, mats.darkFrame],
     [gableGlass, mats.glass],
+    [parapet, mats.wall],
+    [coping, mats.wallTop],
   ] as const) {
     const mesh = new THREE.Mesh(m.geometry(), mat);
     mesh.castShadow = mesh.receiveShadow = true;

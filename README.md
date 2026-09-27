@@ -26,6 +26,8 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 
 ## Using it
 
+**The toolbar:** **Select** is always there; the other tools are grouped in drop-down menus: **Build** (wall, split, stretch, stair, pillar), **Openings** (door, window, glass door, garage door), **Roof** (roofs, rooflight, solar panels, chimney) and **Garden** (patio, tree, drain), then **Furniture**. A menu shows the name of the tool in use from it, highlighted. The keyboard shortcuts are listed in the menus and work as before. **View** has the on/off settings: room dimensions, Underground and Cutaway. On a narrow screen (an iPad upright) the toolbar runs onto a second row rather than off the side.
+
 | Tool | What it does |
 | --- | --- |
 | **Select** (V) | Drag a **joint** to reshape every wall attached to it; drop it on another joint or wall to connect. Drag a **wall** to move it sideways (connected walls stretch). Drag a **door/window** along its wall, or onto another wall. Delete/Backspace removes the selection. What stands on the floor is picked before what is on the roof above it (solar panels, chimneys, rooflights); **click again** in the same place to pick the next thing underneath. |
@@ -65,10 +67,10 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - Select a pipe to set what it carries and its bore (100, 150 or 225 mm), and to read its length and **fall** ("1 in 60"). It warns if a pipe runs uphill (backfall), is level, or is flatter or steeper than the usual guidance for house drains. Check real work against Building Regulations Part H and your building control officer. **Reverse flow** swaps its direction.
 - Inspection chambers can be **square or round** (set in the panel).
 - A **sewage treatment plant** is a round or rectangular tank (about 2 m³ to start with: set its diameter or width and depth, and the panel gives the volume), with three access lids for pump-out and desludging and the blower kiosk beside it. Draw the foul drain into it and the treated outflow on to a soakaway, drainage field or ditch.
-- The **Underground** button (by Sun) makes the ground, floors and patios see-through, shows the pipes, chambers and soakaway at their depths, and lets the 3D view go below the surface. Chamber covers, gully gratings and downpipes show all the time.
+- **View → Underground (drains)** makes the ground, floors and patios see-through, shows the pipes, chambers and soakaway at their depths, and lets the 3D view go below the surface. Chamber covers, gully gratings and downpipes show all the time.
 - The demo house has a foul run from the soil stack and kitchen gully to the sewer under the road, and rainwater from two downpipes to a soakaway in the garden.
 
-**Room dimensions:** the **Dimensions** button (or M) writes every room's inside measurements along its walls, face to face of the plaster line. The setting is remembered on each device.
+**Room dimensions:** **View → Room dimensions** (or M) writes every room's inside measurements along its walls, face to face of the plaster line. The setting is remembered on each device.
 
 **Doors shown shut:** select a door and press **Show shut**, or **Shut all doors** for the whole floor. Shut doors stay shut in the orbit view. In walk mode each one swings open as you reach it and closes behind you.
 
@@ -137,6 +139,7 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 
 **Roofs:** every floor is roofed wherever nothing is built above it, so a house can have several roofs:
 - **Defaults:** the top floor gets a gable roof, and single-storey parts of lower floors (extensions) get flat roofs. Change a floor's default with **Floor & roof…**: Gable, Hipped, Flat or None, plus pitch and overhang.
+- **Parapets:** every flat roof has a 25 cm parapet round its open edges: the outside walls carried up past the roof, rendered like them, 20 cm thick with a coping on top, and no overhang. Edges against a taller wall don't get one, and where flat roofs meet or overlap (the house's flat roof carried on over pillars by a roof section, say) they count as one roof: the parapet goes round the outside of the lot and stops where they join. To take the parapet off any single edge, select the roof with the Roof tool and click that edge (click again to put it back); on the plan an edge with a parapet shows a second dashed line just inside it. Set its height in the roof's panel (**Parapet**); 0 removes it, and the roof overhangs its walls as before (the **Overhang** field comes back).
 - **Different roofs for different parts:** choose the **Roof** tool (R) and click a roof area to give it its own type, pitch and overhang. For example, one extension gabled and the others flat.
 - **Gable ends where you want them:** with a roof selected, click any of its edges to switch it between a sloping eave and a vertical gable end. By default a roof is gabled at both ends of its main ridge. A roof against a taller wall runs its ridge into the wall, with its gable at the far end.
 - **Cross gables:** for a window bay or projection that is part of the house, click the bay's front edge of the main roof to make it a gable. The bay gets its own ridge, meeting the main roof in valleys.
@@ -198,6 +201,16 @@ Everything visible is *derived* from that data on every change, so there is no s
   - A gable end is an edge that doesn't slope. It is pushed far away before the skeleton is computed, so it has no influence. The roof is then trimmed back to the wall line, and the vertical profile left there becomes the gable wall. Edges against a taller wall work the same way, without a gable wall.
   - That library occasionally leaves part of a slope out, where two lined-up edges merge (the walls either side of a bay). The gap is filled with the slope whose plane matches the heights already known around it. Tests check that every roof covers its whole outline, with no tears.
 - **Rooms** (`rooms.ts`) are the enclosed faces of the wall graph. They give the floors and the net floor area labels.
+
+## Printing
+
+**File → Print plans and elevations…** (or Ctrl/⌘+P) makes to-scale drawings, one to a page, each with a frame and a title block (project, drawing, scale with a scale bar, date, drawn by, sheet number):
+- **Floor plans** for any floors, with a north arrow and the overall dimensions, and optionally room dimensions, furniture, patios and trees, and drains. All the plans are framed alike, so they lie over one another.
+- **Elevations** from the north, east, south and west (whichever way the plan is turned, from the site's north). They are square-on and to scale, with the ground line and each floor level marked. Trees are left out unless you ask for them, as they can hide the house.
+- **The 3D view** as it is on screen (not to scale), if you want it.
+- **A4 or A3**, landscape or portrait. The scale is the largest standard one (1:20, 1:25, 1:50, 1:100, 1:200…) at which every drawing fits, or choose one; if a drawing is too big at the scale chosen, the preview says so.
+
+You see the pages first. **Print…** then opens the browser's print dialog: choose **Actual size / 100%** (not "Fit to page") and margins **None** so the scale is exact (check it against the scale bar), or **Save as PDF** to keep or send a copy. The choices are remembered on each device.
 
 ## Not done yet
 

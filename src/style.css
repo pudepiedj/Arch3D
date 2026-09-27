@@ -127,9 +127,23 @@ button.danger {
   padding: 8px 12px;
   background: var(--bar);
   border-bottom: 1px solid var(--line);
-  overflow-x: auto;
-  scrollbar-width: none;
+  /* On a narrow screen the bar takes a second row rather than running off the side. */
+  flex-wrap: wrap;
+  row-gap: 6px;
   flex: none;
+}
+
+button.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+}
+
+@media (max-width: 1300px) {
+  .brand {
+    display: none;
+  }
 }
 
 .brand {
@@ -606,4 +620,315 @@ button.danger {
 #drawingsList span {
   color: var(--muted);
   font-size: 12px;
+}
+
+/* Drop-down tool and View menus in the toolbar. */
+.menu summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 7px;
+  user-select: none;
+  -webkit-user-select: none;
+  white-space: nowrap;
+}
+
+.toolmenu summary::after,
+.viewmenu summary::after {
+  content: '';
+  display: inline-block;
+  margin-left: 6px;
+  border: 4px solid transparent;
+  border-top-color: currentColor;
+  border-bottom-width: 0;
+  opacity: 0.6;
+}
+
+.menu summary.on {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.viewmenu summary {
+  background: var(--btn);
+}
+
+.menu[open] > summary:not(.on) {
+  background: var(--line);
+}
+
+.menu-items {
+  min-width: 170px;
+}
+
+.menu-items button {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  white-space: nowrap;
+}
+
+.menu-items kbd {
+  margin-left: auto;
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+}
+
+.menu-items button.on kbd {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.menu-items button.check::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  flex: none;
+  margin-right: -6px;
+  border: 1.5px solid var(--muted);
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.menu-items button.check.on {
+  background: transparent;
+  color: inherit;
+}
+
+.menu-items button.check.on::before {
+  background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M3 7.5 6 10.5 11 4' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E") center / 12px no-repeat;
+  border-color: var(--accent);
+}
+
+.group summary {
+  background: transparent;
+  min-height: 0;
+}
+
+/* ---------------------------------------------------------------- printing */
+
+#printDialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 40px);
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bar);
+  color: var(--fg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+#printDialog::backdrop {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+#printDialog h2 {
+  font-size: 16px;
+  margin: 0 0 4px;
+}
+
+#printDialog h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 14px 0 6px;
+}
+
+#printDialog .note {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 10px;
+}
+
+.print-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.print-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.print-grid select,
+.print-grid input {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--fg);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.print-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 4px 12px;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.print-checks label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.print-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+#printPreview {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: auto;
+  background: #7d7f84;
+}
+
+.preview-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  padding-top: calc(8px + env(safe-area-inset-top));
+  background: var(--bar);
+  color: var(--fg);
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+#printNote {
+  max-width: 70ch;
+}
+
+#printNote .warn {
+  color: var(--danger);
+}
+
+#printSheets {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding: 24px;
+}
+
+/* One sheet of paper: sized in millimetres, so it prints at exactly the drawing's scale. */
+.sheet {
+  position: relative;
+  flex: none;
+  background: #fff;
+  color: #1f2124;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+.sheet > * {
+  position: absolute;
+}
+
+.sheet .frame {
+  border: 0.35mm solid #1f2124;
+  box-sizing: border-box;
+}
+
+.sheet .title {
+  display: grid;
+  grid-template-columns: 1fr 58mm 44mm 22mm;
+  border: 0.35mm solid #1f2124;
+  border-top-width: 0.25mm;
+  box-sizing: border-box;
+}
+
+.sheet .title > div {
+  padding: 1.6mm 2.4mm;
+  border-left: 0.25mm solid #1f2124;
+  overflow: hidden;
+  font-size: 2.6mm;
+  line-height: 1.25;
+}
+
+.sheet .title > div:first-child {
+  border-left: 0;
+}
+
+.sheet .title small {
+  display: block;
+  font-size: 1.9mm;
+  color: #6d6a63;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.sheet .title .name {
+  font-size: 4mm;
+  font-weight: 600;
+}
+
+.sheet .title svg {
+  display: block;
+  margin-top: 0.8mm;
+}
+
+.sheet img {
+  display: block;
+}
+
+.sheet .caption {
+  font-size: 3.4mm;
+  font-weight: 600;
+}
+
+@media print {
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    display: block !important;
+    background: #fff !important;
+    padding: 0 !important;
+  }
+
+  body > *:not(#printPreview) {
+    display: none !important;
+  }
+
+  #printPreview {
+    position: static;
+    overflow: visible;
+    background: none;
+  }
+
+  .preview-bar {
+    display: none !important;
+  }
+
+  #printSheets {
+    display: block;
+    padding: 0;
+  }
+
+  .sheet {
+    box-shadow: none;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .sheet:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
 }

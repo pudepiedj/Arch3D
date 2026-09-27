@@ -14,22 +14,42 @@
 
       <div class="group" id="tools" role="toolbar" aria-label="Tools">
         <button data-tool="select" title="Select and drag (V)">Select</button>
-        <button data-tool="wall" title="Draw walls (W)">Wall</button>
-        <button data-tool="door" title="Place a door (D)">Door</button>
-        <button data-tool="window" title="Place a window (N)">Window</button>
-        <button data-tool="garage" title="Place a garage roller door (G)">Garage</button>
-        <button data-tool="glazed" title="Place floor-to-ceiling glass doors: French, sliding or bi-fold (K)">Glass door</button>
-        <button data-tool="split" title="Add a joint to a wall (X)">Split</button>
-        <button data-tool="stretch" title="Move a whole part of the house, stretching the walls that cross into it (Q)">Stretch</button>
-        <button data-tool="stair" title="Place a stair up to the next floor (S)">Stair</button>
-        <button data-tool="roof" title="Set up roofs: types, gable ends, extra roof sections (R)">Roof</button>
-        <button data-tool="pillar" title="Place a pillar, e.g. under a veranda roof (P)">Pillar</button>
-        <button data-tool="chimney" title="Place a chimney stack with pots (C)">Chimney</button>
-        <button data-tool="solar" title="Lay solar panels on a roof slope">Solar</button>
-        <button data-tool="rooflight" title="Roof windows, or a rooflight box on a flat roof">Rooflight</button>
-        <button data-tool="patio" title="Draw a paved patio, a deck or a gravelled area (T)">Patio</button>
-        <button data-tool="tree" title="Plant a tree (E)">Tree</button>
-        <button data-tool="drain" title="Draw drains below ground, on the ground floor (J)">Drain</button>
+        <details class="menu toolmenu" data-label="Build">
+          <summary title="Walls, stairs and the rest of the structure">Build</summary>
+          <div class="menu-items">
+            <button data-tool="wall" title="Draw walls (W)">Wall <kbd>W</kbd></button>
+            <button data-tool="split" title="Add a joint to a wall (X)">Split wall <kbd>X</kbd></button>
+            <button data-tool="stretch" title="Move a whole part of the house, stretching the walls that cross into it (Q)">Stretch <kbd>Q</kbd></button>
+            <button data-tool="stair" title="Place a stair up to the next floor (S)">Stair <kbd>S</kbd></button>
+            <button data-tool="pillar" title="Place a pillar, e.g. under a veranda roof (P)">Pillar <kbd>P</kbd></button>
+          </div>
+        </details>
+        <details class="menu toolmenu" data-label="Openings">
+          <summary title="Doors and windows">Openings</summary>
+          <div class="menu-items">
+            <button data-tool="door" title="Place a door (D)">Door <kbd>D</kbd></button>
+            <button data-tool="window" title="Place a window (N)">Window <kbd>N</kbd></button>
+            <button data-tool="glazed" title="Place floor-to-ceiling glass doors: French, sliding or bi-fold (K)">Glass door <kbd>K</kbd></button>
+            <button data-tool="garage" title="Place a garage roller door (G)">Garage door <kbd>G</kbd></button>
+          </div>
+        </details>
+        <details class="menu toolmenu" data-label="Roof">
+          <summary title="Roofs and what goes on them">Roof</summary>
+          <div class="menu-items">
+            <button data-tool="roof" title="Set up roofs: types, gable ends, extra roof sections (R)">Roofs <kbd>R</kbd></button>
+            <button data-tool="rooflight" title="Roof windows, or a rooflight box on a flat roof">Rooflight</button>
+            <button data-tool="solar" title="Lay solar panels on a roof slope">Solar panels</button>
+            <button data-tool="chimney" title="Place a chimney stack with pots (C)">Chimney <kbd>C</kbd></button>
+          </div>
+        </details>
+        <details class="menu toolmenu" data-label="Garden">
+          <summary title="Patios, trees and drains">Garden</summary>
+          <div class="menu-items">
+            <button data-tool="patio" title="Draw a paved patio, a deck or a gravelled area (T)">Patio <kbd>T</kbd></button>
+            <button data-tool="tree" title="Plant a tree (E)">Tree <kbd>E</kbd></button>
+            <button data-tool="drain" title="Draw drains below ground, on the ground floor (J)">Drain <kbd>J</kbd></button>
+          </div>
+        </details>
         <button id="furnitureBtn" title="Choose furniture to place (F)">Furniture</button>
         <button data-tool="paste" id="pasteTool" title="Place exact copies of the copied door/window (Ctrl/⌘+V)" hidden>Paste</button>
       </div>
@@ -62,11 +82,10 @@
       </div>
       <button id="ortho" class="toggle" title="Lock wall directions to 45° steps (O)">Ortho</button>
       <button id="finish" hidden>Finish wall</button>
-      <button id="dims" class="toggle" title="Show the inside dimensions of every room (M)">Dimensions</button>
 
       <div class="group">
-        <button id="undo" title="Undo (Ctrl/⌘+Z)">Undo</button>
-        <button id="redo" title="Redo (Ctrl/⌘+Shift+Z)">Redo</button>
+        <button id="undo" class="icon" title="Undo (Ctrl/⌘+Z)" aria-label="Undo"><svg viewBox="0 0 20 20" width="18" height="18"><path d="M7 5 3 9l4 4M3.5 9H12a5 5 0 0 1 0 10h-2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button id="redo" class="icon" title="Redo (Ctrl/⌘+Shift+Z)" aria-label="Redo"><svg viewBox="0 0 20 20" width="18" height="18"><path d="m13 5 4 4-4 4m3.5-4H8a5 5 0 0 0 0 10h2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </div>
 
       <span class="spacer"></span>
@@ -80,11 +99,17 @@
         <button data-mode="orbit" title="Orbit around the model">Orbit</button>
         <button data-mode="walk" title="Walk through at eye level">Walk</button>
       </div>
-      <button id="underground" class="toggle" title="See the drains below ground: the ground becomes see-through and the view can go beneath it">Underground</button>
+      <details class="menu viewmenu">
+        <summary title="What the plan and the 3D view show">View</summary>
+        <div class="menu-items">
+          <button id="dims" class="check" title="Show the inside dimensions of every room (M)">Room dimensions <kbd>M</kbd></button>
+          <button id="underground" class="check" title="See the drains below ground: the ground becomes see-through and the view can go beneath it">Underground (drains)</button>
+          <button id="cutaway" class="check" title="In orbit view, hide the floors above the one you are editing">Cutaway: hide floors above</button>
+        </div>
+      </details>
       <button id="sun" class="toggle" title="Sun study: the real sun for a date, time and place, with shadows">Sun</button>
-      <button id="cutaway" class="toggle" title="In orbit view, hide the floors above the one you are editing">Cutaway</button>
       <button id="sync" class="sync" title="Whether the computer running the app is reachable, and when this drawing was last backed up to it">Checking…</button>
-      <details class="menu">
+      <details class="menu filemenu">
         <summary>File</summary>
         <div class="menu-items">
           <button id="new">New empty building</button>
@@ -95,6 +120,7 @@
           <button id="export" title="Save a file on this device: you choose where in Chrome and Edge; Safari puts it in Downloads">Export JSON (to this device)…</button>
           <button id="import">Import JSON…</button>
           <hr />
+          <button id="print" title="To-scale floor plans and elevations on A4 or A3, with a title block: print them or save as PDF">Print plans and elevations…</button>
           <button id="movie" title="A short, small video circling the house from about 30 degrees up, to send to people">Make orbit movie…</button>
           <input id="importFile" type="file" accept="application/json,.json" hidden />
           <hr />
@@ -139,6 +165,58 @@
         <button value="cancel">Close</button>
       </form>
     </dialog>
+    <dialog id="printDialog">
+      <form method="dialog">
+        <h2>Print plans and elevations</h2>
+        <p class="note">Drawn to scale with a title block, a page for each drawing. You see the pages before printing; the print dialog can also save them as a PDF.</p>
+        <div class="print-grid">
+          <label>Paper <select name="paper"><option>A4</option><option>A3</option></select></label>
+          <label>Orientation <select name="orientation"><option value="landscape">Landscape</option><option value="portrait">Portrait</option></select></label>
+          <label>Scale <select name="scale">
+            <option value="0">Largest that fits</option>
+            <option value="20">1:20</option>
+            <option value="50">1:50</option>
+            <option value="100">1:100</option>
+            <option value="200">1:200</option>
+          </select></label>
+        </div>
+        <h3>Pages</h3>
+        <div class="print-checks" id="printFloors"></div>
+        <div class="print-checks">
+          <label><input type="checkbox" name="side" value="N" checked /> North elevation</label>
+          <label><input type="checkbox" name="side" value="E" checked /> East elevation</label>
+          <label><input type="checkbox" name="side" value="S" checked /> South elevation</label>
+          <label><input type="checkbox" name="side" value="W" checked /> West elevation</label>
+          <label><input type="checkbox" name="view3d" /> The 3D view as it is now (not to scale)</label>
+        </div>
+        <h3>Show</h3>
+        <div class="print-checks">
+          <label><input type="checkbox" name="dims" checked /> Room dimensions on plans</label>
+          <label><input type="checkbox" name="furniture" checked /> Furniture on plans</label>
+          <label><input type="checkbox" name="garden" checked /> Patios and trees on plans</label>
+          <label><input type="checkbox" name="drains" /> Drains on the ground floor plan</label>
+          <label><input type="checkbox" name="trees" /> Trees on elevations (they can hide the house)</label>
+        </div>
+        <h3>Title block</h3>
+        <div class="print-grid">
+          <label>Project <input name="project" placeholder="e.g. The Old Rectory: extension" /></label>
+          <label>Drawn by <input name="author" /></label>
+        </div>
+        <div class="print-actions">
+          <button value="cancel">Cancel</button>
+          <button value="go" class="on">Show the pages</button>
+        </div>
+      </form>
+    </dialog>
+    <div id="printPreview" hidden>
+      <div class="preview-bar">
+        <span id="printNote"></span>
+        <span class="spacer"></span>
+        <button id="printGo" class="on">Print…</button>
+        <button id="printClose">Close</button>
+      </div>
+      <div id="printSheets"></div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

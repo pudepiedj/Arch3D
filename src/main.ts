@@ -8,6 +8,7 @@ import { SunPanel } from './ui/sunpanel';
 import { Sync, reachable } from './ui/sync';
 import { CATALOGUE, CATEGORIES } from './model/furniture';
 import { Store } from './ui/store';
+import { Printer } from './ui/print';
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const $$ = (sel: string) => [...document.querySelectorAll<HTMLButtonElement>(sel)];
@@ -35,7 +36,8 @@ store.subscribe(syncToolbar);
 store.subscribe(renderLevels);
 view.setBuilding(store.building, store.activeId);
 
-editor.shortcutsEnabled = () => !(view.mode === 'walk' && layout !== 'plan') && !document.querySelector('dialog[open]');
+editor.shortcutsEnabled = () =>
+  !(view.mode === 'walk' && layout !== 'plan') && !document.querySelector('dialog[open]') && document.querySelector<HTMLElement>('#printPreview')!.hidden;
 editor.onSelectionChange = () => panel.render();
 editor.onToolChange = () => {
   syncToolbar();
@@ -45,7 +47,25 @@ panel.render();
 
 // ---------------------------------------------------------------- toolbar
 
-for (const b of $$('#tools button')) b.addEventListener('click', () => editor.setTool(b.dataset.tool as Tool));
+for (const b of $$('#tools button[data-tool]')) b.addEventListener('click', () => editor.setTool(b.dataset.tool as Tool));
+
+// Drop-down menus (tools, View, File): one open at a time, each opening under its button.
+const menus = [...document.querySelectorAll<HTMLDetailsElement>('details.menu')];
+for (const m of menus) {
+  m.addEventListener('toggle', () => {
+    if (!m.open) return;
+    for (const other of menus) if (other !== m) other.open = false;
+    const items = m.querySelector<HTMLElement>('.menu-items')!;
+    const r = m.querySelector('summary')!.getBoundingClientRect();
+    items.style.top = `${r.bottom + 6}px`;
+    if (m.classList.contains('filemenu')) return;
+    // Keep it on screen.
+    items.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - items.offsetWidth - 8))}px`;
+    items.style.right = 'auto';
+  });
+  // Choosing a tool closes its menu; the View menu stays open for another toggle.
+  if (m.classList.contains('toolmenu')) for (const b of m.querySelectorAll('button')) b.addEventListener('click', () => (m.open = false));
+}
 for (const b of $$('#wallType button')) {
   b.addEventListener('click', () => {
     editor.wallProps.thickness = parseFloat(b.dataset.thickness!);
@@ -238,7 +258,7 @@ window.addEventListener('keydown', (e) => {
 view.onLockChange = syncToolbar;
 
 // File menu.
-const menu = $('details.menu') as HTMLDetailsElement;
+const menu = $('details.filemenu') as HTMLDetailsElement;
 const closeMenu = () => menu.removeAttribute('open');
 const load = (b: Building) => {
   editor.select(null);
@@ -279,10 +299,14 @@ const renderSync = () => {
     el.textContent = 'Checking…';
   } else if (!sync.safe) {
     el.dataset.state = 'pending';
-    el.textContent = 'Backing up…';
+    el.textContent = 'Saving…';
   } else {
     el.dataset.state = 'connected';
-    el.textContent = sync.lastBackup ? `Backed up ${time(sync.lastBackup)}` : 'Connected';
+    // Short, to keep the toolbar short: the tooltip says the rest.
+    el.textContent = sync.lastBackup ? time(sync.lastBackup) : 'Connected';
+    el.title = sync.lastBackup
+      ? `Connected to the computer running the app; this drawing was backed up to it at ${time(sync.lastBackup)}. Click to check again.`
+      : 'Connected to the computer running the app. Click to check again.';
   }
   $('#offline').hidden = sync.state !== 'offline';
 };
@@ -415,6 +439,18 @@ $('#movie').addEventListener('click', async () => {
     syncToolbar();
   }
 });
+const printer = new Printer(store, editor, view);
+$('#print').addEventListener('click', () => {
+  closeMenu();
+  printer.open();
+});
+// Ctrl/⌘+P makes the pages; once they are showing it prints them.
+window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p' && !printer.showing) {
+    e.preventDefault();
+    printer.open();
+  }
+});
 $('#import').addEventListener('click', () => $('#importFile').click());
 $('#importFile').addEventListener('change', async (e) => {
   const f = (e.target as HTMLInputElement).files?.[0];
@@ -426,7 +462,7 @@ $('#importFile').addEventListener('change', async (e) => {
   }
 });
 document.addEventListener('pointerdown', (e) => {
-  if (!menu.contains(e.target as Node)) closeMenu();
+  for (const m of menus) if (m.open && !m.contains(e.target as Node)) m.open = false;
 });
 
 const HINTS: Record<Tool, string> = {
@@ -437,7 +473,7 @@ const HINTS: Record<Tool, string> = {
   split: 'Click on a wall to add a joint you can drag',
   paste: 'Click on walls to place exact copies · Esc when done',
   stair: 'Click where the stair starts (its bottom step), then click in the direction it goes up',
-  roof: 'Click a roof to select it · click an edge of the selected roof to switch eave / gable end',
+  roof: 'Click a roof to select it · click an edge of the selected roof to switch eave / gable end, or (flat roof) to take its parapet off or put it back',
   garage: 'Click on a wall to place a garage roller door (2.5 m wide; change it in the panel)',
   glazed: 'Click on a wall to place floor-to-ceiling glass doors (French, sliding or bi-fold: choose in the panel)',
   pillar: 'Click to place a pillar; it rises to the roof above it',
@@ -452,7 +488,14 @@ const HINTS: Record<Tool, string> = {
 };
 
 function syncToolbar() {
-  for (const b of $$('#tools button')) b.classList.toggle('on', b.dataset.tool === editor.tool);
+  for (const b of $$('#tools button[data-tool]')) b.classList.toggle('on', b.dataset.tool === editor.tool);
+  // A tool menu shows the tool in use from it.
+  for (const m of document.querySelectorAll<HTMLDetailsElement>('details.toolmenu')) {
+    const active = m.querySelector<HTMLButtonElement>(`button[data-tool="${editor.tool}"]`);
+    const summary = m.querySelector('summary')!;
+    summary.textContent = active ? active.firstChild!.textContent!.trim() : m.dataset.label!;
+    summary.classList.toggle('on', !!active);
+  }
   for (const b of $$('#wallType button')) {
     b.classList.toggle('on', Math.abs(parseFloat(b.dataset.thickness!) - editor.wallProps.thickness) < 1e-6);
   }
