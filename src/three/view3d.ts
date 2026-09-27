@@ -308,6 +308,12 @@ export class View3D {
     cam.updateProjectionMatrix();
   }
 
+  /** The 3D view as it is now, as a PNG data URL. */
+  snapshot(): string {
+    this.renderer.render(this.scene, this.camera);
+    return this.renderer.domElement.toDataURL('image/png');
+  }
+
   /** Orbit camera looking at the whole plan. */
   frame() {
     const b = this.building && buildingBounds(this.building);

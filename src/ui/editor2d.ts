@@ -82,6 +82,15 @@ interface Snap {
   guides: { from: Vec2; to: Vec2 }[];
 }
 
+/** What a floor plan drawn for printing shows. */
+export interface PrintOptions {
+  dpr: number;
+  dims: boolean;
+  furniture: boolean;
+  drains: boolean;
+  garden: boolean;
+}
+
 const DRAG_THRESHOLD = 5; // px before a press becomes a drag
 const SNAP_PX = 12;
 
@@ -2004,9 +2013,90 @@ export class Editor2D {
     });
   }
 
+  /** Set while a floor is drawn for printing: no grid, joints, handles or other editing marks. */
+  private printing: PrintOptions | null = null;
+
+  /**
+   * One floor drawn for printing, on a canvas of its own: the `area` of the plan (metres) at
+   * `pxPerM` CSS pixels to the metre, with `dpr` device pixels to each CSS pixel.
+   */
+  printFloor(levelId: string, area: Box, pxPerM: number, opts: PrintOptions): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round((area.x1 - area.x0) * pxPerM * opts.dpr);
+    canvas.height = Math.round((area.y1 - area.y0) * pxPerM * opts.dpr);
+    const self = this as unknown as { canvas: HTMLCanvasElement };
+    const saved = {
+      canvas: this.canvas,
+      ctx: this.ctx,
+      view: this.view,
+      selection: this.selection,
+      tool: this.tool,
+      hover: this.hover,
+      guides: this.lastGuides,
+      showDims: this.showDims,
+      active: this.store.activeId,
+    };
+    try {
+      self.canvas = canvas;
+      this.ctx = canvas.getContext('2d')!;
+      this.view = { scale: pxPerM, ox: -area.x0 * pxPerM, oy: -area.y0 * pxPerM };
+      this.selection = null;
+      this.tool = 'select';
+      this.hover = null;
+      this.lastGuides = [];
+      this.showDims = opts.dims;
+      this.store.activeId = levelId;
+      this.printing = opts;
+      this.render();
+    } finally {
+      this.printing = null;
+      self.canvas = saved.canvas;
+      this.ctx = saved.ctx;
+      this.view = saved.view;
+      this.selection = saved.selection;
+      this.tool = saved.tool;
+      this.hover = saved.hover;
+      this.lastGuides = saved.guides;
+      this.showDims = saved.showDims;
+      this.store.activeId = saved.active;
+    }
+    return canvas;
+  }
+
+  /** Overall dimensions of the walls, below and to the right of them, for a printed plan. */
+  private drawOverall(C: Record<string, string>) {
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const fp of this.fps.values()) {
+      for (const p of fp.polygon) {
+        x0 = Math.min(x0, p.x);
+        y0 = Math.min(y0, p.y);
+        x1 = Math.max(x1, p.x);
+        y1 = Math.max(y1, p.y);
+      }
+    }
+    if (!Number.isFinite(x0)) return;
+    // Clear of the patios and decks too, so the lines don't run across them.
+    let right = x1;
+    let bottom = y1;
+    if (this.printing?.garden) {
+      for (const pt of Object.values(this.plan.patios ?? {})) {
+        for (const p of pt.points) {
+          right = Math.max(right, p.x);
+          bottom = Math.max(bottom, p.y);
+        }
+      }
+    }
+    const off = 22 / this.view.scale;
+    this.dimension({ x: x0, y: bottom }, { x: x1, y: bottom }, off, C.ink);
+    this.dimension({ x: right, y: y1 }, { x: right, y: y0 }, off, C.ink);
+  }
+
   private render() {
     const ctx = this.ctx;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = this.printing?.dpr ?? (window.devicePixelRatio || 1);
     const W = this.canvas.width / dpr;
     const H = this.canvas.height / dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -2025,13 +2115,15 @@ export class Editor2D {
       danger: col('--danger', '#c2413a'),
       underlay: col('--plan-underlay', 'rgba(59, 61, 66, 0.16)'),
     };
+    // On paper: white, whatever the screen's colours, and light rooms to save ink.
+    if (this.printing) Object.assign(C, { bg: '#ffffff', room: '#f4f1ea', opening: '#ffffff', wall: '#2b2d31', ink: '#2b2d31', text: '#3b3d42', accent: '#2b2d31' });
     ctx.fillStyle = C.bg;
     ctx.fillRect(0, 0, W, H);
 
     const plan = this.plan;
     this.fps = computeFootprints(plan);
-    this.drawGrid(W, H, C.grid, C.gridMajor);
-    this.drawPatios(C);
+    if (!this.printing) this.drawGrid(W, H, C.grid, C.gridMajor);
+    if (!this.printing || this.printing.garden) this.drawPatios(C);
 
 
     // Rooms.
@@ -2045,12 +2137,12 @@ export class Editor2D {
       ctx.fill();
     }
 
-    this.drawFurniture(C);
-    if (this.onGround) this.drawDrains(C);
+    if (!this.printing || this.printing.furniture) this.drawFurniture(C);
+    if (this.onGround && (!this.printing || this.printing.drains)) this.drawDrains(C);
 
     // The floor below, faintly, as a guide for placing walls above it.
     const below = this.below();
-    if (below) {
+    if (below && !this.printing) {
       ctx.fillStyle = C.underlay;
       for (const fp of computeFootprints(below).values()) {
         this.path(fp.polygon);
@@ -2130,7 +2222,7 @@ export class Editor2D {
       this.line(f[0], f[2]);
       this.line(f[1], f[3]);
     }
-    if (this.flashMsg && performance.now() < this.flashMsg.until) {
+    if (this.flashMsg && performance.now() < this.flashMsg.until && !this.printing) {
       const q = this.toScreen(this.flashMsg.at);
       ctx.font = '600 12px system-ui, sans-serif';
       ctx.textAlign = 'left';
@@ -2164,7 +2256,7 @@ export class Editor2D {
     }
 
     // Joints.
-    const showNodes = this.tool === 'select' || this.tool === 'wall' || this.tool === 'split';
+    const showNodes = !this.printing && (this.tool === 'select' || this.tool === 'wall' || this.tool === 'split');
     if (showNodes) {
       for (const n of Object.values(plan.nodes)) {
         const s = this.toScreen(n);
@@ -2179,7 +2271,11 @@ export class Editor2D {
       }
     }
 
-    this.drawTrees(C);
+    if (!this.printing || this.printing.garden) this.drawTrees(C);
+    if (this.printing) {
+      this.drawOverall(C);
+      return;
+    }
     this.drawNorth(C, W, H);
     this.drawOutlineHandles(C);
     this.drawToolPreview(C);
