@@ -185,7 +185,8 @@ export interface Roof {
 export interface RoofEdgeSetting {
   x: number;
   y: number;
-  type: 'eave' | 'gable';
+  /** Pitched roofs: a sloping eave or a gable end. Flat roofs: 'open' for no parapet on this edge. */
+  type: 'eave' | 'gable' | 'open';
 }
 
 /** Settings for one separately roofed area of a floor, found by a point inside it. */

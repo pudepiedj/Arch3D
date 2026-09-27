@@ -3,7 +3,7 @@ import { addLevelOnTop, createBuilding } from '../src/model/building';
 import { intersectAll } from '../src/model/clip';
 import { polygonArea } from '../src/model/geom';
 import { addWall } from '../src/model/plan';
-import { levelRoofs, outerFaces, outsetLoop } from '../src/model/roof';
+import { levelRoofs, outerFaces, outsetLoop, toggleParapet } from '../src/model/roof';
 import type { Building, Level, Roof } from '../src/model/types';
 
 function box(level: Level, pts: [number, number][]) {
@@ -160,6 +160,20 @@ describe('flat roof sections drawn over part of the house', () => {
     // The veranda has none along the house, only round its three free sides.
     expect(veranda.runs.some(onSouth)).toBe(false);
     expect(veranda.runs.length).toBe(3);
+  });
+
+  it('an edge can have its parapet taken off by hand, and put back', () => {
+    const { b, g } = bungalow();
+    g.roof = { ...FLAT };
+    const area = () => levelRoofs(b, g).find((x) => x.id.startsWith('area:'))!;
+    const runs = () => area().geometry!.parapet!.runs.length;
+    expect(runs()).toBe(4);
+    const east = area().ring.findIndex((p, i, r) => Math.abs(p.x - 10.15) < 1e-3 && Math.abs(r[(i + 1) % r.length].x - 10.15) < 1e-3);
+    g.roof.edges = toggleParapet(area(), east);
+    expect(runs()).toBe(3);
+    expect(area().geometry!.parapet!.runs.some((r) => Math.abs(r.a.x - 10.15) < 1e-3 && Math.abs(r.b.x - 10.15) < 1e-3)).toBe(false);
+    g.roof.edges = toggleParapet(area(), east);
+    expect(runs()).toBe(4);
   });
 
   it('a pitched roof, or a parapet of 0, has none', () => {

@@ -128,6 +128,26 @@ function parapetRuns(ring: Vec2[], on: boolean[], covered: (p: Vec2) => boolean 
   return runs;
 }
 
+/** Which edges of a flat roof have a parapet: all but those against a wall, or set open by hand. */
+function parapetOn(ring: Vec2[], roles: EdgeRole[], roof: Roof): boolean[] {
+  const on = roles.map((role) => role !== 'wall');
+  for (const e of roof.edges ?? []) {
+    if (e.type !== 'open') continue;
+    const i = findEdge(ring, e);
+    if (i >= 0) on[i] = false;
+  }
+  return on;
+}
+
+/** Take the parapet off one edge of a flat roof, or put it back. */
+export function toggleParapet(r: LevelRoof, edge: number): RoofEdgeSetting[] {
+  const a = r.ring[edge];
+  const b = r.ring[(edge + 1) % r.ring.length];
+  const was = (r.roof.edges ?? []).some((e) => e.type === 'open' && findEdge(r.ring, e) === edge);
+  const kept = (r.roof.edges ?? []).filter((e) => findEdge(r.ring, e) !== edge);
+  return was ? kept : [...kept, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, type: 'open' }];
+}
+
 /**
  * Where flat roofs meet or overlap (a roof carried on over pillars by a hand-drawn section,
  * say), they are one roof: no parapet stands where there is roof at the same height or
@@ -140,7 +160,7 @@ function joinParapets(roofs: LevelRoof[]) {
     if (!p) continue;
     const others = flats.filter((o) => o !== r && o.geometry!.faces[0].pts[0].z >= p.roof - 0.05);
     if (!others.length) continue;
-    const on = r.roles.map((role) => role !== 'wall');
+    const on = parapetOn(r.ring, r.roles, r.roof);
     p.runs = parapetRuns(r.geometry!.outline, on, (q) => others.some((o) => pointInPolygon(q, o.geometry!.outline)));
   }
 }
@@ -432,6 +452,7 @@ export function edgeRoles(ring: Vec2[], walls: boolean[], roof: Roof): EdgeRole[
   }
   if (roof.kind === 'gable' || roof.kind === 'hip') {
     for (const e of roof.edges ?? []) {
+      if (e.type === 'open') continue;
       const i = findEdge(ring, e);
       if (i >= 0 && !walls[i]) roles[i] = e.type;
     }
@@ -488,7 +509,7 @@ export function buildRoof(ring: Vec2[], roles: EdgeRole[], roof: Roof, height: n
   if (roof.kind === 'flat' && parapetHeight(roof) > 0) {
     // The walls carry on up past the roof as a parapet: no overhang, and no fascia.
     const top = height + FLAT_THICKNESS;
-    const on = roles.map((r) => r !== 'wall');
+    const on = parapetOn(ring, roles, roof);
     return {
       faces: [{ pts: ring.map((p) => ({ ...p, z: top })), kind: 'flat' }],
       eaves: [],

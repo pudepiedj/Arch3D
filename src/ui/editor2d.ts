@@ -26,7 +26,7 @@ import { addFurniture, againstWall, catalogueItem, footprint } from '../model/fu
 import { drawFurnitureSymbol } from './furniture2d';
 import { addChimney, addRooflight, addSolarArray, chimneyFootprint, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { roofSurfaceAt } from '../model/roof';
-import { DEFAULT_ROOF, type LevelRoof, levelRoofs, roofAreaRings, setAreaRoof, toggleEdge } from '../model/roof';
+import { DEFAULT_ROOF, type LevelRoof, levelRoofs, parapetHeight, roofAreaRings, setAreaRoof, toggleEdge, toggleParapet } from '../model/roof';
 import { DEFAULT_GOING, DEFAULT_STAIR_WIDTH, type StairGeometry, addStair, stairAt, stairGeometry } from '../model/stairs';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import {
@@ -1447,6 +1447,18 @@ export class Editor2D {
     if (this.roofMode === 'draw') return this.outlineClick(w);
     const roofs = this.roofs();
     const sel = this.selection?.kind === 'roof' ? roofs.find((r) => r.id === this.selection!.id) : undefined;
+    if (sel?.geometry && sel.roof.kind === 'flat' && parapetHeight(sel.roof) > 0) {
+      // A flat roof: click an edge to take its parapet off, or put it back.
+      const tol = 10 / this.view.scale;
+      const edge = sel.ring.findIndex((a, i) => projectOnSegment(w, a, sel.ring[(i + 1) % sel.ring.length]).dist < tol);
+      if (edge >= 0 && sel.roles[edge] !== 'wall') {
+        const edges = toggleParapet(sel, edge);
+        if (sel.id.startsWith('section:')) plan.roofSections![sel.id.slice(8)].roof.edges = edges;
+        else setAreaRoof(plan, sel.ring, { ...sel.roof, edges });
+        this.store.commit();
+        return;
+      }
+    }
     if (sel?.geometry && sel.roof.kind !== 'flat') {
       const tol = 10 / this.view.scale;
       const outline = sel.geometry.outline;

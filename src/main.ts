@@ -473,7 +473,7 @@ const HINTS: Record<Tool, string> = {
   split: 'Click on a wall to add a joint you can drag',
   paste: 'Click on walls to place exact copies · Esc when done',
   stair: 'Click where the stair starts (its bottom step), then click in the direction it goes up',
-  roof: 'Click a roof to select it · click an edge of the selected roof to switch eave / gable end',
+  roof: 'Click a roof to select it · click an edge of the selected roof to switch eave / gable end, or (flat roof) to take its parapet off or put it back',
   garage: 'Click on a wall to place a garage roller door (2.5 m wide; change it in the panel)',
   glazed: 'Click on a wall to place floor-to-ceiling glass doors (French, sliding or bi-fold: choose in the panel)',
   pillar: 'Click to place a pillar; it rises to the roof above it',

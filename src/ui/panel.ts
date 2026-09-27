@@ -356,6 +356,14 @@ export class Panel {
         this.done();
       }, 'm', 'Height above this floor where the roof starts (e.g. lower for a porch canopy)');
     }
+    if (found && roof.kind === 'flat' && parapetHeight(roof) > 0) {
+      const open = (roof.edges ?? []).filter((e) => e.type === 'open').length;
+      this.note(
+        'Click an edge of this roof on the plan to take its parapet off, or put it back' +
+          (open ? ` (${open} edge${open === 1 ? '' : 's'} without one now).` : '.') +
+          ' Where it joins another flat roof there is none anyway.',
+      );
+    }
     if (found && roof.kind !== 'flat' && roof.kind !== 'none') {
       const gables = found.roles.filter((r) => r === 'gable').length;
       const walls = found.roles.filter((r) => r === 'wall').length;
