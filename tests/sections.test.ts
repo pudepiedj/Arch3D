@@ -3,7 +3,7 @@ import { addLevelOnTop, createBuilding } from '../src/model/building';
 import { intersectAll } from '../src/model/clip';
 import { polygonArea } from '../src/model/geom';
 import { addWall } from '../src/model/plan';
-import { levelRoofs, outerFaces } from '../src/model/roof';
+import { levelRoofs, outerFaces, outsetLoop } from '../src/model/roof';
 import type { Building, Level, Roof } from '../src/model/types';
 
 function box(level: Level, pts: [number, number][]) {
@@ -132,5 +132,36 @@ describe('flat roof sections drawn over part of the house', () => {
     section(g, [[2, 5], [6, 5], [6, 8.5], [2, 8.5]], { kind: 'gable', pitch: 35, overhang: 0.3 });
     const r = levelRoofs(b, g).find((x) => x.id === 'section:s')!;
     expect(r.roles.some((role) => role !== 'wall')).toBe(true);
+  });
+});
+
+describe('outlines with nearly lined-up edges', () => {
+  it('never throws a corner far out when two almost-straight edges are pushed out by different amounts', () => {
+    // An edge resting on the house (not pushed) running on, 3 cm out of line, into an eave (pushed 0.3).
+    const ring = [
+      { x: 0, y: 0 },
+      { x: 4, y: 0 },
+      { x: 8, y: 0.03 },
+      { x: 8, y: 3 },
+      { x: 0, y: 3 },
+    ];
+    const out = outsetLoop(ring, [0, 0.3, 0.3, 0.3, 0.3]);
+    for (let i = 0; i < ring.length; i++) {
+      expect(Math.hypot(out[i].x - ring[i].x, out[i].y - ring[i].y)).toBeLessThan(0.8);
+    }
+  });
+
+  it('a flat section with such a joint has no spike', () => {
+    const b = createBuilding();
+    const g = b.levels[0];
+    box(g, [[0, 0], [10, 0], [10, 8], [0, 8]]);
+    // A canopy along the back wall, with a corner 3 cm out of line where it runs past the house.
+    section(g, [[4, 8], [10, 8.03], [14, 8], [14, 10.5], [4, 10.5]]);
+    const r = levelRoofs(b, g).find((x) => x.id === 'section:s')!;
+    const out = r.geometry!.outline;
+    expect(Math.max(...out.map((p) => p.x))).toBeLessThan(14.5);
+    expect(Math.min(...out.map((p) => p.x))).toBeGreaterThan(3.5);
+    expect(Math.min(...out.map((p) => p.y))).toBeGreaterThan(7.5);
+    expect(bleed(b, g, 's')).toBeLessThan(1e-3);
   });
 });

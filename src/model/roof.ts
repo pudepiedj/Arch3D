@@ -544,7 +544,17 @@ export function outsetLoop(pts: Vec2[], by: number[]): Vec2[] {
     const dCur = normalize(sub(pts[(i + 1) % k], p));
     const a = sub(pts[prev], scale(perp(dPrev), by[prev]));
     const c = sub(p, scale(perp(dCur), by[i]));
-    return lineIntersect(a, dPrev, c, dCur) ?? c;
+    const corner = lineIntersect(a, dPrev, c, dCur);
+    // Two edges almost in line but moved by different amounts (a wall edge running on into
+    // an eave, through a joint slightly out of line) meet a very long way off: the corner
+    // would become a spike metres long. There, step between the two moved edges instead.
+    const reach = Math.max(Math.abs(by[prev]), Math.abs(by[i]));
+    const nearlyStraight = dPrev.x * dCur.x + dPrev.y * dCur.y > Math.cos((20 * Math.PI) / 180);
+    if (!corner || (nearlyStraight && Math.abs(by[prev] - by[i]) > 1e-9 && dist(corner, p) > 2 * reach + 0.01)) {
+      const endPrev = sub(p, scale(perp(dPrev), by[prev]));
+      return { x: (endPrev.x + c.x) / 2, y: (endPrev.y + c.y) / 2 };
+    }
+    return corner;
   });
 }
 
