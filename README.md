@@ -26,7 +26,7 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 
 ## Using it
 
-**On an iPad (no keyboard):** while you draw something a point at a time (walls, a patio, a hedge or fence, a roof section, a drain run, a stair), a bar at the bottom of the plan has **Done** (finish it), **Back** (take back the last point) and **Cancel** (stop; walls and drain pipes already laid stay, and Undo takes them back). A **double tap** with a finger or the Pencil finishes too, like a double-click. To leave a tool, tap **Select**.
+**On an iPad (no keyboard):** while you draw something a point at a time (walls, a patio, a hedge or fence, a roof section, a drain run, a stair), a bar at the bottom of the plan has **Done** (finish it), **Back** (take back the last point) and **Cancel** (stop; walls and drain pipes already laid stay, and Undo takes them back). A **double tap** with a finger or the Pencil finishes too, like a double-click. To leave a tool, tap **Select**. In the panels, type a number and tap the keyboard's **done** key or anywhere else (the plan, the 3D view) and it is applied; or use the **−** and **+** beside each number.
 
 **The toolbar:** **Select** is always there; the other tools are grouped in drop-down menus: **Build** (wall, split, stretch, stair, pillar), **Openings** (door, window, glass door, garage door), **Roof** (roofs, rooflight, solar panels, chimney) and **Garden** (patio, tree, drain), then **Furniture**. A menu shows the name of the tool in use from it, highlighted. The keyboard shortcuts are listed in the menus and work as before. **View** has the on/off settings: room dimensions, Underground and Cutaway. On a narrow screen (an iPad upright) the toolbar runs onto a second row rather than off the side.
 

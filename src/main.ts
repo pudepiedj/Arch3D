@@ -154,6 +154,19 @@ $('#ortho').addEventListener('click', () => {
   editor.ortho = !editor.ortho;
   syncToolbar();
 });
+// Tapping anywhere else finishes typing in a panel field (and so applies it): on an iPad
+// the plan and 3D view take the touch, so the field would otherwise keep the keyboard.
+document.addEventListener(
+  'pointerdown',
+  (e) => {
+    const a = document.activeElement as HTMLElement | null;
+    if (!a || !(a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement)) return;
+    if (a.contains(e.target as Node) || (e.target as HTMLElement).closest?.('dialog')) return;
+    a.blur();
+  },
+  true,
+);
+
 // While something is drawn a point at a time: Done, Back and Cancel, for when there is no
 // keyboard (an iPad) and a double-click is awkward.
 $('#drawDone').addEventListener('click', () => editor.finishCurrent());

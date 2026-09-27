@@ -1025,6 +1025,8 @@ export class Panel {
     input.min = String(min);
     input.max = String(max);
     input.value = String(Math.round(value * 1000) / 1000);
+    // The on-screen keyboard's key says "done", and finishes the entry.
+    input.enterKeyHint = 'done';
     const u = document.createElement('em');
     u.textContent = unit;
     input.addEventListener('change', () => {
@@ -1036,7 +1038,25 @@ export class Panel {
       if (e.key === 'Enter') input.blur();
       e.stopPropagation();
     });
-    row.append(span, input, u);
+    // − and + step it without the keyboard (the easy way on an iPad).
+    const places = Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
+    const stepper = (sign: number, text: string, what: string) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'step';
+      b.textContent = text;
+      b.title = `${what} by ${step} ${unit}`.trim();
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        const cur = parseFloat(input.value);
+        const base = Number.isFinite(cur) ? cur : value;
+        const next = clamp(Math.round((base + sign * step) / step) * step, min, max);
+        input.value = next.toFixed(places);
+        onChange(Number(next.toFixed(places + 3)));
+      });
+      return b;
+    };
+    row.append(span, stepper(-1, '−', 'Less'), input, stepper(1, '+', 'More'), u);
     this.el.append(row);
   }
 
@@ -1048,7 +1068,8 @@ export class Panel {
     const input = document.createElement('input');
     input.type = 'text';
     input.value = value;
-    input.style.gridColumn = '2 / 4';
+    input.style.gridColumn = '2 / 6';
+    input.enterKeyHint = 'done';
     input.addEventListener('change', () => {
       onChange(input.value.trim());
       input.blur();
