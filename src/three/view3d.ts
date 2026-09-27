@@ -47,7 +47,7 @@ export class View3D {
   /** Elevation of the level being edited/walked. */
   private floorY = 0;
   /** Hide the levels above the active one in orbit view. */
-  cutaway = true;
+  cutaway = false;
   private keys = new Set<string>();
   private timer = new THREE.Timer();
   private framed = false;

@@ -155,8 +155,19 @@ view.onWalkLevelChange = (id) => {
   editor.select(null);
   store.setActive(id);
 };
+// Cutaway starts off (the whole house), and each device remembers the choice.
+try {
+  if (localStorage.getItem('arch3d.cutaway') === '1') view.setCutaway(true);
+} catch {
+  // No storage (private browsing): it stays off.
+}
 $('#cutaway').addEventListener('click', () => {
   view.setCutaway(!view.cutaway);
+  try {
+    localStorage.setItem('arch3d.cutaway', view.cutaway ? '1' : '0');
+  } catch {
+    // Not remembered; no matter.
+  }
   syncToolbar();
 });
 

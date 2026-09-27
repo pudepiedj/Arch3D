@@ -127,13 +127,13 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - **Cross gables:** for a window bay or projection that is part of the house, click the bay's front edge of the main roof to make it a gable. The bay gets its own ridge, meeting the main roof in valleys.
 - **Extra roof sections:** Roof tool → **Add section**, then click the corners (they snap to walls). Use it for a porch canopy or a separate roof over part of the house. Sections can overlap other roofs, have their own gable ends, and can start lower (**Eaves height**).
 - **On the plan:** eaves are dashed, gable ends solid, and ridges, hips and valleys dotted.
-- **Seeing it in 3D:** in orbit view with **Cutaway** on, the roofs of the floor you are editing are lifted off with its ceiling. Turn Cutaway off to see the whole house.
+- **Seeing it in 3D:** in orbit view with **Cutaway** on, the roofs of the floor you are editing are lifted off with its ceiling. With it off (the default) you see the whole house.
 
 **Floors:** the floor list at the top right of the plan switches between storeys (Page Up/Page Down also work).
 - **+ Floor** adds a storey on top, starting with a copy of the outside walls of the floor below.
 - The floor below shows faintly under the plan, and new walls snap to its joints, so walls line up from floor to floor.
 - Click the current floor's name for its settings: name, floor-to-floor height and floor depth (the resulting ceiling height is shown), plus add or delete floors.
-- In 3D, **Cutaway** hides the floors above the one you are editing and lifts off its ceiling, doll's-house style. Walk mode puts you on the floor you are editing, with ceilings overhead.
+- In 3D, **Cutaway** hides the floors above the one you are editing and lifts off its ceiling, doll's-house style. It starts off (the whole house is shown), and each device remembers whether you last had it on. Walk mode puts you on the floor you are editing, with ceilings overhead.
 - Walls run the full floor-to-floor height by default. Changing a floor's height takes those walls with it.
 
 The panel edits exact sizes: wall thickness, height and length; opening width, height, sill and distance from the corner; door hinge side and swing direction.
