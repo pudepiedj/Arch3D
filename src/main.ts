@@ -278,14 +278,14 @@ const renderSync = () => {
 sync.onChange = renderSync;
 renderSync();
 $('#sync').addEventListener('click', () => void sync.check());
-$('#offlineExport').addEventListener('click', () => exportCopy());
+$('#offlineExport').addEventListener('click', () => void exportCopy());
 
 $('#saveShared').addEventListener('click', async () => {
   closeMenu();
   // Check the computer is there before asking for a name, and say plainly if it is not.
   if (!(await reachable())) {
     await sync.check();
-    if (confirm('NOT SAVED: the computer running the app isn\'t answering (has "npm run dev" stopped?).\n\nDownload a copy of the drawing to this device instead?')) exportCopy();
+    if (confirm('NOT SAVED: the computer running the app isn\'t answering (has "npm run dev" stopped?).\n\nDownload a copy of the drawing to this device instead?')) void exportCopy();
     return;
   }
   const when = new Date().toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -300,10 +300,10 @@ $('#saveShared').addEventListener('click', async () => {
     if (!res.ok) throw new Error(`${res.status}`);
     const saved = await res.json();
     sync.saved();
-    alert(`Saved as a new drawing on the computer:\n${saved.file}`);
+    alert(`Saved as a new drawing on the computer, in the project's drawings folder:\n${saved.path ?? saved.file}`);
   } catch {
     await sync.check();
-    if (confirm('NOT SAVED: the computer stopped answering while saving.\n\nDownload a copy of the drawing to this device instead?')) exportCopy();
+    if (confirm('NOT SAVED: the computer stopped answering while saving.\n\nDownload a copy of the drawing to this device instead?')) void exportCopy();
   }
 });
 
@@ -352,18 +352,35 @@ $('#openShared').addEventListener('click', async () => {
   dialog.showModal();
 });
 
-/** Download the drawing as a file on this device. */
-function exportCopy() {
-  const blob = new Blob([JSON.stringify(store.building, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
+/**
+ * Save the drawing as a file on this device. Where the browser can (Chrome, Edge) this asks
+ * where to put it; otherwise (Safari) it goes to the Downloads folder, as browsers insist.
+ */
+async function exportCopy() {
+  closeMenu();
+  const text = JSON.stringify(store.building, null, 2);
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
-  a.download = `house-${stamp}.arch3d.json`;
+  const suggested = `house-${stamp}.arch3d.json`;
+  const picker = (window as unknown as { showSaveFilePicker?: (o: unknown) => Promise<{ createWritable(): Promise<{ write(d: string): Promise<void>; close(): Promise<void> }> }> }).showSaveFilePicker;
+  if (picker) {
+    try {
+      const handle = await picker({ suggestedName: suggested, types: [{ description: 'Arch3D drawing', accept: { 'application/json': ['.json'] } }] });
+      const out = await handle.createWritable();
+      await out.write(text);
+      await out.close();
+      return;
+    } catch (err) {
+      // Cancelled: nothing to do. Any other failure: fall back to a download.
+      if ((err as Error).name === 'AbortError') return;
+    }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  a.download = suggested;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  closeMenu();
 }
-$('#export').addEventListener('click', () => exportCopy());
+$('#export').addEventListener('click', () => void exportCopy());
 $('#import').addEventListener('click', () => $('#importFile').click());
 $('#importFile').addEventListener('change', async (e) => {
   const f = (e.target as HTMLInputElement).files?.[0];

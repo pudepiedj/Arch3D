@@ -116,7 +116,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: () => voi
       for (let n = 2; (await readdir(DIR)).includes(fileName); n++) fileName = fileName.replace(/(-\d+)?\.json$/, `-${n}.json`);
       const record = { name, device: String(data.device ?? ''), savedAt: when.toISOString(), building: data.building };
       await writeFile(join(DIR, fileName), JSON.stringify(record), { flag: 'wx' });
-      return send(res, 201, { file: fileName, name, device: record.device, savedAt: record.savedAt });
+      return send(res, 201, { file: fileName, path: join(DIR, fileName), name, device: record.device, savedAt: record.savedAt });
     }
     send(res, 405, { error: 'not allowed' });
   } catch (err) {

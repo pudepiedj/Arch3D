@@ -7,6 +7,8 @@ import type { View3D } from '../three/view3d';
 import type { Store } from './store';
 
 const DAY = 86400000;
+/** Per device: whether the real sun is on, and the moment it was set to. */
+const REMEMBER = 'arch3d.sun';
 const KEY_DATES: [string, number, number][] = [
   ['21 Mar', 2, 20],
   ['21 Jun', 5, 21],
@@ -23,6 +25,7 @@ export class SunPanel {
   private playBtn!: HTMLButtonElement;
   private siteFields = new Map<'latitude' | 'longitude' | 'north', HTMLInputElement>();
   private message!: HTMLElement;
+  private lightBtn!: HTMLButtonElement;
 
   constructor(
     private el: HTMLElement,
@@ -30,6 +33,14 @@ export class SunPanel {
     private store: Store,
   ) {
     this.build();
+    // Come back as it was left: the real sun at the moment last set (on this device).
+    try {
+      const saved = JSON.parse(localStorage.getItem(REMEMBER) ?? 'null') as { on: boolean; time: number } | null;
+      if (saved?.time) this.view.setSunTime(new Date(saved.time));
+      if (saved?.on) this.view.setSunStudy(true);
+    } catch {
+      // Nothing remembered: plain light, the time now.
+    }
     store.subscribe(() => {
       if (!this.el.hidden && !this.el.contains(document.activeElement)) this.sync();
     });
@@ -39,11 +50,30 @@ export class SunPanel {
     return !this.el.hidden;
   }
 
+  /**
+   * Open or close the panel. Opening it turns the real sun on; closing it leaves the sun
+   * where it was set (use Plain light in the panel to go back to the fixed light).
+   */
   show(on: boolean) {
     this.el.hidden = !on;
     if (!on) this.stop();
-    this.view.setSunStudy(on);
+    if (on && !this.view.sunStudy) this.setReal(true);
     if (on) this.sync();
+  }
+
+  /** The real sun (true) or the plain, fixed light (false). */
+  private setReal(on: boolean) {
+    this.view.setSunStudy(on);
+    this.remember();
+    this.sync();
+  }
+
+  private remember() {
+    try {
+      localStorage.setItem(REMEMBER, JSON.stringify({ on: this.view.sunStudy, time: this.view.sunTime.getTime() }));
+    } catch {
+      // Not remembered; no matter.
+    }
   }
 
   private get time() {
@@ -52,6 +82,8 @@ export class SunPanel {
 
   private setTime(t: Date) {
     this.view.setSunTime(t);
+    if (!this.view.sunStudy) this.view.setSunStudy(true);
+    this.remember();
     this.sync();
   }
 
@@ -94,7 +126,9 @@ export class SunPanel {
     const play = document.createElement('div');
     play.className = 'buttons';
     this.playBtn = this.button('▶ Play the day', () => (this.playing ? this.stop() : this.play()));
-    play.append(this.playBtn);
+    this.lightBtn = this.button('Plain light', () => this.setReal(!this.view.sunStudy));
+    this.lightBtn.title = 'Switch between the real sun for this date and time, and a plain fixed light that shows the model well at any hour';
+    play.append(this.playBtn, this.lightBtn);
     el.append(play);
 
     this.readout = document.createElement('p');
@@ -213,6 +247,7 @@ export class SunPanel {
 
   /** Put the controls and read-out in step with the current time and site. */
   private sync() {
+    this.lightBtn.textContent = this.view.sunStudy ? 'Plain light' : 'Real sun';
     const t = this.time;
     const start = new Date(t.getFullYear(), 0, 1);
     this.dateInput.value = String(Math.round((new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime() - start.getTime()) / DAY));
@@ -230,6 +265,7 @@ export class SunPanel {
     } else lines.push('The sun is below the horizon');
     lines.push(rise && set ? `Sunrise ${hm(rise)} · sunset ${hm(set)}` : 'No sunrise or sunset today');
     if (!this.store.building.site) lines.push(`Location not set: showing ${DEFAULT_SITE.latitude}° N (London)`);
+    if (!this.view.sunStudy) lines.push('Plain light is on: press Real sun (or move a slider) to see the sun for this time');
     this.readout.replaceChildren(...lines.map((l) => Object.assign(document.createElement('span'), { textContent: l })));
   }
 

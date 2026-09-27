@@ -19,7 +19,7 @@ npm run build    # static site in dist/
 - **Automatic backup:** while the computer is reachable, each device's drawing is backed up to it a few seconds after every change (one file per device, `drawings/autosave-<device>.json`, listed in **Open from computer…** as *Automatic backup*). The light next to **File** shows *Backed up 14:32*, *Backing up…* or *Not connected*.
 - **If the computer stops answering** (`npm run dev` stopped, Wi-Fi dropped), a red banner says so at once. Your changes are then kept only in that browser: start `npm run dev` again and the app backs up straight away (the page reloads itself), or press **Download a copy**. **Save to computer…** checks first and says plainly **NOT SAVED** rather than seeming to work, and the browser asks before you close or reload a page whose changes the computer hasn't got.
 - `npm run dev` always uses port 5173. If something else has it, it stops with a message rather than moving to another port, because the browser keeps its working copy per address, and on a new port your work would seem to have vanished.
-- **Export/Import JSON** still work for keeping or sending a copy elsewhere.
+- **Export/Import JSON** save and open a file on the device you are using, for keeping or sending a copy elsewhere. Chrome and Edge ask where to put it; Safari always uses `Downloads` (a web page can't choose the folder there). **Save to computer** is the one that goes into this project's `drawings` folder, and its message shows the full path.
 - If the iPad can't connect, the computer's firewall may be asking whether to allow incoming connections to `node`. Allow it.
 
 After a `git pull`, run `npm install` again before `npm run dev`. If Vite says it can't resolve an import from one of the `src` files, a new package has been added that isn't installed yet.
@@ -106,7 +106,7 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - The panel shows the sun's height and compass direction, and sunrise and sunset.
 - **Location and orientation:** latitude and longitude (from any online map, or **Use this device's location**, which works only over https or on the computer itself), and the compass direction the top of the plan faces. The plan shows a north arrow. These are saved with the drawing.
 - Floors hidden by Cutaway still cast their shadows during a sun study. Broad-leaved trees are in leaf from May to October, turn in autumn and are bare in winter.
-- With the Sun button off, a fixed light is used that shows the model well at any hour.
+- The **Sun** button opens and closes the panel; the sun stays where you set it (date and time) until you change it, and each device remembers it across reloads. **Plain light** in the panel switches back to a fixed light that shows the model well at any hour (and **Real sun** back again).
 
 **Patios, decks and gravel:**
 - Draw them right up to the house; they are cut back to the outside face of the walls.
