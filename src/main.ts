@@ -125,7 +125,14 @@ $('#underground').addEventListener('click', () => {
   if (view.underground && layout === 'plan') setLayout('split');
   syncToolbar();
 });
-for (const b of $$('#treeKind button')) {
+// The hedges and the fence share the Tree tool's list; choosing one draws lines instead.
+for (const b of $$('#treeKind button[data-hedge]')) {
+  b.addEventListener('click', () => {
+    editor.hedgeKind = b.dataset.hedge as typeof editor.hedgeKind;
+    editor.setTool('hedge');
+  });
+}
+for (const b of $$('#treeKind button[data-kind]')) {
   b.addEventListener('click', () => {
     editor.treeKind = b.dataset.kind as typeof editor.treeKind;
     editor.setTool('tree');
@@ -484,6 +491,7 @@ const HINTS: Record<Tool, string> = {
   stretch: 'Drag a box round the part to move · then drag inside it (straight; Shift for any direction), or type the distance in the panel · Esc clears the box',
   furniture: 'Click to place it (near a wall it backs onto the wall) · [ and ] turn it · Esc when done',
   tree: 'Click to plant a tree; drag it to move it, set its size in the panel',
+  hedge: 'Click along the line of the hedge or fence · click its start to go all the way round · double-click, Enter or Esc to finish',
   patio: 'Click the corners of the patio (snaps to walls; the house is cut out) · click the first corner, double-click or Enter to finish',
 };
 
@@ -502,11 +510,12 @@ function syncToolbar() {
   $('#wallType').hidden = editor.tool !== 'wall';
   $('#ortho').hidden = editor.tool !== 'wall' && editor.tool !== 'stair' && editor.tool !== 'patio';
   $('#patioSurface').hidden = editor.tool !== 'patio';
-  $('#treeKind').hidden = editor.tool !== 'tree';
+  $('#treeKind').hidden = editor.tool !== 'tree' && editor.tool !== 'hedge';
+  for (const b of $$('#treeKind button[data-hedge]')) b.classList.toggle('on', editor.tool === 'hedge' && b.dataset.hedge === editor.hedgeKind);
   $('#drainKind').hidden = editor.tool !== 'drain';
   for (const b of $$('#drainKind button')) b.classList.toggle('on', b.dataset.kind === editor.drainKind);
   $('#underground').classList.toggle('on', view.underground);
-  for (const b of $$('#treeKind button')) b.classList.toggle('on', b.dataset.kind === editor.treeKind);
+  for (const b of $$('#treeKind button[data-kind]')) b.classList.toggle('on', editor.tool === 'tree' && b.dataset.kind === editor.treeKind);
   $('#sun').classList.toggle('on', sunPanel.open);
   $('#dims').classList.toggle('on', editor.showDims);
   $('#furnitureBtn').classList.toggle('on', editor.tool === 'furniture');

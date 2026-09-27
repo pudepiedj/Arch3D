@@ -19,6 +19,7 @@ import { getLevel, levelBelow } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
 import { addPatio, patioShapes } from '../model/patios';
 import { addTree, treeAt, trunkRadius } from '../model/trees';
+import { FENCE_BAY, addHedge, hedgeAt, hedgeSegments } from '../model/hedges';
 import { siteOf } from '../model/sun';
 import { type Box, type Picked, boxFrom, inBox, stretch } from '../model/stretch';
 import { addDrainNode, addDrainPipe, deleteDrainNode, drainNodeAt, drainPipeAt, pipeFall, splitPipe } from '../model/drains';
@@ -50,12 +51,12 @@ import {
   splitWallAt,
 } from '../model/plan';
 import { detectRooms } from '../model/rooms';
-import type { DrainKind, Furniture, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind } from '../model/types';
+import type { DrainKind, Furniture, HedgeKind, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain';
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain' | 'hedge';
 export type Selection = {
-  kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'drainNode' | 'drainPipe';
+  kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'drainNode' | 'drainPipe' | 'hedge';
   id: string;
 } | null;
 
@@ -72,7 +73,7 @@ type Gesture =
   | { kind: 'stretchBox'; start: Vec2 }
   | { kind: 'stretchMove'; start: Vec2 }
   | { kind: 'dragFurniture'; id: string; start: Vec2; x0: number; y0: number }
-  | { kind: 'dragPatio'; id: string; start: Vec2; pts0: Vec2[] }
+  | { kind: 'dragPatio'; id: string; start: Vec2; pts0: Vec2[]; hedge?: boolean }
   | { kind: 'dragRoofItem'; what: 'chimney' | 'solar' | 'rooflight' | 'tree'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'click' };
 
@@ -114,6 +115,8 @@ export class Editor2D {
   patioSurface: PatioSurface = 'paving';
   /** Kind of tree the Tree tool plants. */
   treeKind: TreeKind = 'deciduous';
+  /** Kind of hedge (or fence) the Hedge tool draws. */
+  hedgeKind: HedgeKind = 'privet';
   /** Catalogue entry the Furniture tool places, and the angle it is placed at. */
   furnitureKind = 'grand';
   furnitureAngle = 0;
@@ -183,7 +186,7 @@ export class Editor2D {
       const h = this.outlineHandleAt(this.eventPoint(e));
       if (h && !h.insert) {
         const pts = this.selectedOutline();
-        if (pts && pts.length > 3) {
+        if (pts && pts.length > (this.selection?.kind === 'hedge' ? 2 : 3)) {
           pts.splice(h.index, 1);
           this.store.commit();
           return;
@@ -435,6 +438,8 @@ export class Editor2D {
     for (const t of Object.values(plan.trees ?? {})) {
       if (t.id !== trunk && dist(t, w) <= t.spread / 2) out.push({ kind: 'tree', id: t.id });
     }
+    const hedge = hedgeAt(plan, w, 4 / this.view.scale);
+    if (hedge) out.push({ kind: 'hedge', id: hedge });
     const patios = Object.values(plan.patios ?? {}).filter((pt) => pointInPolygon(w, pt.points));
     patios.sort((a, b) => b.height - a.height);
     for (const pt of patios) out.push({ kind: 'patio', id: pt.id });
@@ -493,7 +498,7 @@ export class Editor2D {
 
     // The corners of the selected patio or roof section can be dragged to reshape it, and
     // the handles midway along its edges dragged out to add a corner.
-    if (this.tool === 'select' || this.tool === 'roof' || this.tool === 'patio') {
+    if (this.tool === 'select' || this.tool === 'roof' || this.tool === 'patio' || this.tool === 'hedge') {
       const h = this.outlineHandleAt(s);
       if (h && !this.sectionPts.length) {
         this.gesture = { kind: 'dragCorner', index: h.index, insert: h.insert };
@@ -537,6 +542,10 @@ export class Editor2D {
       else if (hit?.kind === 'patio') {
         const pts0 = this.plan.patios![hit.id].points.map((p) => ({ ...p }));
         this.gesture = { kind: 'dragPatio', id: hit.id, start: this.toWorld(s), pts0 };
+      }
+      else if (hit?.kind === 'hedge') {
+        const pts0 = this.plan.hedges![hit.id].points.map((p) => ({ ...p }));
+        this.gesture = { kind: 'dragPatio', id: hit.id, start: this.toWorld(s), pts0, hedge: true };
       }
       else if (hit?.kind === 'wall') {
         const fp = this.fps.get(hit.id)!;
@@ -640,7 +649,7 @@ export class Editor2D {
         break;
       }
       case 'dragPatio': {
-        const pt = plan.patios?.[cur.id];
+        const pt = cur.hedge ? plan.hedges?.[cur.id] : plan.patios?.[cur.id];
         if (!pt) break;
         const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
         const dx = snapTo(w.x - cur.start.x);
@@ -865,6 +874,7 @@ export class Editor2D {
   private selectedOutline(): { x: number; y: number }[] | null {
     const s = this.selection;
     if (s?.kind === 'patio') return this.plan.patios?.[s.id]?.points ?? null;
+    if (s?.kind === 'hedge') return this.plan.hedges?.[s.id]?.points ?? null;
     if (s?.kind === 'roof' && s.id.startsWith('section:')) return this.plan.roofSections?.[s.id.slice(8)]?.points ?? null;
     return null;
   }
@@ -876,7 +886,9 @@ export class Editor2D {
     const near = (p: Vec2) => dist(this.toScreen(p), s) < 9;
     const corner = pts.findIndex(near);
     if (corner >= 0) return { index: corner, insert: false };
-    const mid = pts.findIndex((p, i) => near(scale(add(p, pts[(i + 1) % pts.length]), 0.5)));
+    // A hedge is a line, not a loop: no handle between its last point and its first.
+    const open = this.selection?.kind === 'hedge';
+    const mid = pts.findIndex((p, i) => !(open && i === pts.length - 1) && near(scale(add(p, pts[(i + 1) % pts.length]), 0.5)));
     return mid >= 0 ? { index: mid, insert: true } : null;
   }
 
@@ -887,7 +899,9 @@ export class Editor2D {
     const ctx = this.ctx;
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = C.accent;
+    const open = this.selection?.kind === 'hedge';
     pts.forEach((p, i) => {
+      if (open && i === pts.length - 1) return;
       const m = this.toScreen(scale(add(p, pts[(i + 1) % pts.length]), 0.5));
       ctx.beginPath();
       ctx.arc(m.x, m.y, 3.5, 0, Math.PI * 2);
@@ -1067,6 +1081,7 @@ export class Editor2D {
         this.roofClick(w);
         break;
       case 'patio':
+      case 'hedge':
         this.outlineClick(w);
         break;
       case 'furniture': {
@@ -1276,6 +1291,9 @@ export class Editor2D {
       case 'e':
         this.setTool('tree');
         break;
+      case 'h':
+        this.setTool('hedge');
+        break;
       case 'm':
         this.toggleDims();
         break;
@@ -1482,21 +1500,34 @@ export class Editor2D {
 
   /** True while the tool draws an outline corner by corner (a roof section or a patio). */
   get drawingOutline(): boolean {
-    return (this.tool === 'roof' && this.roofMode === 'draw') || this.tool === 'patio';
+    return (this.tool === 'roof' && this.roofMode === 'draw') || this.tool === 'patio' || this.tool === 'hedge';
   }
 
   /** Add a corner to the outline being drawn, or close it on its first corner. */
   private outlineClick(w: Vec2) {
     const s = this.snap(w, { from: this.sectionPts[this.sectionPts.length - 1] ?? null });
     const first = this.sectionPts[0];
-    if (first && this.sectionPts.length >= 3 && dist(s.p, first) < 12 / this.view.scale) this.finishOutline();
-    else this.sectionPts.push(s.p);
+    if (first && this.sectionPts.length >= 3 && dist(s.p, first) < 12 / this.view.scale) {
+      // Back to the start: a hedge goes all the way round; an outline closes.
+      if (this.tool === 'hedge') this.sectionPts.push({ ...first });
+      this.finishOutline();
+    } else this.sectionPts.push(s.p);
     this.requestRender();
   }
 
   finishOutline() {
     if (this.tool === 'patio') this.finishPatio();
+    else if (this.tool === 'hedge') this.finishHedge();
     else this.finishSection();
+  }
+
+  private finishHedge() {
+    const pts = this.sectionPts;
+    this.sectionPts = [];
+    if (pts.length < 2) return this.requestRender();
+    const h = addHedge(this.plan, pts, this.hedgeKind);
+    this.store.commit();
+    this.select({ kind: 'hedge', id: h.id });
   }
 
   private finishPatio() {
@@ -1894,6 +1925,58 @@ export class Editor2D {
     ctx.restore();
   }
 
+  /** Hedges as a band as thick as the hedge, in its green; fences as a line with posts. */
+  private drawHedges(C: Record<string, string>) {
+    const ctx = this.ctx;
+    const colour: Record<HedgeKind, [string, string]> = {
+      privet: ['#7ba56b', '#3a6634'],
+      hawthorn: ['#9cc07e', '#56803f'],
+      beech: ['#aab06a', '#6d6a34'],
+      fence: ['#9b7550', '#6f5237'],
+    };
+    for (const h of Object.values(this.plan.hedges ?? {})) {
+      const sel = this.selection?.kind === 'hedge' && this.selection.id === h.id;
+      const [fill, ink] = colour[h.kind];
+      const trace = () => {
+        ctx.beginPath();
+        h.points.forEach((p, i) => {
+          const q = this.toScreen(p);
+          if (i) ctx.lineTo(q.x, q.y);
+          else ctx.moveTo(q.x, q.y);
+        });
+      };
+      ctx.lineJoin = 'round';
+      ctx.lineCap = h.kind === 'fence' ? 'butt' : 'round';
+      if (h.kind === 'fence') {
+        trace();
+        ctx.strokeStyle = sel ? C.accent : ink;
+        ctx.lineWidth = Math.max(2, h.width * this.view.scale);
+        ctx.stroke();
+        // Posts at each corner and at most every bay along the runs.
+        ctx.fillStyle = sel ? C.accent : ink;
+        const r = Math.max(2.5, 0.05 * this.view.scale);
+        for (const [a, b] of hedgeSegments(h)) {
+          const n = Math.max(1, Math.ceil(dist(a, b) / FENCE_BAY));
+          for (let k = 0; k <= n; k++) {
+            const q = this.toScreen({ x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n });
+            ctx.fillRect(q.x - r, q.y - r, r * 2, r * 2);
+          }
+        }
+      } else {
+        trace();
+        ctx.strokeStyle = sel ? C.accent : ink;
+        ctx.lineWidth = h.width * this.view.scale + 2;
+        ctx.stroke();
+        trace();
+        ctx.strokeStyle = sel ? hexAlpha(C.accent, 0.35) : fill;
+        ctx.lineWidth = Math.max(1, h.width * this.view.scale - 1);
+        ctx.stroke();
+      }
+      ctx.lineJoin = 'miter';
+      ctx.lineCap = 'butt';
+    }
+  }
+
   /** Trees, seen from above: a translucent crown, and the trunk. */
   private drawTrees(C: Record<string, string>) {
     const ctx = this.ctx;
@@ -1973,6 +2056,7 @@ export class Editor2D {
     else if (s.kind === 'rooflight') delete this.plan.rooflights?.[s.id];
     else if (s.kind === 'patio') delete this.plan.patios?.[s.id];
     else if (s.kind === 'tree') delete this.plan.trees?.[s.id];
+    else if (s.kind === 'hedge') delete this.plan.hedges?.[s.id];
     else if (s.kind === 'furniture') delete this.plan.furniture?.[s.id];
     else if (s.kind === 'drainNode') deleteDrainNode(this.store.building, s.id);
     else if (s.kind === 'drainPipe') delete this.store.building.drains?.pipes[s.id];
@@ -2003,6 +2087,7 @@ export class Editor2D {
       (s.kind === 'rooflight' && p.rooflights?.[s.id]) ||
       (s.kind === 'patio' && p.patios?.[s.id]) ||
       (s.kind === 'tree' && p.trees?.[s.id]) ||
+      (s.kind === 'hedge' && p.hedges?.[s.id]) ||
       (s.kind === 'furniture' && p.furniture?.[s.id]) ||
       (s.kind === 'drainNode' && this.store.building.drains?.nodes[s.id]) ||
       (s.kind === 'drainPipe' && this.store.building.drains?.pipes[s.id]);
@@ -2289,6 +2374,7 @@ export class Editor2D {
       }
     }
 
+    if (!this.printing || this.printing.garden) this.drawHedges(C);
     if (!this.printing || this.printing.garden) this.drawTrees(C);
     if (this.printing) {
       this.drawOverall(C);
@@ -2365,9 +2451,11 @@ export class Editor2D {
           if (i) ctx.lineTo(q.x, q.y);
           else ctx.moveTo(q.x, q.y);
         });
-        if (pts.length > 2) ctx.closePath();
-        ctx.fillStyle = hexAlpha(C.accent, 0.12);
-        ctx.fill();
+        if (this.tool !== 'hedge') {
+          if (pts.length > 2) ctx.closePath();
+          ctx.fillStyle = hexAlpha(C.accent, 0.12);
+          ctx.fill();
+        }
         ctx.strokeStyle = C.accent;
         ctx.lineWidth = 1.5;
         ctx.stroke();

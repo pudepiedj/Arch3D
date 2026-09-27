@@ -12,6 +12,7 @@ import { computeFootprints, type Footprint } from './joints';
 import { openingsOf } from './openings';
 import { patioShapes } from './patios';
 import { trunkRadius } from './trees';
+import { hedgeFootprints } from './hedges';
 import { catalogueItem, footprint, standingHeight } from './furniture';
 import { detectRooms } from './rooms';
 import { stairGeometry, stairwells } from './stairs';
@@ -63,6 +64,10 @@ export class WalkWorld {
         r: q.shape === 'round' ? q.size / 2 : (q.size / 2) * Math.SQRT2,
       }));
       for (const t of Object.values(level.trees ?? {})) posts.push({ x: t.x, y: t.y, r: trunkRadius(t) });
+      // Hedges and fences are in the way.
+      for (const h of Object.values(level.hedges ?? {})) {
+        for (const poly of hedgeFootprints(h)) this.blocks.push({ poly, bottom: elevation, top: elevation + h.height });
+      }
       // Furniture is in the way (except rugs); you walk round it.
       for (const f of Object.values(level.furniture ?? {})) {
         const c = catalogueItem(f.kind);

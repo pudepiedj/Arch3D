@@ -7,6 +7,7 @@ import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
 import { PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
 import { TREE_DEFAULTS } from '../model/trees';
+import { HEDGE_DEFAULTS, HEDGE_NAMES, hedgeClosed, hedgeLength } from '../model/hedges';
 import { GRAND_MODELS, catalogueItem } from '../model/furniture';
 import { stretchSummary } from '../model/stretch';
 import { DEFAULT_INVERT, DEFAULT_TANK, FITTING_NAMES, deleteDrainNode, pipeFall, pipeLength, tankVolume } from '../model/drains';
@@ -15,7 +16,7 @@ import { stairGeometry } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
 import { deleteNode, deleteOpening, deleteWall, finishNodeMove, moveNode, normalize, setWallLength, splitWallAt } from '../model/plan';
-import { DEFAULTS, type OpeningKind, type DrainFitting, type DrainKind, type GlazedStyle, type PatioSurface, type Pillar, type TreeKind, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
+import { DEFAULTS, type OpeningKind, type DrainFitting, type DrainKind, type GlazedStyle, type PatioSurface, type Pillar, type TreeKind, type HedgeKind, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
 import type { Editor2D } from './editor2d';
 import type { Store } from './store';
 
@@ -80,6 +81,7 @@ export class Panel {
     if (sel.kind === 'rooflight') return this.renderRooflight(sel.id);
     if (sel.kind === 'patio') return this.renderPatio(sel.id);
     if (sel.kind === 'tree') return this.renderTree(sel.id);
+    if (sel.kind === 'hedge') return this.renderHedge(sel.id);
     if (sel.kind === 'furniture') return this.renderFurniture(sel.id);
     if (sel.kind === 'drainNode') return this.renderDrainNode(sel.id);
     if (sel.kind === 'drainPipe') return this.renderDrainPipe(sel.id);
@@ -703,6 +705,42 @@ export class Panel {
     this.buttons([
       ['Delete', () => {
         delete level.trees![id];
+        this.editor.select(null);
+        this.store.commit();
+      }, true],
+    ]);
+  }
+
+  private renderHedge(id: string) {
+    const level = this.store.plan;
+    const h = level.hedges?.[id];
+    if (!h) return;
+    this.title(HEDGE_NAMES[h.kind]);
+    this.select('Kind', h.kind, (Object.keys(HEDGE_NAMES) as HedgeKind[]).map((k): [string, string] => [k, HEDGE_NAMES[k]]), (v) => {
+      h.kind = v as HedgeKind;
+      Object.assign(h, HEDGE_DEFAULTS[h.kind]);
+      this.done();
+    });
+    this.number('Height', h.height, 0.1, 0.3, 6, (v) => {
+      h.height = v;
+      this.done();
+    }, 'm');
+    if (h.kind !== 'fence') {
+      this.number('Thickness', h.width, 0.05, 0.2, 3, (v) => {
+        h.width = v;
+        this.done();
+      }, 'm', 'Through the hedge, face to face');
+    }
+    const season = {
+      privet: 'Evergreen (semi-evergreen in a hard winter).',
+      hawthorn: 'In leaf from May to October; twiggy and bare in winter.',
+      beech: 'Fresh green in summer, copper in autumn, and it keeps its brown leaves through the winter.',
+      fence: 'Timber posts at most 1.8 m apart, a gravel board, and featheredge boards.',
+    }[h.kind];
+    this.note(`${hedgeLength(h).toFixed(1)} m long${hedgeClosed(h) ? ', all the way round' : ''}. ${season} Drag it to move it; drag a corner to reshape it, a circle to add a corner; double-click a corner to remove it.`);
+    this.buttons([
+      ['Delete', () => {
+        delete level.hedges![id];
         this.editor.select(null);
         this.store.commit();
       }, true],
