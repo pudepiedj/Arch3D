@@ -182,17 +182,33 @@
         <h2>Print plans and elevations</h2>
         <p class="note">Drawn to scale with a title block, a page for each drawing. You see the pages before printing; the print dialog can also save them as a PDF.</p>
         <div class="print-grid">
-          <label>Paper <select name="paper"><option>A4</option><option>A3</option></select></label>
-          <label>Orientation <select name="orientation"><option value="landscape">Landscape</option><option value="portrait">Portrait</option></select></label>
+          <label>Paper <select name="paper"><option>A4</option><option>A3</option><option value="roll">Roll, 17 in (Epson SC-P800)</option></select></label>
+          <label id="printOrientation">Orientation <select name="orientation"><option value="landscape">Landscape</option><option value="portrait">Portrait</option></select></label>
           <label>Scale <select name="scale">
             <option value="0">Largest that fits</option>
+            <option value="10">1:10</option>
             <option value="20">1:20</option>
+            <option value="25">1:25</option>
             <option value="50">1:50</option>
             <option value="100">1:100</option>
             <option value="200">1:200</option>
           </select></label>
         </div>
-        <h3>Pages</h3>
+        <h3>What to print</h3>
+        <div class="print-checks">
+          <label><input type="radio" name="scope" value="all" checked /> The whole house</label>
+          <label><input type="radio" name="scope" value="area" /> Just an area (e.g. the extension)</label>
+        </div>
+        <div class="print-area" id="printAreaRow">
+          <span id="printAreaText">No area chosen yet.</span>
+          <button type="button" id="printPickArea">Choose the area on the plan…</button>
+          <label>Section <select name="section">
+            <option value="none">None</option>
+            <option value="leftright">Cut left to right, looking up the plan</option>
+            <option value="updown">Cut top to bottom, looking left</option>
+          </select></label>
+        </div>
+        <h3>Drawings</h3>
         <div class="print-checks" id="printFloors"></div>
         <div class="print-checks">
           <label><input type="checkbox" name="side" value="N" checked /> North elevation</label>

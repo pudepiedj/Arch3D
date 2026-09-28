@@ -73,6 +73,7 @@ type Gesture =
   | { kind: 'dragDrain'; id: string }
   | { kind: 'dragCorner'; index: number; insert: boolean }
   | { kind: 'stretchBox'; start: Vec2 }
+  | { kind: 'areaBox'; start: Vec2 }
   | { kind: 'stretchMove'; start: Vec2 }
   | { kind: 'dragFurniture'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'dragPatio'; id: string; start: Vec2; pts0: Vec2[]; hedge?: boolean }
@@ -133,6 +134,10 @@ export class Editor2D {
   private pendingPicked: Picked | null = null;
   private stretchDraft: Box | null = null;
   private stretchBy: Vec2 | null = null;
+  /** The area to print (when printing part of the house), drawn while it is chosen or shown. */
+  printArea: Box | null = null;
+  showPrintArea = false;
+  private areaPick: ((b: Box | null) => void) | null = null;
   /** Stretch every floor (true) or only the one being edited. */
   stretchAll = true;
   /** Drain tool: foul or surface water, and the last node of the run being drawn. */
@@ -571,6 +576,12 @@ export class Editor2D {
       return;
     }
 
+    // Choosing the area to print: drag a box, whatever the tool.
+    if (this.areaPick) {
+      this.gesture = { kind: 'areaBox', start: this.toWorld(s) };
+      return;
+    }
+
     // The corners of the selected patio or roof section can be dragged to reshape it, and
     // the handles midway along its edges dragged out to add a corner.
     if (this.tool === 'select' || this.tool === 'roof' || this.tool === 'patio' || this.tool === 'hedge') {
@@ -674,6 +685,12 @@ export class Editor2D {
       case 'stretchBox': {
         const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
         this.stretchDraft = boxFrom(cur.start, { x: snapTo(w.x), y: snapTo(w.y) });
+        this.requestRender();
+        break;
+      }
+      case 'areaBox': {
+        const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
+        this.printArea = boxFrom(cur.start, { x: snapTo(w.x), y: snapTo(w.y) });
         this.requestRender();
         break;
       }
@@ -869,6 +886,15 @@ export class Editor2D {
       case 'click':
         if (!this.dragging) this.click(this.toWorld(this.eventPoint(e)));
         break;
+      case 'areaBox': {
+        const b = this.printArea;
+        if (!this.dragging || !b || b.x1 - b.x0 < 0.3 || b.y1 - b.y0 < 0.3) break;
+        const done = this.areaPick;
+        this.areaPick = null;
+        done?.(b);
+        this.requestRender();
+        break;
+      }
       case 'stretchBox': {
         const b = this.stretchDraft;
         this.stretchDraft = null;
@@ -1334,7 +1360,12 @@ export class Editor2D {
         if (this.sectionPts.length) this.finishOutline();
         break;
       case 'Escape':
-        if (this.drainLast) {
+        if (this.areaPick) {
+          const done = this.areaPick;
+          this.areaPick = null;
+          done(null);
+          this.requestRender();
+        } else if (this.drainLast) {
           this.finishDrainRun();
         } else if (this.stretchBox) {
           this.setStretchBox(null);
@@ -1828,6 +1859,35 @@ export class Editor2D {
     ctx.strokeStyle = ink;
     drawFurnitureSymbol(ctx, f, fill);
     ctx.restore();
+  }
+
+  /** The area chosen for printing: a dashed box, labelled. */
+  private drawPrintArea(C: Record<string, string>) {
+    const b = this.printArea!;
+    const ctx = this.ctx;
+    const p = this.toScreen({ x: b.x0, y: b.y0 });
+    const q = this.toScreen({ x: b.x1, y: b.y1 });
+    ctx.fillStyle = hexAlpha(C.accent, 0.06);
+    ctx.fillRect(p.x, p.y, q.x - p.x, q.y - p.y);
+    ctx.strokeStyle = C.accent;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([10, 5]);
+    ctx.strokeRect(p.x, p.y, q.x - p.x, q.y - p.y);
+    ctx.setLineDash([]);
+    ctx.font = '600 12px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = C.accent;
+    ctx.fillText(`Print area ${(b.x1 - b.x0).toFixed(2)} × ${(b.y1 - b.y0).toFixed(2)} m`, p.x + 4, p.y - 4);
+  }
+
+  /**
+   * Choose an area to print: the next box dragged on the plan (whatever the tool) is it.
+   * `done` gets the box, or null if Esc was pressed.
+   */
+  pickArea(done: (b: Box | null) => void) {
+    this.areaPick = done;
+    this.requestRender();
   }
 
   /** The stretch box, with the joints that will move marked, and the size of the move. */
@@ -2538,6 +2598,7 @@ export class Editor2D {
     this.drawOutlineHandles(C);
     this.drawToolPreview(C);
     if (this.tool === 'stretch') this.drawStretch(C);
+    if (this.printArea && (this.areaPick || this.showPrintArea)) this.drawPrintArea(C);
 
     for (const g of this.lastGuides) this.guide(g.from, g.to, C.accent);
     const sel = this.selection;
