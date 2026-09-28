@@ -231,6 +231,19 @@ Everything visible is *derived* from that data on every change, so there is no s
 
 You see the pages first. **Print…** then opens the browser's print dialog: choose **Actual size / 100%** (not "Fit to page") and margins **None** so the scale is exact (check it against the scale bar), or **Save as PDF** to keep or send a copy. The choices are remembered on each device.
 
+## Estimating materials and costs
+
+**File → Estimate materials and costs…** measures the drawing and prices it roughly: enough to judge whether it is affordable, not to order from. Cost **the whole house and garden**, or drag out **an area** on the plan (the extension, say: it shares the area with printing). What it measures:
+
+- **Structure:** a steel beam over every wide or glazed opening, sized for the roof and wall it carries; a steel **ridge beam** for a vaulted roof (with no ceiling ties the ridge must hold the rafters up), whose end loads the beam it lands on; steel posts for the pillars, with a pad foundation under each; padstones; lintels over the rest. Beams are universal beams (UB), picked as the lightest that is strong enough (steel S275) and stiff enough (span/360) under the usual loads (tiles, rafters, lining, snow). **These are first guesses: a structural engineer must design the steel, and Building Control approve it.**
+- **Glazing, doors and windows:** glazed walls and doors by the square metre, windows, doors, the glazed gable triangle, and the roof windows by Velux size (MK06, CK04…), with flashings.
+- **Foundations and floor:** trench-fill foundations under the outside walls, the dig, hardcore, membrane, slab, insulation, underfloor heating and screed, floor finish.
+- **Walls:** facing bricks, blocks, insulation and ties (or rendered block), plasterboard, stud partitions.
+- **Roof:** tiles or slates by count, membrane, battens, rafters (C24, sized for the span), ridge and hip tiles, valley troughs, fascia and gutters, downpipes, vault insulation and lining; flat roofs and parapet coping.
+- **Garden and drains:** paving, decking, gravel and their sub-base, fences, hedging plants, gates, drain pipes, chambers, soakaways.
+
+Choose the wall build, the roof covering, the foundation depth and underfloor heating. Every price is a rough UK 2025 supply price and can be changed (it changes every line priced the same way); untick a line or a whole group to leave it out; add labour and overheads as a percentage and VAT. The big-ticket items are marked with a red dot. **Export CSV…** saves it for a spreadsheet; **Print…** prints it (or saves a PDF). Prices, ticks and choices are remembered on each device; **Reset prices** puts them back.
+
 ## Not done yet
 
 - Dormers.

@@ -121,6 +121,7 @@
           <button id="import">Import JSON…</button>
           <hr />
           <button id="print" title="To-scale floor plans and elevations on A4 or A3, with a title block: print them or save as PDF">Print plans and elevations…</button>
+          <button id="estimateBtn" title="A rough bill of materials and costs, for the whole house or a chosen area, with rough steel sizes: to judge whether it is affordable">Estimate materials and costs…</button>
           <button id="movie" title="A short, small video circling the house from about 30 degrees up, to send to people">Make orbit movie…</button>
           <input id="importFile" type="file" accept="application/json,.json" hidden />
           <hr />
@@ -244,6 +245,17 @@
         <button id="printClose">Close</button>
       </div>
       <div id="printSheets"></div>
+    </div>
+    <div id="estimate" hidden>
+      <div class="preview-bar">
+        <strong>Estimate</strong>
+        <span class="spacer"></span>
+        <button id="estReset" title="Every price back to the rough guide, and every line back in">Reset prices</button>
+        <button id="estCsv" title="Save it as a spreadsheet (CSV) file">Export CSV…</button>
+        <button id="estPrint" class="on">Print…</button>
+        <button id="estClose">Close</button>
+      </div>
+      <div id="estBody"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
