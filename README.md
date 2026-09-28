@@ -131,7 +131,7 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - **Show open** tilts the windows out at the bottom, **Blinds down** draws the blinds, and **Solar motor** adds or removes the little solar strip on each frame.
 
 **Sun and shadows (the Sun button):** puts the sun where it really is for a date, a time and the house's location, with shadows.
-- **Date** slider covering the whole year, with buttons for the equinoxes and solstices and **Now**. **Time** slider in 5-minute steps, in this device's clock time (so summer time is included). **Play the day** runs from sunrise to sunset.
+- **Date** slider covering the whole year, with buttons for the equinoxes and solstices and **Now**. **Time** slider in 5-minute steps, in this device's clock time (so summer time is included). **Play the day** runs from sunrise to sunset. **Play the year** runs through the year at the time of day set (midday if it was dark), about three weeks a second: the sun climbing and falling, the shadows shortening and lengthening, and the trees coming into leaf, turning and going bare.
 - The panel shows the sun's height and compass direction, and sunrise and sunset.
 - **Location and orientation:** latitude and longitude (from any online map, or **Use this device's location**, which works only over https or on the computer itself), and the compass direction the top of the plan faces. The plan shows a north arrow. These are saved with the drawing.
 - Floors hidden by Cutaway still cast their shadows during a sun study. Broad-leaved trees are in leaf from May to October, turn in autumn and are bare in winter.

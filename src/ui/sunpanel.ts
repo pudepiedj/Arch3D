@@ -17,7 +17,9 @@ const KEY_DATES: [string, number, number][] = [
 ];
 
 export class SunPanel {
-  private playing = false;
+  /** Playing through the day, or through the year (at the same time each day), or neither. */
+  private playing: 'day' | 'year' | null = null;
+  private yearBtn!: HTMLButtonElement;
   private last = 0;
   private dateInput!: HTMLInputElement;
   private timeInput!: HTMLInputElement;
@@ -142,10 +144,11 @@ export class SunPanel {
     timeRow.append(this.timeInput);
     const play = document.createElement('div');
     play.className = 'buttons';
-    this.playBtn = this.button('▶ Play the day', () => (this.playing ? this.stop() : this.play()));
+    this.playBtn = this.button('▶ Play the day', () => (this.playing === 'day' ? this.stop() : this.play()));
+    this.yearBtn = this.button('▶ Play the year', () => (this.playing === 'year' ? this.stop() : this.playYear()));
     this.lightBtn = this.button('Plain light', () => this.setReal(!this.view.sunStudy));
     this.lightBtn.title = 'Switch between the real sun for this date and time, and a plain fixed light that shows the model well at any hour';
-    play.append(this.playBtn, this.lightBtn);
+    play.append(this.playBtn, this.yearBtn, this.lightBtn);
     el.append(play);
 
     this.readout = document.createElement('p');
@@ -232,12 +235,49 @@ export class SunPanel {
     );
   }
 
+  /**
+   * Through the year at this time of day, about three weeks a second (a year in some twenty
+   * seconds): the sun climbing and falling, the shadows lengthening, and the trees coming
+   * into leaf, turning and going bare.
+   */
+  private playYear() {
+    this.stop();
+    this.playing = 'year';
+    this.yearBtn.textContent = '❚❚ Pause';
+    // At night there is nothing to see: show midday instead.
+    const pos = this.view.sunNow();
+    if (!pos || pos.elevation <= 0) {
+      const t = this.time;
+      this.setTime(new Date(t.getFullYear(), t.getMonth(), t.getDate(), 12, 0));
+    }
+    this.last = performance.now();
+    // Days into the year, counted in fractions but shown a whole day at a time, always at
+    // the same time of day.
+    const start = this.time;
+    const year = start.getFullYear();
+    const hour = start.getHours();
+    const minute = start.getMinutes();
+    let day = (new Date(year, start.getMonth(), start.getDate()).getTime() - new Date(year, 0, 1).getTime()) / DAY;
+    const step = (now: number) => {
+      if (this.playing !== 'year') return;
+      const dt = Math.min(0.1, (now - this.last) / 1000);
+      this.last = now;
+      const before = Math.floor(day);
+      day = (day + dt * 18) % 365;
+      // Round the year and back to January, in the same year.
+      if (Math.floor(day) !== before) this.setTime(new Date(year, 0, 1 + Math.floor(day), hour, minute));
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
   private play() {
-    this.playing = true;
+    this.stop();
+    this.playing = 'day';
     this.playBtn.textContent = '❚❚ Pause';
     this.last = performance.now();
     const step = (now: number) => {
-      if (!this.playing) return;
+      if (this.playing !== 'day') return;
       // 1.5 hours a second: a summer's day in about ten seconds.
       const dt = Math.min(0.1, (now - this.last) / 1000);
       this.last = now;
@@ -258,8 +298,9 @@ export class SunPanel {
   }
 
   private stop() {
-    this.playing = false;
+    this.playing = null;
     this.playBtn.textContent = '▶ Play the day';
+    this.yearBtn.textContent = '▶ Play the year';
   }
 
   /** Put the controls and read-out in step with the current time and site. */
