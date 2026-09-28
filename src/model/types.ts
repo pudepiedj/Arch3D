@@ -118,7 +118,7 @@ export interface Patio {
 }
 
 /** 'deciduous' and 'conifer' are the generic kinds; the rest are species, plus a bush. */
-export type TreeKind = 'deciduous' | 'conifer' | 'oak' | 'ash' | 'beech' | 'hazel' | 'birch' | 'rowan' | 'pine' | 'bush';
+export type TreeKind = 'deciduous' | 'conifer' | 'oak' | 'ash' | 'beech' | 'hazel' | 'birch' | 'rowan' | 'pine' | 'poplar' | 'bush';
 
 /** A tree in the garden: shade in summer, and (if deciduous) far less in winter. */
 export interface Tree {
@@ -129,6 +129,9 @@ export interface Tree {
   height: number;
   /** Diameter of the crown. */
   spread: number;
+  /** How far it leans from upright (degrees), and the compass bearing it leans towards. */
+  lean?: number;
+  leanTo?: number;
 }
 
 export type HedgeKind = 'privet' | 'hawthorn' | 'beech' | 'fence' | 'ditch';

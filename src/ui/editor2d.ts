@@ -18,7 +18,7 @@ import {
 import { getLevel, levelBelow } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
 import { addPatio, patioShapes } from '../model/patios';
-import { addTree, speciesOf, treeAt, trunkRadius } from '../model/trees';
+import { addTree, crownCentre, speciesOf, treeAt, trunkRadius } from '../model/trees';
 import { FENCE_BAY, addHedge, ditchOutline, hedgeAt, hedgeRuns, onHedge, runFootprint } from '../model/hedges';
 import { isGate } from '../model/gates';
 import { siteOf } from '../model/sun';
@@ -511,7 +511,7 @@ export class Editor2D {
       if (g && pointInPolygon(w, g.outline)) out.push({ kind: 'solar', id: sa.id });
     }
     for (const t of Object.values(plan.trees ?? {})) {
-      if (t.id !== trunk && dist(t, w) <= t.spread / 2) out.push({ kind: 'tree', id: t.id });
+      if (t.id !== trunk && dist(crownCentre(t, siteOf(this.store.building).north), w) <= t.spread / 2) out.push({ kind: 'tree', id: t.id });
     }
     const hedge = hedgeAt(plan, w, 4 / this.view.scale);
     if (hedge) out.push({ kind: 'hedge', id: hedge });
@@ -2121,7 +2121,9 @@ export class Editor2D {
     const ctx = this.ctx;
     for (const t of Object.values(this.plan.trees ?? {})) {
       const sel = this.selection?.kind === 'tree' && this.selection.id === t.id;
-      const c = this.toScreen(t);
+      // A leaning tree's crown is drawn where it hangs, off to the side of its trunk.
+      const base = this.toScreen(t);
+      const c = this.toScreen(crownCentre(t, siteOf(this.store.building).north));
       const R = (t.spread / 2) * this.view.scale;
       const sp = speciesOf(t);
       const green = `${(sp.leaf >> 16) & 255}, ${(sp.leaf >> 8) & 255}, ${sp.leaf & 255}`;
@@ -2145,8 +2147,16 @@ export class Editor2D {
       ctx.strokeStyle = sel ? C.accent : `rgba(${green}, 0.9)`;
       ctx.lineWidth = sel ? 2 : 1;
       ctx.stroke();
+      if (t.lean) {
+        ctx.beginPath();
+        ctx.moveTo(base.x, base.y);
+        ctx.lineTo(c.x, c.y);
+        ctx.strokeStyle = sel ? C.accent : '#6b5341';
+        ctx.lineWidth = Math.max(1.5, trunkRadius(t) * this.view.scale);
+        ctx.stroke();
+      }
       ctx.beginPath();
-      ctx.arc(c.x, c.y, Math.max(2.5, trunkRadius(t) * this.view.scale), 0, Math.PI * 2);
+      ctx.arc(base.x, base.y, Math.max(2.5, trunkRadius(t) * this.view.scale), 0, Math.PI * 2);
       ctx.fillStyle = sel ? C.accent : '#6b5341';
       ctx.fill();
     }

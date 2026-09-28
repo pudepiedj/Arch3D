@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createBuilding } from '../src/model/building';
 import { addFurniture, tankLitres } from '../src/model/furniture';
 import { addHedge, ditchOutline, offsetLine } from '../src/model/hedges';
-import { SPECIES, TREE_ORDER, addTree, crownBase, solidRadius, trunkRadius } from '../src/model/trees';
+import { SPECIES, TREE_ORDER, addTree, crownBase, crownCentre, solidRadius, trunkRadius } from '../src/model/trees';
 import { WalkWorld } from '../src/model/walk';
 import { buildBuildingObject, createMaterials } from '../src/three/build';
 import { buildDrains } from '../src/three/drains3d';
@@ -99,5 +99,30 @@ describe('ditches', () => {
     addDrainNode(b, { x: 0, y: 5 }, 'outfall');
     const { surface } = buildDrains(b.drains!);
     expect(surface.children.length).toBe(1);
+  });
+});
+
+describe('poplars and leaning trees', () => {
+  it('a Lombardy poplar is tall and narrow', () => {
+    const b = createBuilding();
+    const t = addTree(b.levels[0], { x: 0, y: 0 }, 'poplar');
+    expect(t.height / t.spread).toBeGreaterThan(4);
+    const box = new THREE.Box3().setFromObject(buildBuildingObject(b, createMaterials()));
+    expect(box.max.y).toBeGreaterThan(t.height * 0.9);
+    expect(box.max.x - box.min.x).toBeLessThan(t.spread * 1.6);
+  });
+
+  it('a leaning tree hangs its crown the way it leans, on the plan and in 3D', () => {
+    const b = createBuilding();
+    const t = addTree(b.levels[0], { x: 0, y: 0 }, 'oak');
+    t.lean = 15;
+    t.leanTo = 90; // towards the east: +x on a plan with north up
+    const c = crownCentre(t, 0);
+    expect(c.x).toBeGreaterThan(1);
+    expect(Math.abs(c.y)).toBeLessThan(1e-9);
+    const box = new THREE.Box3().setFromObject(buildBuildingObject(b, createMaterials()));
+    expect(box.max.x).toBeGreaterThan(-box.min.x + 1);
+    // With the top of the plan facing east, "east" is up the plan (-y).
+    expect(crownCentre(t, 90).y).toBeLessThan(-1);
   });
 });

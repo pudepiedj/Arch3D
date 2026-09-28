@@ -25,7 +25,7 @@ import {
   solarGeometry,
 } from '../model/roofitems';
 import { patioShapes } from '../model/patios';
-import { type Species, crownBase, speciesOf, trunkRadius } from '../model/trees';
+import { type Species, crownBase, leanDirection, speciesOf, trunkRadius } from '../model/trees';
 import { standingHeight } from '../model/furniture';
 import { buildFurniture } from './furniture3d';
 import type { Building, Furniture, Hedge, Opening, Patio, Pillar, Plan, Tree } from '../model/types';
@@ -301,6 +301,8 @@ export interface LevelOptions {
   /** Patios, decks and gravel, with their outlines less the house. */
   patios?: { patio: Patio; shapes: Shape[] }[];
   trees?: Tree[];
+  /** Which way the top of the plan faces (degrees), for the way leaning trees lean. */
+  north?: number;
   hedges?: { hedge: Hedge; runs: HedgeRun[] }[];
   /** Furniture, each with the height of what it stands on (floor, patio or deck). */
   furniture?: (Furniture & { base: number })[];
@@ -349,6 +351,7 @@ export function buildBuildingObject(
       roofs: roofs.flatMap((r) => (r.geometry ? [{ ...r.geometry, vaulted: !!r.roof.vaulted && r.roof.kind !== 'flat', glazedGables: !!r.roof.glazedGables && r.roof.kind !== 'flat' }] : [])),
       patios: Object.values(level.patios ?? {}).map((patio) => ({ patio, shapes: patioShapes(level, patio) })),
       trees: Object.values(level.trees ?? {}),
+      north: (b.site?.north ?? 0),
       hedges: Object.values(level.hedges ?? {}).map((hedge) => ({ hedge, runs: hedgeRuns(hedge, level) })),
       furniture: Object.values(level.furniture ?? {}).map((f) => ({ ...f, base: standingHeight(level, f) })),
       season,
@@ -446,7 +449,7 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   }
 
   if (opts.patios?.length) group.add(buildPatios(opts.patios, mats));
-  for (const t of opts.trees ?? []) group.add(buildTree(t, mats, opts.season ?? { leaf: 1, autumn: false }));
+  for (const t of opts.trees ?? []) group.add(buildTree(t, mats, opts.season ?? { leaf: 1, autumn: false }, opts.north ?? 0));
   for (const { hedge, runs } of opts.hedges ?? []) group.add(buildHedge(hedge, runs, opts.season ?? { leaf: 1, autumn: false }));
   for (const f of opts.furniture ?? []) {
     const obj = buildFurniture(f);
@@ -580,10 +583,16 @@ function buildPatios(list: { patio: Patio; shapes: Shape[] }[], mats: Materials)
  * thins in spring and autumn and is gone in winter (so its winter shadow is just twigs).
  * Conifer: a trunk under tiers of cones, the same all year.
  */
-function buildTree(t: Tree, mats: Materials, season: Season): THREE.Group {
+function buildTree(t: Tree, mats: Materials, season: Season, north = 0): THREE.Group {
   const g = new THREE.Group();
   g.name = `tree:${t.id}`;
   g.position.set(t.x, 0, t.y);
+  // A leaning tree: the whole tree tipped over from its foot, towards the way it leans.
+  if (t.lean) {
+    const d = leanDirection(t, north);
+    const axis = new THREE.Vector3(0, 1, 0).cross(new THREE.Vector3(d.x, 0, d.y)).normalize();
+    g.quaternion.setFromAxisAngle(axis, (Math.min(45, t.lean) * Math.PI) / 180);
+  }
   const r = trunkRadius(t);
   const base = crownBase(t);
   const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number) => {
@@ -752,6 +761,30 @@ function buildSpeciesTree(add: AddFn, t: Tree, sp: Species, season: Season) {
           const y = cy + (rand() - 0.3) * Rv * 1.2;
           const rr = R * (0.75 + rand() * 0.2) * Math.sqrt(Math.max(0.1, 1 - ((y - cy) / Rv) ** 2));
           add(new THREE.IcosahedronGeometry(0.09, 0), berry, Math.cos(a) * rr, y, Math.sin(a) * rr);
+        }
+      }
+      break;
+    }
+    case 'column': {
+      // Lombardy poplar: a trunk up the middle, branches swept steeply up close to it, and
+      // a tall narrow column of foliage tapering to a point.
+      limb(V(0, 0, 0), V(0, H * 0.96, 0), r, r * 0.15);
+      const n = 14;
+      for (let i = 0; i < n; i++) {
+        const a = i * 2.39996 + rand() * 0.4;
+        const y0 = base + (H - base) * (i / n) * 0.85;
+        const reach = R * 0.55 * (1 - (i / n) * 0.6);
+        limb(V(0, y0, 0), V(Math.cos(a) * reach, y0 + (H - base) * 0.18, Math.sin(a) * reach), r * 0.25, r * 0.06);
+      }
+      const layers = count(20);
+      for (let i = 0; i < layers; i++) {
+        const k = i / (layers - 1);
+        const y = base + 0.4 + (H - base - 1.2) * k;
+        // Widest a third of the way up, tapering to a blunt point at the top.
+        const w = R * (k < 0.3 ? 0.8 + 0.67 * k : 1 - (k - 0.3) * 0.85);
+        for (let j = 0; j < 3; j++) {
+          const a = rand() * Math.PI * 2;
+          clump(Math.cos(a) * w * 0.3, y, Math.sin(a) * w * 0.3, Math.max(0.45, w * 0.72), 1.6);
         }
       }
       break;

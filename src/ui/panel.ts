@@ -793,6 +793,18 @@ export class Panel {
       keep();
       this.done();
     }, 'm', 'Diameter of the crown');
+    this.number('Lean', t.lean ?? 0, 1, 0, 30, (v) => {
+      t.lean = v || undefined;
+      this.done();
+    }, '°', 'How far it leans from upright');
+    if (t.lean) {
+      const points: [string, string][] = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'].map((p, i) => [String(i * 45), p]);
+      const to = Math.round((((t.leanTo ?? 0) % 360) + 360) % 360 / 45) * 45 % 360;
+      this.select('Leans towards', String(to), points, (v) => {
+        t.leanTo = Number(v);
+        this.done();
+      });
+    }
     this.note(`${sp.note} The Sun study shows it as it is on the chosen date. Drag it to move it. A size you set is used for the next ${sp.name.toLowerCase()} too.`);
     this.buttons([
       ['Reset size', () => {

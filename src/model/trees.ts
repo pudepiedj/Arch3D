@@ -4,7 +4,7 @@
 import { type Vec2, dist } from './geom';
 import type { Level, Tree, TreeKind } from './types';
 
-export type CrownShape = 'dome' | 'spreading' | 'oval' | 'narrow' | 'multistem' | 'pine' | 'cone' | 'bush';
+export type CrownShape = 'dome' | 'spreading' | 'oval' | 'narrow' | 'column' | 'multistem' | 'pine' | 'cone' | 'bush';
 
 export interface Species {
   name: string;
@@ -64,6 +64,11 @@ export const SPECIES: Record<TreeKind, Species> = {
     bark: 0x5e4a3c, barkTop: 0xb86a3a, leaf: 0x3a5a45, autumn: 0x3a5a45, density: 1,
     note: 'Scots pine: evergreen; a tall bare trunk, orange towards the top, under a flat-topped, irregular crown.',
   },
+  poplar: {
+    name: 'Lombardy poplar', height: 25, spread: 4, evergreen: false, shape: 'column', crownBase: 0.06, trunk: 0.015,
+    bark: 0x6f6a60, leaf: 0x6e9640, autumn: 0xd4b640, density: 1,
+    note: 'Lombardy poplar: a tall, narrow column of upswept branches from near the ground, fast-growing; bright yellow in autumn.',
+  },
   deciduous: {
     name: 'Broad-leaved (general)', height: 8, spread: 6, evergreen: false, shape: 'dome', crownBase: -1, trunk: 0.018,
     bark: 0x5a4a3c, leaf: 0x5f8f3e, autumn: 0xb8742e, density: 1,
@@ -82,7 +87,7 @@ export const SPECIES: Record<TreeKind, Species> = {
 };
 
 /** The kinds in the order the lists show them. */
-export const TREE_ORDER: TreeKind[] = ['oak', 'ash', 'beech', 'hazel', 'birch', 'rowan', 'pine', 'deciduous', 'conifer', 'bush'];
+export const TREE_ORDER: TreeKind[] = ['oak', 'ash', 'beech', 'hazel', 'birch', 'rowan', 'poplar', 'pine', 'deciduous', 'conifer', 'bush'];
 
 export const TREE_DEFAULTS: Record<TreeKind, { height: number; spread: number }> = Object.fromEntries(
   Object.entries(SPECIES).map(([k, s]) => [k, { height: s.height, spread: s.spread }]),
@@ -118,10 +123,29 @@ export function crownBase(t: Tree): number {
   return t.height * s.crownBase;
 }
 
+/**
+ * Which way a leaning tree leans, on the plan (a unit vector, x right and y down), for a
+ * site whose plan top faces `north` (degrees). Zero for an upright tree.
+ */
+export function leanDirection(t: Tree, north: number): Vec2 {
+  if (!t.lean) return { x: 0, y: 0 };
+  const a = (((t.leanTo ?? 0) - north) * Math.PI) / 180;
+  return { x: Math.sin(a), y: -Math.cos(a) };
+}
+
+/** Where the middle of the crown is on the plan: over the trunk, or off to one side if it leans. */
+export function crownCentre(t: Tree, north: number): Vec2 {
+  const d = leanDirection(t, north);
+  const up = (crownBase(t) + t.height) / 2;
+  const off = up * Math.tan(((t.lean ?? 0) * Math.PI) / 180);
+  return { x: t.x + d.x * off, y: t.y + d.y * off };
+}
+
 /** The tree whose trunk is at p, or failing that whose crown is over p. */
-export function treeAt(level: Level, p: Vec2, trunkTol: number, crowns = true): string | undefined {
+export function treeAt(level: Level, p: Vec2, trunkTol: number, crowns = true, north = 0): string | undefined {
   const list = Object.values(level.trees ?? {});
   const trunk = list.find((t) => dist(t, p) <= solidRadius(t) + trunkTol);
   if (trunk || !crowns) return trunk?.id;
-  return list.filter((t) => dist(t, p) <= t.spread / 2).sort((a, b) => dist(a, p) - dist(b, p))[0]?.id;
+  const d = (t: Tree) => dist(crownCentre(t, north), p);
+  return list.filter((t) => d(t) <= t.spread / 2).sort((a, b) => d(a) - d(b))[0]?.id;
 }
