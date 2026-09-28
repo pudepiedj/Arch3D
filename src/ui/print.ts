@@ -20,6 +20,8 @@ import {
   fitScale,
   fitsAt,
   grow,
+  paperWidth,
+  SCALES,
   mmOnPaper,
   planExtent,
   rollLayout,
@@ -87,6 +89,8 @@ function sectionMarks(canvas: HTMLCanvasElement, cut: { a: { x: number; y: numbe
  * its 1 px lines 0.2 mm, as on a drawing board.
  */
 const PX_PER_MM = 5;
+/** Room on paper to the right of an elevation or section for its floor-level labels (mm). */
+const LABELS = 34;
 
 interface Options {
   paper: Paper;
@@ -291,7 +295,7 @@ export class Printer {
     }
     // One frame for every floor, so the plans lie over one another: the area chosen (with a
     // little round it), or the whole house.
-    const ext = area ? grow(area, 0.3) : planExtent(b.levels, o.garden);
+    const ext = area ? grow(area, 0.1) : planExtent(b.levels, o.garden);
     const er = o.sides.length || (area && o.section !== 'none') ? new ElevationRenderer(b, { trees: o.trees }) : null;
     const items: Item[] = [];
     // (A section saved under the old names is cut left to right.)
@@ -302,7 +306,7 @@ export class Printer {
       for (const l of floors) {
         items.push({
           title: `${l.name} plan`,
-          d: { w: ext.x1 - ext.x0, h: ext.y1 - ext.y0, bx: 12, by: 12 },
+          d: { w: ext.x1 - ext.x0, h: ext.y1 - ext.y0, bx: area ? 8 : 12, by: area ? 10 : 12 },
           north,
           draw: (w, h, pxPerM, dpr) => {
             const cx = (ext.x0 + ext.x1) / 2;
@@ -322,12 +326,14 @@ export class Printer {
       const keep = area ? er!.areaView(out, area).keep : undefined;
       items.push({
         title: `${SIDE_NAMES[side]} elevation${area ? ' (the area)' : ''}`,
-        d: { w: v.hi - v.lo, h: v.top, bx: 40, by: 8 },
+        d: { w: v.hi - v.lo, h: v.top, bx: 8, by: 8, right: LABELS },
         draw: (w, h, pxPerM, dpr) => {
-          // The ground 8 mm on paper up from the bottom, or the drawing centred if there's room.
+          // The ground 8 mm on paper up from the bottom, or the drawing centred if there's room;
+          // the drawing moved left of centre to leave the floor-level labels room on the right.
           const mmPerM = pxPerM / PX_PER_MM;
           const groundUp = Math.max((h - v.top) / 2, 8 / mmPerM);
-          return er!.draw(v.out, v.right, (v.lo + v.hi) / 2, v.hi, v.top, w, h, groundUp, pxPerM, dpr, keep);
+          const shift = LABELS / 2 / mmPerM;
+          return er!.draw(v.out, v.right, (v.lo + v.hi) / 2 + shift, v.hi, v.top, w, h, groundUp, pxPerM, dpr, keep);
         },
       });
     }
@@ -341,11 +347,12 @@ export class Printer {
       const v = er!.areaView(out, area, [whole.keep[0], at]);
       items.push({
         title: 'Section A–A',
-        d: { w: v.hi - v.lo, h: v.top, bx: 40, by: 8 },
+        d: { w: v.hi - v.lo, h: v.top, bx: 8, by: 8, right: LABELS },
         draw: (w, h, pxPerM, dpr) => {
           const mmPerM = pxPerM / PX_PER_MM;
           const groundUp = Math.max((h - v.top) / 2, 8 / mmPerM);
-          return er!.draw(v.out, v.right, (v.lo + v.hi) / 2, v.hi, v.top, w, h, groundUp, pxPerM, dpr, v.keep);
+          const shift = LABELS / 2 / mmPerM;
+          return er!.draw(v.out, v.right, (v.lo + v.hi) / 2 + shift, v.hi, v.top, w, h, groundUp, pxPerM, dpr, v.keep);
         },
       });
     }
@@ -399,7 +406,15 @@ export class Printer {
     const aw = (ROLL_AREA_W * n) / 1000;
     const heights = items.map((it) => mm(it.d.h) + 2 * it.d.by);
     const { tops, length } = rollLayout(heights);
-    const tooWide = items.filter((it) => mm(it.d.w) + 2 * it.d.bx > ROLL_AREA_W + 1e-6).map((it) => it.title);
+    const tooWide = items.filter((it) => paperWidth(it.d, n) > ROLL_AREA_W + 1e-6).map((it) => it.title);
+    // Say what stopped it being bigger: the drawings that would not fit across at the next scale up.
+    const bigger = SCALES[SCALES.indexOf(n) - 1];
+    const why =
+      !o.scale && bigger
+        ? items
+            .filter((it) => paperWidth(it.d, bigger) > ROLL_AREA_W + 1e-6)
+            .map((it) => `${it.title} would need ${Math.round(paperWidth(it.d, bigger))} mm across at 1:${bigger}`)
+        : [];
 
     const el = document.createElement('div');
     el.className = 'sheet';
@@ -438,7 +453,8 @@ export class Printer {
     this.pageSize(ROLL_WIDTH, length);
     this.sheets.append(el);
     const warn = tooWide.length ? `<span class="warn">At 1:${n} ${tooWide.join(', ')} ${tooWide.length === 1 ? 'is' : 'are'} wider than the roll and cut off: choose “Largest that fits” or a smaller scale.</span> ` : '';
-    this.note.innerHTML = `${warn}One sheet 431.8 mm wide × ${Math.ceil(length)} mm long, 1:${n}. Choose <b>Save as PDF</b>, then print the PDF from Preview (or Epson Print Layout) on <b>Roll Paper 17 in</b> at <b>100%</b> (not “Scale to fit”), so the scale is exact.`;
+    const reason = why.length ? ` Not 1:${bigger} because the ${why.join(', and the ')} (the roll takes ${Math.round(ROLL_AREA_W)} mm).` : '';
+    this.note.innerHTML = `${warn}One sheet 431.8 mm wide × ${Math.ceil(length)} mm long, 1:${n}.${esc(reason)} Choose <b>Save as PDF</b>, then print the PDF from Preview (or Epson Print Layout) on <b>Roll Paper 17 in</b> at <b>100%</b> (not “Scale to fit”), so the scale is exact.`;
   }
 
   private async url(canvas: HTMLCanvasElement): Promise<string> {

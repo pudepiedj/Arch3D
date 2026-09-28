@@ -54,11 +54,16 @@ export interface Drawing {
   h: number;
   bx: number;
   by: number;
+  /** More room on the right only (mm), e.g. for an elevation's floor-level labels. */
+  right?: number;
 }
+
+/** Width on paper a drawing takes at 1:n, borders and labels included (mm). */
+export const paperWidth = (d: Drawing, n: number) => mmOnPaper(d.w, n) + 2 * d.bx + (d.right ?? 0);
 
 /** Does a drawing fit the area at 1:n? */
 export function fitsAt(d: Drawing, area: { w: number; h: number }, n: number) {
-  return mmOnPaper(d.w, n) + 2 * d.bx <= area.w + 1e-6 && mmOnPaper(d.h, n) + 2 * d.by <= area.h + 1e-6;
+  return paperWidth(d, n) <= area.w + 1e-6 && mmOnPaper(d.h, n) + 2 * d.by <= area.h + 1e-6;
 }
 
 /** The largest standard scale at which every drawing fits the area (the smallest scale if none does). */
@@ -133,7 +138,7 @@ export const GAP = 8;
 
 /** The largest standard scale at which every drawing fits across the roll. */
 export function rollScale(drawings: Drawing[]): number {
-  return SCALES.find((n) => drawings.every((d) => mmOnPaper(d.w, n) + 2 * d.bx <= ROLL_AREA_W + 1e-6)) ?? SCALES[SCALES.length - 1];
+  return SCALES.find((n) => drawings.every((d) => paperWidth(d, n) <= ROLL_AREA_W + 1e-6)) ?? SCALES[SCALES.length - 1];
 }
 
 /**
