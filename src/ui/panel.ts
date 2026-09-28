@@ -513,7 +513,9 @@ export class Panel {
       });
     }
     if (c?.finishes) {
-      this.select('Finish', f.finish ?? c.finishes[0], c.finishes.map((v): [string, string] => [v, v[0].toUpperCase() + v.slice(1)]), (v) => {
+      // For the clothes dryer the "finish" is whether the washing is out.
+      const names: Record<string, string> = f.kind === 'rotary' ? { empty: 'None (empty lines)', washing: 'Hung out' } : {};
+      this.select(f.kind === 'rotary' ? 'Washing' : 'Finish', f.finish ?? c.finishes[0], c.finishes.map((v): [string, string] => [v, names[v] ?? v[0].toUpperCase() + v.slice(1)]), (v) => {
         f.finish = v;
         keep();
         this.done();
