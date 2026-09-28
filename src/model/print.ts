@@ -5,11 +5,17 @@ import { computeFootprints } from './joints';
 import type { Level } from './types';
 import type { Vec2 } from './geom';
 
-export type Paper = 'A4' | 'A3';
+export type Paper = 'A4' | 'A3' | 'roll';
 export type Orientation = 'landscape' | 'portrait';
 
+/**
+ * Roll paper for the Epson SC-P800: 17 inches wide (431.8 mm), cut to whatever length the
+ * drawings need.
+ */
+export const ROLL_WIDTH = 431.8;
+
 /** Paper sizes in millimetres, portrait. */
-export const PAPER: Record<Paper, { w: number; h: number }> = {
+export const PAPER: Record<Exclude<Paper, 'roll'>, { w: number; h: number }> = {
   A4: { w: 210, h: 297 },
   A3: { w: 297, h: 420 },
 };
@@ -31,7 +37,7 @@ export interface Sheet {
   area: { x: number; y: number; w: number; h: number };
 }
 
-export function sheetLayout(paper: Paper, orientation: Orientation): Sheet {
+export function sheetLayout(paper: Exclude<Paper, 'roll'>, orientation: Orientation): Sheet {
   const p = PAPER[paper];
   const [w, h] = orientation === 'landscape' ? [p.h, p.w] : [p.w, p.h];
   const x = MARGIN + PAD;
@@ -115,4 +121,50 @@ export function scaleBarLength(n: number, maxMm = 50): number {
   let best = steps[0];
   for (const s of steps) if (mmOnPaper(s, n) <= maxMm) best = s;
   return best;
+}
+
+// ---------------------------------------------------------------- roll paper
+
+/** The drawing width across the roll, inside the frame and its padding, in millimetres. */
+export const ROLL_AREA_W = ROLL_WIDTH - 2 * (MARGIN + PAD);
+/** Height of each drawing's caption, and the gap between drawings, in millimetres. */
+export const CAPTION_H = 7;
+export const GAP = 8;
+
+/** The largest standard scale at which every drawing fits across the roll. */
+export function rollScale(drawings: Drawing[]): number {
+  return SCALES.find((n) => drawings.every((d) => mmOnPaper(d.w, n) + 2 * d.bx <= ROLL_AREA_W + 1e-6)) ?? SCALES[SCALES.length - 1];
+}
+
+/**
+ * Drawings stacked down the roll, each under its caption: where each goes (mm from the top
+ * left of the paper, and its size), and the length of paper it all takes, title block and
+ * margins included.
+ */
+export function rollLayout(heights: number[]): { tops: number[]; length: number } {
+  let y = MARGIN + PAD;
+  const tops: number[] = [];
+  for (const h of heights) {
+    tops.push(y + CAPTION_H);
+    y += CAPTION_H + h + GAP;
+  }
+  return { tops, length: y - GAP + PAD + TITLE_H + MARGIN };
+}
+
+/** A plan area grown by a margin (metres) all round. */
+export function grow(e: Extent, by: number): Extent {
+  return { x0: e.x0 - by, y0: e.y0 - by, x1: e.x1 + by, y1: e.y1 + by };
+}
+
+export type SectionWay = 'leftright' | 'updown';
+
+/**
+ * The line a section is cut along, through the middle of an area: left to right across the
+ * plan (looking up it), or top to bottom (looking to the left). `a` to `b` on the plan.
+ */
+export function sectionLine(e: Extent, way: SectionWay): { a: Vec2; b: Vec2 } {
+  const cx = (e.x0 + e.x1) / 2;
+  const cy = (e.y0 + e.y1) / 2;
+  // You look from the left of a->b: from below the plan looking up, or from the right looking left.
+  return way === 'updown' ? { a: { x: cx, y: e.y1 }, b: { x: cx, y: e.y0 } } : { a: { x: e.x0, y: cy }, b: { x: e.x1, y: cy } };
 }

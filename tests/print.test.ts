@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { demoBuilding } from '../src/model/demo';
-import { fitScale, fitsAt, planExtent, scaleBarLength, sheetLayout, sideDirection } from '../src/model/print';
+import { fitScale, fitsAt, planExtent, rollLayout, rollScale, scaleBarLength, sectionLine, sheetLayout, sideDirection } from '../src/model/print';
 
 describe('printing', () => {
   it('lays out A4 landscape with a drawing area inside the frame and above the title block', () => {
@@ -42,5 +42,30 @@ describe('printing', () => {
   it('draws a round scale bar that fits', () => {
     expect(scaleBarLength(100)).toBe(5);
     expect(scaleBarLength(50)).toBe(2);
+  });
+});
+
+describe('roll paper', () => {
+  it('fits the drawings across a 17 inch roll at the largest standard scale', () => {
+    // A 6 m wide extension: 300 mm at 1:20 plus borders fits the ~404 mm across; 1:10 doesn't.
+    expect(rollScale([{ w: 6, h: 4, bx: 12, by: 12 }])).toBe(20);
+    expect(rollScale([{ w: 6, h: 4, bx: 40, by: 8 }])).toBe(20);
+    expect(rollScale([{ w: 12, h: 4, bx: 40, by: 8 }])).toBe(50);
+  });
+
+  it('stacks the drawings down the roll, with the title block at the end', () => {
+    const { tops, length } = rollLayout([100, 200]);
+    expect(tops[1]).toBeGreaterThan(tops[0] + 100);
+    expect(length).toBeGreaterThan(300 + 18 + 20);
+  });
+
+  it('cuts sections through the middle of an area, left to right or top to bottom', () => {
+    const e = { x0: 0, y0: 0, x1: 8, y1: 4 };
+    const lr = sectionLine(e, 'leftright');
+    expect(lr.a.y).toBe(2);
+    expect(lr.b.y).toBe(2);
+    const ud = sectionLine(e, 'updown');
+    expect(ud.a.x).toBe(4);
+    expect(ud.b.x).toBe(4);
   });
 });

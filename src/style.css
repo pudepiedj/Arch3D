@@ -1061,3 +1061,39 @@ button.icon {
   background: var(--bar);
   color: var(--fg);
 }
+
+.print-area {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 6px 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.print-area label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.print-area select {
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.sheet .caption {
+  font-size: 3.4mm;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sheet .caption small {
+  font-weight: 400;
+  margin-left: 2mm;
+  color: #6d6a63;
+}

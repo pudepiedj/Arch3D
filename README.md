@@ -227,6 +227,8 @@ Everything visible is *derived* from that data on every change, so there is no s
 - **The 3D view** as it is on screen (not to scale), if you want it.
 - **A4 or A3**, landscape or portrait. The scale is the largest standard one (1:20, 1:25, 1:50, 1:100, 1:200…) at which every drawing fits, or choose one; if a drawing is too big at the scale chosen, the preview says so.
 
+**Just an area, on roll paper** (for the extension, say): choose **Just an area**, then **Choose the area on the plan…** and drag a box round it, from the house wall out to the end of the extension. The plan, the elevations and (if you choose one) a **section** are then of that area only: the elevations leave out the house beyond it, and the section is cut through the middle of the area, left to right looking up the plan or top to bottom looking left, with the cut line and A–A arrows drawn on the plan. Paper **Roll, 17 in (Epson SC-P800)** puts all the drawings down one long sheet, 431.8 mm wide and as long as they need, at the largest standard scale that fits across the roll (1:20 for most extensions; or choose 1:10 to 1:200), with the title block at the end. To print it: **Save as PDF**, open the PDF in Preview (or Epson Print Layout), choose **Roll Paper 17 in** and **100%** (not "Scale to fit"), and print. Measure the scale bar to check.
+
 You see the pages first. **Print…** then opens the browser's print dialog: choose **Actual size / 100%** (not "Fit to page") and margins **None** so the scale is exact (check it against the scale bar), or **Save as PDF** to keep or send a copy. The choices are remembered on each device.
 
 ## Not done yet
