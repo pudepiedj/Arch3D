@@ -19,6 +19,7 @@ const M = {
   tank: mat(0x5f7d5a, { transparent: true, opacity: 0.6, depthWrite: false }),
   lid: mat(0x2f4f35, { roughness: 0.6 }),
   kiosk: mat(0x3f5f45, { roughness: 0.6 }),
+  headwall: mat(0x9f9c94, { roughness: 0.9 }),
 };
 
 export function buildDrains(d: Drains): { below: THREE.Group; surface: THREE.Group } {
@@ -73,6 +74,10 @@ export function buildDrains(d: Drains): { below: THREE.Group; surface: THREE.Gro
         break;
       case 'sewer':
         add(below, new THREE.SphereGeometry(0.2, 16, 12), M.sewer, n.x, -depth, n.y);
+        break;
+      case 'outfall':
+        // A concrete headwall in the ditch bank, the pipe's open end showing in it.
+        add(surface, new THREE.BoxGeometry(0.8, depth + 0.35, 0.25), M.headwall, n.x, -(depth + 0.35) / 2 + 0.05, n.y);
         break;
       case 'treatment': {
         // The tank: its top a little below ground, its inlet at the invert.

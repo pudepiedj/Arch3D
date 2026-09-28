@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { planBounds } from '../model/plan';
+import { dist } from '../model/geom';
+import { offsetLine } from '../model/hedges';
+import { subtract, unionAll } from '../model/clip';
 import { WalkWorld } from '../model/walk';
 import { detectRooms } from '../model/rooms';
 import { getLevel, levelElevation } from '../model/building';
@@ -36,6 +39,9 @@ export class View3D {
   /** Underground view: the ground and floors see-through, the drains shown, the camera free to go below. */
   underground = false;
   private groundMat!: THREE.MeshStandardMaterial;
+  private ground!: THREE.Mesh;
+  /** The ditches the ground was last cut for, so it is only re-cut when they change. */
+  private groundCut = '';
   private drainsObj: { below: THREE.Group; surface: THREE.Group } | null = null;
   /** Doors shown shut, which swing open in walk mode as the walker reaches them. */
   private doors: { pivot: THREE.Object3D; x: number; y: number; floor: number; open: number }[] = [];
@@ -108,6 +114,7 @@ export class View3D {
     ground.position.y = -0.01;
     ground.receiveShadow = true;
     this.scene.add(ground);
+    this.ground = ground;
 
     this.camera.position.set(12, 14, 20);
     this.orbit = new OrbitControls(this.camera, this.renderer.domElement);
@@ -253,11 +260,43 @@ export class View3D {
       this.drainsObj.below.visible = this.underground;
       this.scene.add(this.drainsObj.below, this.drainsObj.surface);
     }
+    this.cutGround(b);
     this.placeSun();
     if (buildingBounds(b) && !this.framed) {
       this.frame();
       this.framed = true;
     }
+  }
+
+  /** The ground, with holes where ditches are dug into it. */
+  private cutGround(b: Building) {
+    const ditches = Object.values(b.levels[0]?.hedges ?? {}).filter((h) => h.kind === 'ditch');
+    const key = JSON.stringify(ditches.map((h) => [h.points, h.width]));
+    if (key === this.groundCut) return;
+    this.groundCut = key;
+    const circle = Array.from({ length: 96 }, (_, i) => ({ x: 200 * Math.cos((i / 96) * Math.PI * 2), y: 200 * Math.sin((i / 96) * Math.PI * 2) }));
+    let geo: THREE.BufferGeometry;
+    try {
+      // Each stretch of each ditch as a four-sided piece, joined into one cut.
+      const pieces = ditches.flatMap((h) => {
+        const pts = h.points.filter((p, i) => i === 0 || dist(p, h.points[i - 1]) > 1e-6);
+        const l = offsetLine(pts, h.width / 2);
+        const r = offsetLine(pts, -h.width / 2);
+        return pts.slice(1).map((_, i) => [l[i], l[i + 1], r[i + 1], r[i]]);
+      });
+      if (!pieces.length) throw new Error('no ditches');
+      const shapes = subtract(circle, unionAll(pieces)).map(([outer, ...holes]) => {
+        // Plan (x, y) lies at (x, -y) in the circle's own plane before it is turned flat.
+        const s = new THREE.Shape(outer.map((p) => new THREE.Vector2(p.x, -p.y)));
+        for (const h of holes) s.holes.push(new THREE.Path(h.map((p) => new THREE.Vector2(p.x, -p.y))));
+        return s;
+      });
+      geo = new THREE.ShapeGeometry(shapes);
+    } catch {
+      geo = new THREE.CircleGeometry(200, 64);
+    }
+    this.ground.geometry.dispose();
+    this.ground.geometry = geo;
   }
 
   /**

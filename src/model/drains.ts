@@ -14,6 +14,7 @@ export const DEFAULT_INVERT: Record<DrainFitting, number> = {
   soakaway: 1.2,
   sewer: 1.5,
   treatment: 0.75,
+  outfall: 0.5,
 };
 
 /** A new treatment plant's tank: about 2 m³. */
@@ -32,6 +33,7 @@ export const FITTING_NAMES: Record<DrainFitting, string> = {
   soakaway: 'Soakaway',
   sewer: 'Sewer connection',
   treatment: 'Sewage treatment plant',
+  outfall: 'Outfall into a ditch',
 };
 
 export function drainsOf(b: Building): Drains {

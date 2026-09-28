@@ -7,6 +7,9 @@ import { Panel } from './ui/panel';
 import { SunPanel } from './ui/sunpanel';
 import { Sync, reachable } from './ui/sync';
 import { CATALOGUE, CATEGORIES } from './model/furniture';
+import { SPECIES, TREE_ORDER } from './model/trees';
+import { HEDGE_NAMES } from './model/hedges';
+import type { HedgeKind, TreeKind } from './model/types';
 import { Store } from './ui/store';
 import { Printer } from './ui/print';
 
@@ -125,19 +128,23 @@ $('#underground').addEventListener('click', () => {
   if (view.underground && layout === 'plan') setLayout('split');
   syncToolbar();
 });
-// The hedges and the fence share the Tree tool's list; choosing one draws lines instead.
-for (const b of $$('#treeKind button[data-hedge]')) {
-  b.addEventListener('click', () => {
-    editor.hedgeKind = b.dataset.hedge as typeof editor.hedgeKind;
-    editor.setTool('hedge');
-  });
-}
-for (const b of $$('#treeKind button[data-kind]')) {
-  b.addEventListener('click', () => {
-    editor.treeKind = b.dataset.kind as typeof editor.treeKind;
-    editor.setTool('tree');
-  });
-}
+// Trees and bushes to plant, and hedges, fences and ditches to draw, chosen from two lists
+// shown with either tool.
+const treeSelect = $<HTMLSelectElement>('#treeSelect');
+const hedgeSelect = $<HTMLSelectElement>('#hedgeSelect');
+treeSelect.replaceChildren(...TREE_ORDER.map((k) => new Option(SPECIES[k].name, k)));
+hedgeSelect.replaceChildren(...(Object.keys(HEDGE_NAMES) as HedgeKind[]).map((k) => new Option(HEDGE_NAMES[k], k)));
+treeSelect.addEventListener('change', () => {
+  editor.treeKind = treeSelect.value as TreeKind;
+  editor.setTool('tree');
+});
+hedgeSelect.addEventListener('change', () => {
+  editor.hedgeKind = hedgeSelect.value as HedgeKind;
+  editor.setTool('hedge');
+});
+// Picking the kind already shown still switches tool.
+treeSelect.addEventListener('focus', () => editor.tool !== 'tree' && editor.setTool('tree'));
+hedgeSelect.addEventListener('focus', () => editor.tool !== 'hedge' && editor.setTool('hedge'));
 $('#sun').addEventListener('click', () => {
   sunPanel.show(!sunPanel.open);
   // The sun needs the 3D view.
@@ -533,7 +540,7 @@ const HINTS: Record<Tool, string> = {
   stretch: 'Drag a box round the part to move · then drag inside it (straight; Shift for any direction), or type the distance in the panel · Esc clears the box',
   furniture: 'Click to place it (near a wall it backs onto the wall) · [ and ] turn it · Esc when done',
   tree: 'Click to plant a tree; drag it to move it, set its size in the panel',
-  hedge: 'Click along the line of the hedge or fence · click its start to go all the way round · double-click, Enter or Esc to finish',
+  hedge: 'Click along the line of the hedge, fence or ditch · click its start to go all the way round · double-click, Enter or Esc to finish',
   patio: 'Click the corners of the patio (snaps to walls; the house is cut out) · click the first corner, double-click or Enter to finish',
 };
 
@@ -553,11 +560,13 @@ function syncToolbar() {
   $('#ortho').hidden = editor.tool !== 'wall' && editor.tool !== 'stair' && editor.tool !== 'patio';
   $('#patioSurface').hidden = editor.tool !== 'patio';
   $('#treeKind').hidden = editor.tool !== 'tree' && editor.tool !== 'hedge';
-  for (const b of $$('#treeKind button[data-hedge]')) b.classList.toggle('on', editor.tool === 'hedge' && b.dataset.hedge === editor.hedgeKind);
+  treeSelect.value = editor.treeKind;
+  hedgeSelect.value = editor.hedgeKind;
+  treeSelect.parentElement!.classList.toggle('on', editor.tool === 'tree');
+  hedgeSelect.parentElement!.classList.toggle('on', editor.tool === 'hedge');
   $('#drainKind').hidden = editor.tool !== 'drain';
   for (const b of $$('#drainKind button')) b.classList.toggle('on', b.dataset.kind === editor.drainKind);
   $('#underground').classList.toggle('on', view.underground);
-  for (const b of $$('#treeKind button[data-kind]')) b.classList.toggle('on', editor.tool === 'tree' && b.dataset.kind === editor.treeKind);
   $('#sun').classList.toggle('on', sunPanel.open);
   $('#dims').classList.toggle('on', editor.showDims);
   $('#furnitureBtn').classList.toggle('on', editor.tool === 'furniture');

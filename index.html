@@ -77,13 +77,9 @@
         <button data-kind="foul" title="Foul drains: WCs, sinks, baths">Foul</button>
         <button data-kind="surface" title="Surface water: roofs, yards, gullies">Surface water</button>
       </div>
-      <div class="group" id="treeKind" aria-label="Tree">
-        <button data-kind="deciduous" title="Broad-leaved: bare in winter">Broadleaf</button>
-        <button data-kind="conifer" title="Evergreen conifer">Conifer</button>
-        <button data-hedge="privet" title="Draw a privet hedge: evergreen, 1.5 m">Privet</button>
-        <button data-hedge="hawthorn" title="Draw a hawthorn hedge: bare in winter, 1.5 m">Hawthorn</button>
-        <button data-hedge="beech" title="Draw a beech hedge: keeps its brown leaves through winter, 1.8 m">Beech</button>
-        <button data-hedge="fence" title="Draw a close-board timber fence, 1.8 m">Fence</button>
+      <div class="group picks" id="treeKind" aria-label="Tree or hedge">
+        <label title="Plant a tree or bush: choose which, then click the plan">Plant <select id="treeSelect"></select></label>
+        <label title="Draw a hedge, fence or ditch: choose which, then click along its line">Line <select id="hedgeSelect"></select></label>
       </div>
       <button id="ortho" class="toggle" title="Lock wall directions to 45° steps (O)">Ortho</button>
 

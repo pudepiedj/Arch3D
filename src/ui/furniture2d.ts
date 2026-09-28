@@ -155,6 +155,23 @@ function gate(ctx: Ctx, f: Furniture, w: number) {
 }
 
 const SYMBOLS: Record<string, Symbol> = {
+  // Oil tank: a long rounded shape with its centre line, on a dashed base.
+  oiltank: (ctx, _f, w, d, fill) => {
+    ctx.save();
+    ctx.setLineDash([0.08, 0.06]);
+    rect(ctx, -w / 2 - 0.3, -d / 2 - 0.3, w + 0.6, d + 0.6);
+    ctx.restore();
+    rect(ctx, -w / 2, -d / 2, w, d, fill, d / 2);
+    line(ctx, -w / 2 + d / 4, 0, w / 2 - d / 4, 0);
+  },
+  // Rotary dryer: the arms as a cross and the lines as squares; folded, just the pole.
+  rotary: (ctx, f, w, d) => {
+    circle(ctx, 0, 0, 0.05, '#8a8d91');
+    if (!f.open) return;
+    line(ctx, -w / 2, 0, w / 2, 0);
+    line(ctx, 0, -d / 2, 0, d / 2);
+    for (const t of [0.35, 0.65, 1]) poly(ctx, [{ x: (w / 2) * t, y: 0 }, { x: 0, y: (d / 2) * t }, { x: (-w / 2) * t, y: 0 }, { x: 0, y: (-d / 2) * t }]);
+  },
   gate5: (ctx, f, w) => gate(ctx, f, w),
   pathgate: (ctx, f, w) => gate(ctx, f, w),
   pathgatetall: (ctx, f, w) => gate(ctx, f, w),

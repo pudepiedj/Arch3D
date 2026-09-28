@@ -18,8 +18,8 @@ import {
 import { getLevel, levelBelow } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
 import { addPatio, patioShapes } from '../model/patios';
-import { addTree, treeAt, trunkRadius } from '../model/trees';
-import { FENCE_BAY, addHedge, hedgeAt, hedgeRuns, onHedge, runFootprint } from '../model/hedges';
+import { addTree, speciesOf, treeAt, trunkRadius } from '../model/trees';
+import { FENCE_BAY, addHedge, ditchOutline, hedgeAt, hedgeRuns, onHedge, runFootprint } from '../model/hedges';
 import { isGate } from '../model/gates';
 import { siteOf } from '../model/sun';
 import { type Box, type Picked, boxFrom, inBox, stretch } from '../model/stretch';
@@ -52,7 +52,8 @@ import {
   splitWallAt,
 } from '../model/plan';
 import { detectRooms } from '../model/rooms';
-import type { DrainKind, Furniture, HedgeKind, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind } from '../model/types';
+import { remembered } from './sizes';
+import type { DrainKind, Furniture, Hedge, HedgeKind, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind } from '../model/types';
 import type { Store } from './store';
 
 export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain' | 'hedge';
@@ -1032,8 +1033,12 @@ export class Editor2D {
     if (!id) {
       const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
       const p = { x: snapTo(w.x), y: snapTo(w.y) };
-      const fitting = last ? 'junction' : this.drainKind === 'surface' ? 'downpipe' : 'gully';
-      id = addDrainNode(b, p, fitting, last ? last.invert + dist(last, p) / 60 : undefined).id;
+      // A point in a ditch is where the pipe runs out into it.
+      const ditchId = hedgeAt(this.plan, p, 0.1);
+      const ditch = ditchId && this.plan.hedges![ditchId].kind === 'ditch' ? this.plan.hedges![ditchId] : null;
+      const fitting = ditch ? 'outfall' : last ? 'junction' : this.drainKind === 'surface' ? 'downpipe' : 'gully';
+      const invert = ditch ? Math.max(0.2, ditch.height - 0.3) : last ? last.invert + dist(last, p) / 60 : undefined;
+      id = addDrainNode(b, p, fitting, invert).id;
     }
     if (last && last.id !== id) addDrainPipe(b, last.id, id, this.drainKind);
     this.drainLast = id;
@@ -1177,6 +1182,8 @@ export class Editor2D {
         const at = this.furniturePlacement(w);
         if (!at) break;
         const f = addFurniture(plan, this.furnitureKind, at.at, at.angle);
+        // The size and finish last given to this kind of piece, if changed from the catalogue's.
+        Object.assign(f, remembered<Furniture>(`furniture:${f.kind}`) ?? {});
         this.store.commit();
         this.select({ kind: 'furniture', id: f.id });
         break;
@@ -1185,7 +1192,9 @@ export class Editor2D {
         this.drainClick(w);
         break;
       case 'tree': {
+        const size = remembered<{ height: number; spread: number }>(`tree:${this.treeKind}`);
         const t = addTree(plan, this.snap(w).p, this.treeKind);
+        Object.assign(t, size ?? {});
         this.store.commit();
         this.select({ kind: 'tree', id: t.id });
         break;
@@ -1619,6 +1628,7 @@ export class Editor2D {
     this.sectionPts = [];
     if (pts.length < 2) return this.requestRender();
     const h = addHedge(this.plan, pts, this.hedgeKind);
+    Object.assign(h, remembered<Hedge>(`hedge:${h.kind}`) ?? {});
     this.store.commit();
     this.select({ kind: 'hedge', id: h.id });
   }
@@ -1991,6 +2001,17 @@ export class Editor2D {
           ctx.fillText('STP', s.x, s.y + h * 0.55);
           break;
         }
+        case 'outfall':
+          // A headwall across the pipe's end, and OF.
+          ctx.rect(s.x - r(0.35, 7), s.y - r(0.12, 3), r(0.35, 7) * 2, r(0.12, 3) * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.font = '600 10px system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          ctx.fillStyle = ink;
+          ctx.fillText('OF', s.x, s.y - r(0.12, 3) - 2);
+          break;
         case 'sewer':
           ctx.arc(s.x, s.y, r(0.4, 8), 0, Math.PI * 2);
           ctx.fill();
@@ -2029,13 +2050,36 @@ export class Editor2D {
       hawthorn: ['#9cc07e', '#56803f'],
       beech: ['#aab06a', '#6d6a34'],
       fence: ['#9b7550', '#6f5237'],
+      ditch: ['#b9a77e', '#7a6644'],
     };
     const plan = this.plan;
+    // Ditches first, under everything: the banks, and the water down the middle.
+    for (const h of Object.values(plan.hedges ?? {})) {
+      if (h.kind !== 'ditch') continue;
+      const sel = this.selection?.kind === 'hedge' && this.selection.id === h.id;
+      this.path(ditchOutline(h));
+      ctx.fillStyle = sel ? hexAlpha(C.accent, 0.25) : colour.ditch[0];
+      ctx.fill();
+      ctx.strokeStyle = sel ? C.accent : colour.ditch[1];
+      ctx.lineWidth = sel ? 2 : 1;
+      ctx.stroke();
+      ctx.beginPath();
+      h.points.forEach((p, i) => {
+        const q = this.toScreen(p);
+        if (i) ctx.lineTo(q.x, q.y);
+        else ctx.moveTo(q.x, q.y);
+      });
+      ctx.strokeStyle = '#5f93c0';
+      ctx.lineWidth = Math.max(2, h.width * 0.3 * this.view.scale);
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      ctx.lineJoin = 'miter';
+    }
     const hedges = Object.values(plan.hedges ?? {}).map((h) => ({ h, runs: hedgeRuns(h, plan), sel: this.selection?.kind === 'hedge' && this.selection.id === h.id }));
     // Outlines first, then fills, so where runs overlap at a corner no line crosses the hedge.
     for (const pass of ['ink', 'fill'] as const) {
       for (const { h, runs, sel } of hedges) {
-        if (h.kind === 'fence') continue;
+        if (h.kind === 'fence' || h.kind === 'ditch') continue;
         const [fill, ink] = colour[h.kind];
         for (const r of runs) {
           const q = runFootprint(r, h.width);
@@ -2079,20 +2123,24 @@ export class Editor2D {
       const sel = this.selection?.kind === 'tree' && this.selection.id === t.id;
       const c = this.toScreen(t);
       const R = (t.spread / 2) * this.view.scale;
-      const green = t.kind === 'conifer' ? '47, 90, 54' : '95, 143, 62';
+      const sp = speciesOf(t);
+      const green = `${(sp.leaf >> 16) & 255}, ${(sp.leaf >> 8) & 255}, ${sp.leaf & 255}`;
       ctx.beginPath();
-      // A scalloped crown for broad-leaved trees; a star-like one for conifers.
-      const lobes = t.kind === 'conifer' ? 16 : 9;
+      // A scalloped crown for broad-leaved trees (more lobes and deeper for a big oak); a
+      // star-like one for conifers and pines.
+      const needles = sp.shape === 'cone' || sp.shape === 'pine';
+      const lobes = needles ? (sp.shape === 'pine' ? 11 : 16) : sp.shape === 'spreading' ? 12 : sp.shape === 'bush' ? 7 : 9;
+      const depth = sp.shape === 'spreading' ? 0.1 : sp.density < 0.8 ? 0.12 : 0.07;
       for (let i = 0; i <= lobes * 4; i++) {
         const a = (i / (lobes * 4)) * Math.PI * 2;
-        const wobble = t.kind === 'conifer' ? (i % 4 === 0 ? 1 : 0.86) : 0.93 + 0.07 * Math.cos(a * lobes);
+        const wobble = needles ? (i % 4 === 0 ? 1 : 0.86) : 1 - depth + depth * Math.cos(a * lobes);
         const x = c.x + Math.cos(a) * R * wobble;
         const y = c.y + Math.sin(a) * R * wobble;
         if (i) ctx.lineTo(x, y);
         else ctx.moveTo(x, y);
       }
       ctx.closePath();
-      ctx.fillStyle = sel ? hexAlpha(C.accent, 0.25) : `rgba(${green}, 0.28)`;
+      ctx.fillStyle = sel ? hexAlpha(C.accent, 0.25) : `rgba(${green}, ${sp.shape === 'bush' ? 0.45 : sp.density < 0.8 ? 0.2 : 0.3})`;
       ctx.fill();
       ctx.strokeStyle = sel ? C.accent : `rgba(${green}, 0.9)`;
       ctx.lineWidth = sel ? 2 : 1;

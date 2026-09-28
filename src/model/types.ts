@@ -117,7 +117,8 @@ export interface Patio {
   module: number;
 }
 
-export type TreeKind = 'deciduous' | 'conifer';
+/** 'deciduous' and 'conifer' are the generic kinds; the rest are species, plus a bush. */
+export type TreeKind = 'deciduous' | 'conifer' | 'oak' | 'ash' | 'beech' | 'hazel' | 'birch' | 'rowan' | 'pine' | 'bush';
 
 /** A tree in the garden: shade in summer, and (if deciduous) far less in winter. */
 export interface Tree {
@@ -130,15 +131,18 @@ export interface Tree {
   spread: number;
 }
 
-export type HedgeKind = 'privet' | 'hawthorn' | 'beech' | 'fence';
+export type HedgeKind = 'privet' | 'hawthorn' | 'beech' | 'fence' | 'ditch';
 
-/** A hedge or fence along a line of points (closed if its last point is its first). */
+/**
+ * A hedge, fence or open drainage ditch along a line of points (closed if its last point is
+ * its first). For a ditch, `height` is its depth.
+ */
 export interface Hedge {
   id: string;
   points: { x: number; y: number }[];
   kind: HedgeKind;
   height: number;
-  /** Thickness through the hedge (a fence is always a board's thickness). */
+  /** Thickness through the hedge (a fence is always a board's thickness; a ditch's width at the top). */
   width: number;
 }
 
@@ -288,7 +292,7 @@ export interface Furniture {
   flip?: boolean;
 }
 
-export type DrainFitting = 'junction' | 'chamber' | 'gully' | 'downpipe' | 'soakaway' | 'sewer' | 'treatment';
+export type DrainFitting = 'junction' | 'chamber' | 'gully' | 'downpipe' | 'soakaway' | 'sewer' | 'treatment' | 'outfall';
 export type DrainKind = 'foul' | 'surface';
 
 /** A point on the drains: a fitting, or just a bend or junction in the pipes. */
