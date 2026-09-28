@@ -942,7 +942,7 @@ button.icon {
     padding: 0 !important;
   }
 
-  body > *:not(#printPreview) {
+  body > *:not(#printPreview):not(#estimate) {
     display: none !important;
   }
 
@@ -1096,4 +1096,262 @@ button.icon {
   font-weight: 400;
   margin-left: 2mm;
   color: #6d6a63;
+}
+
+/* ---- The estimate: a page of paper-white on the grey, like the print preview. */
+#estimate {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: auto;
+  background: #7d7f84;
+}
+
+#estBody {
+  padding: 24px 16px;
+}
+
+.est-page {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 24px 28px;
+  background: #fff;
+  color: #26272b;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  font-size: 13px;
+}
+
+.est-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  border-bottom: 2px solid #26272b;
+  padding-bottom: 8px;
+}
+
+.est-head small {
+  color: #6d6a63;
+}
+
+.est-head h2 {
+  margin: 2px 0 0;
+  font-size: 20px;
+}
+
+.est-date {
+  text-align: right;
+  color: #6d6a63;
+}
+
+.est-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  margin: 14px 0 8px;
+}
+
+.est-options label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.est-options input[type='number'] {
+  width: 4.5em;
+}
+
+.est-page select,
+.est-page input[type='number'],
+.est-page button {
+  font: inherit;
+  color: #26272b;
+  background: #f1efea;
+  border: 1px solid #dedad2;
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+
+.est-note {
+  margin: 8px 0 14px;
+  padding: 8px 10px;
+  background: #fbf6e6;
+  border-left: 3px solid #d9a92b;
+  color: #4a463d;
+  line-height: 1.45;
+}
+
+.est-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.est-summary div {
+  flex: 1 1 180px;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
+  border: 1px solid #dedad2;
+  border-radius: 8px;
+}
+
+.est-summary span {
+  color: #6d6a63;
+}
+
+.est-summary strong {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.est-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.est-table th,
+.est-table td {
+  padding: 5px 6px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid #eeebe5;
+}
+
+.est-table thead th {
+  color: #6d6a63;
+  font-weight: 500;
+  border-bottom: 1px solid #26272b;
+}
+
+.est-table .num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.est-table .inc {
+  width: 24px;
+}
+
+.est-table .item small {
+  display: block;
+  font-weight: 400;
+  color: #6d6a63;
+}
+
+.est-table .rate input {
+  width: 5.5em;
+  text-align: right;
+  padding: 2px 4px;
+}
+
+.est-table .per {
+  display: inline-block;
+  min-width: 2.6em;
+  text-align: left;
+  color: #6d6a63;
+  padding-left: 2px;
+}
+
+.est-table tr.est-group th,
+.est-table tr.est-group td {
+  padding-top: 14px;
+  font-weight: 600;
+  background: #f6f4ef;
+  border-bottom: 1px solid #dedad2;
+}
+
+.est-table tr.key td.item {
+  font-weight: 600;
+}
+
+.est-table tr.key td.item::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #c2413a;
+  vertical-align: middle;
+}
+
+.est-table tr.out td {
+  color: #aaa59b;
+  text-decoration: line-through;
+}
+
+.est-table tr.out td.inc,
+.est-table tr.out td.rate {
+  text-decoration: none;
+}
+
+.est-table tfoot th {
+  text-align: right;
+  font-weight: 500;
+}
+
+.est-table tfoot tr.grand th,
+.est-table tfoot tr.grand td {
+  font-size: 16px;
+  font-weight: 700;
+  border-top: 2px solid #26272b;
+}
+
+@media (max-width: 640px) {
+  .est-page {
+    padding: 16px 12px;
+  }
+
+  .est-table .per {
+    display: none;
+  }
+}
+
+@media print {
+  #estimate {
+    position: static;
+    overflow: visible;
+    background: none;
+  }
+
+  #estBody {
+    padding: 0;
+  }
+
+  .est-page {
+    max-width: none;
+    padding: 0;
+    box-shadow: none;
+    font-size: 10pt;
+  }
+
+  #estPick,
+  .est-table .inc input {
+    display: none;
+  }
+
+  .est-table .inc {
+    width: 0;
+    padding: 0;
+  }
+
+  .est-page select,
+  .est-page input[type='number'] {
+    border: none;
+    background: none;
+    padding: 0;
+    appearance: none;
+  }
+
+  .est-table tr.out {
+    display: none;
+  }
+
+  .est-table tr {
+    break-inside: avoid;
+  }
 }

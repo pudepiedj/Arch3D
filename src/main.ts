@@ -12,6 +12,7 @@ import { HEDGE_NAMES } from './model/hedges';
 import type { HedgeKind, TreeKind } from './model/types';
 import { Store } from './ui/store';
 import { Printer } from './ui/print';
+import { Estimator } from './ui/estimate';
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const $$ = (sel: string) => [...document.querySelectorAll<HTMLButtonElement>(sel)];
@@ -40,7 +41,8 @@ store.subscribe(renderLevels);
 view.setBuilding(store.building, store.activeId);
 
 editor.shortcutsEnabled = () =>
-  !(view.mode === 'walk' && layout !== 'plan') && !document.querySelector('dialog[open]') && document.querySelector<HTMLElement>('#printPreview')!.hidden;
+  !(view.mode === 'walk' && layout !== 'plan') && !document.querySelector('dialog[open]') && document.querySelector<HTMLElement>('#printPreview')!.hidden &&
+  document.querySelector<HTMLElement>('#estimate')!.hidden;
 editor.onSelectionChange = () => panel.render();
 editor.onToolChange = () => {
   syncToolbar();
@@ -500,9 +502,14 @@ $('#print').addEventListener('click', () => {
   closeMenu();
   printer.open();
 });
+const estimator = new Estimator(store, editor);
+$('#estimateBtn').addEventListener('click', () => {
+  closeMenu();
+  estimator.open();
+});
 // Ctrl/⌘+P makes the pages; once they are showing it prints them.
 window.addEventListener('keydown', (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p' && !printer.showing) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p' && !printer.showing && !estimator.showing) {
     e.preventDefault();
     printer.open();
   }
