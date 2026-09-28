@@ -25,7 +25,7 @@ import {
   solarGeometry,
 } from '../model/roofitems';
 import { patioShapes } from '../model/patios';
-import { crownBase, trunkRadius } from '../model/trees';
+import { type Species, crownBase, leanDirection, speciesOf, trunkRadius } from '../model/trees';
 import { standingHeight } from '../model/furniture';
 import { buildFurniture } from './furniture3d';
 import type { Building, Furniture, Hedge, Opening, Patio, Pillar, Plan, Tree } from '../model/types';
@@ -301,6 +301,8 @@ export interface LevelOptions {
   /** Patios, decks and gravel, with their outlines less the house. */
   patios?: { patio: Patio; shapes: Shape[] }[];
   trees?: Tree[];
+  /** Which way the top of the plan faces (degrees), for the way leaning trees lean. */
+  north?: number;
   hedges?: { hedge: Hedge; runs: HedgeRun[] }[];
   /** Furniture, each with the height of what it stands on (floor, patio or deck). */
   furniture?: (Furniture & { base: number })[];
@@ -349,6 +351,7 @@ export function buildBuildingObject(
       roofs: roofs.flatMap((r) => (r.geometry ? [{ ...r.geometry, vaulted: !!r.roof.vaulted && r.roof.kind !== 'flat', glazedGables: !!r.roof.glazedGables && r.roof.kind !== 'flat' }] : [])),
       patios: Object.values(level.patios ?? {}).map((patio) => ({ patio, shapes: patioShapes(level, patio) })),
       trees: Object.values(level.trees ?? {}),
+      north: (b.site?.north ?? 0),
       hedges: Object.values(level.hedges ?? {}).map((hedge) => ({ hedge, runs: hedgeRuns(hedge, level) })),
       furniture: Object.values(level.furniture ?? {}).map((f) => ({ ...f, base: standingHeight(level, f) })),
       season,
@@ -446,7 +449,7 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   }
 
   if (opts.patios?.length) group.add(buildPatios(opts.patios, mats));
-  for (const t of opts.trees ?? []) group.add(buildTree(t, mats, opts.season ?? { leaf: 1, autumn: false }));
+  for (const t of opts.trees ?? []) group.add(buildTree(t, mats, opts.season ?? { leaf: 1, autumn: false }, opts.north ?? 0));
   for (const { hedge, runs } of opts.hedges ?? []) group.add(buildHedge(hedge, runs, opts.season ?? { leaf: 1, autumn: false }));
   for (const f of opts.furniture ?? []) {
     const obj = buildFurniture(f);
@@ -580,10 +583,16 @@ function buildPatios(list: { patio: Patio; shapes: Shape[] }[], mats: Materials)
  * thins in spring and autumn and is gone in winter (so its winter shadow is just twigs).
  * Conifer: a trunk under tiers of cones, the same all year.
  */
-function buildTree(t: Tree, mats: Materials, season: Season): THREE.Group {
+function buildTree(t: Tree, mats: Materials, season: Season, north = 0): THREE.Group {
   const g = new THREE.Group();
   g.name = `tree:${t.id}`;
   g.position.set(t.x, 0, t.y);
+  // A leaning tree: the whole tree tipped over from its foot, towards the way it leans.
+  if (t.lean) {
+    const d = leanDirection(t, north);
+    const axis = new THREE.Vector3(0, 1, 0).cross(new THREE.Vector3(d.x, 0, d.y)).normalize();
+    g.quaternion.setFromAxisAngle(axis, (Math.min(45, t.lean) * Math.PI) / 180);
+  }
   const r = trunkRadius(t);
   const base = crownBase(t);
   const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number) => {
@@ -593,6 +602,12 @@ function buildTree(t: Tree, mats: Materials, season: Season): THREE.Group {
     g.add(m);
     return m;
   };
+  const sp = speciesOf(t);
+  // The two general kinds keep their own simple models; species (and bushes) are shaped here.
+  if (t.kind !== 'conifer' && t.kind !== 'deciduous') {
+    buildSpeciesTree(add, t, sp, season);
+    return g;
+  }
   if (t.kind === 'conifer') {
     add(new THREE.CylinderGeometry(r * 0.5, r, t.height * 0.9, 8), mats.bark, 0, t.height * 0.45, 0);
     const tiers = 4;
@@ -653,6 +668,181 @@ function buildTree(t: Tree, mats: Materials, season: Season): THREE.Group {
     clump(0, crownMid + Rv * 0.5, 0, R * 0.45);
   }
   return g;
+}
+
+/** One material per colour for bark and foliage, shared by every tree. */
+const treeMats = new Map<string, THREE.MeshStandardMaterial>();
+function treeMat(color: number, flat: boolean): THREE.MeshStandardMaterial {
+  const key = `${color}-${flat}`;
+  let m = treeMats.get(key);
+  if (!m) treeMats.set(key, (m = new THREE.MeshStandardMaterial({ color, roughness: 0.92, flatShading: flat })));
+  return m;
+}
+
+type AddFn = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number) => THREE.Mesh;
+
+/**
+ * A tree of a particular species (or a bush), from a few shapes: the trunk or stems and
+ * branches in its bark, and clumps of foliage making up its crown's outline, sized and
+ * coloured for the season. Bare in winter unless evergreen.
+ */
+function buildSpeciesTree(add: AddFn, t: Tree, sp: Species, season: Season) {
+  let seed = [...t.id].reduce((a, c) => a * 31 + c.charCodeAt(0), 11) >>> 0;
+  const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const bark = treeMat(sp.bark, false);
+  const r = trunkRadius(t);
+  const H = t.height;
+  const R = t.spread / 2;
+  const base = crownBase(t);
+  const leaf = sp.evergreen ? 1 : season.leaf;
+  const foliage = treeMat(sp.evergreen || !season.autumn ? sp.leaf : sp.autumn, true);
+  const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+  const limb = (a: THREE.Vector3, b: THREE.Vector3, r0: number, r1: number, m: THREE.Material = bark) => {
+    const d = new THREE.Vector3().subVectors(b, a);
+    const mesh = add(new THREE.CylinderGeometry(r1, r0, d.length(), 6), m, (a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+  };
+  /** A clump of foliage, squashed by `sy` up and down; smaller as the leaves come and go. */
+  const s = 0.4 + 0.6 * leaf;
+  const clump = (x: number, y: number, z: number, size: number, sy = 1) => {
+    if (leaf < 0.05) return;
+    const m = add(new THREE.IcosahedronGeometry(size * s * (0.9 + rand() * 0.2), 1), foliage, x, y, z);
+    m.scale.set(1, sy, 1);
+    m.rotation.y = rand() * Math.PI;
+  };
+  /** Clumps filling an ellipsoid (centre cy, radii R across and Rv up), `n` of them. */
+  const fill = (cy: number, Rh: number, Rv: number, n: number, size: number, flatBottom = 0) => {
+    for (let i = 0; i < n; i++) {
+      // Spread evenly over the ellipsoid (a spiral), pushed out towards its surface.
+      const k = (i + 0.5) / n;
+      const phi = Math.acos(1 - 2 * k);
+      const theta = i * 2.39996 + rand() * 0.4;
+      const out = 0.55 + rand() * 0.25;
+      let y = Math.cos(phi) * Rv * out;
+      if (y < -Rv * (1 - flatBottom)) y = -Rv * (1 - flatBottom);
+      clump(Math.sin(phi) * Math.cos(theta) * Rh * out, cy + y, Math.sin(phi) * Math.sin(theta) * Rh * out, size);
+    }
+  };
+  const dens = sp.density;
+  const count = (n: number) => Math.max(3, Math.round(n * dens));
+
+  switch (sp.shape) {
+    case 'spreading':
+    case 'dome':
+    case 'oval':
+    case 'narrow': {
+      const wide = sp.shape === 'spreading';
+      const Rv = (H - base) / 2;
+      const cy = base + Rv;
+      // Trunk to where it divides, then main limbs out and up into the crown.
+      const fork = base + Rv * (wide ? 0.1 : 0.35);
+      limb(V(0, 0, 0), V(0, fork, 0), r, r * 0.7);
+      const limbs = wide ? 6 : sp.shape === 'narrow' ? 4 : 5;
+      for (let i = 0; i < limbs; i++) {
+        const a = ((i + rand() * 0.6) / limbs) * Math.PI * 2;
+        const reach = wide ? 0.75 : sp.shape === 'narrow' ? 0.4 : 0.55;
+        const end = V(Math.cos(a) * R * reach, cy + Rv * (wide ? -0.1 + rand() * 0.3 : 0.1 + rand() * 0.4), Math.sin(a) * R * reach);
+        limb(V(0, fork, 0), end, r * 0.55, r * 0.2);
+        for (let k = 0; k < 2; k++) {
+          const b = a + (k ? 0.5 : -0.5) + (rand() - 0.5) * 0.3;
+          limb(end, V(Math.cos(b) * R * 0.92, end.y + Rv * (0.15 + rand() * 0.4), Math.sin(b) * R * 0.92), r * 0.2, r * 0.06);
+        }
+      }
+      if (sp.shape === 'narrow') {
+        // Birch: the leader carries on up the middle.
+        limb(V(0, fork, 0), V(0, H * 0.97, 0), r * 0.6, r * 0.12);
+      }
+      const size = sp.shape === 'narrow' ? R * 0.42 : wide ? R * 0.38 : R * 0.45;
+      fill(cy, R * (wide ? 0.95 : 0.9), Rv * (wide ? 0.85 : 0.9), count(wide ? 26 : 18), size, wide ? 0.35 : 0);
+      if (sp.berries && season.autumn && leaf > 0.2) {
+        const berry = treeMat(sp.berries, false);
+        for (let i = 0; i < 26; i++) {
+          const a = rand() * Math.PI * 2;
+          const y = cy + (rand() - 0.3) * Rv * 1.2;
+          const rr = R * (0.75 + rand() * 0.2) * Math.sqrt(Math.max(0.1, 1 - ((y - cy) / Rv) ** 2));
+          add(new THREE.IcosahedronGeometry(0.09, 0), berry, Math.cos(a) * rr, y, Math.sin(a) * rr);
+        }
+      }
+      break;
+    }
+    case 'column': {
+      // Lombardy poplar: a trunk up the middle, branches swept steeply up close to it, and
+      // a tall narrow column of foliage tapering to a point.
+      limb(V(0, 0, 0), V(0, H * 0.96, 0), r, r * 0.15);
+      const n = 14;
+      for (let i = 0; i < n; i++) {
+        const a = i * 2.39996 + rand() * 0.4;
+        const y0 = base + (H - base) * (i / n) * 0.85;
+        const reach = R * 0.55 * (1 - (i / n) * 0.6);
+        limb(V(0, y0, 0), V(Math.cos(a) * reach, y0 + (H - base) * 0.18, Math.sin(a) * reach), r * 0.25, r * 0.06);
+      }
+      const layers = count(20);
+      for (let i = 0; i < layers; i++) {
+        const k = i / (layers - 1);
+        const y = base + 0.4 + (H - base - 1.2) * k;
+        // Widest a third of the way up, tapering to a blunt point at the top.
+        const w = R * (k < 0.3 ? 0.8 + 0.67 * k : 1 - (k - 0.3) * 0.85);
+        for (let j = 0; j < 3; j++) {
+          const a = rand() * Math.PI * 2;
+          clump(Math.cos(a) * w * 0.3, y, Math.sin(a) * w * 0.3, Math.max(0.45, w * 0.72), 1.6);
+        }
+      }
+      break;
+    }
+    case 'multistem': {
+      // Hazel: several stems from the ground, fanning out, with a rounded crown over them.
+      const stems = 7;
+      for (let i = 0; i < stems; i++) {
+        const a = (i / stems) * Math.PI * 2 + rand() * 0.5;
+        const foot = V(Math.cos(a) * R * 0.08, 0, Math.sin(a) * R * 0.08);
+        const top = V(Math.cos(a) * R * (0.5 + rand() * 0.25), H * (0.8 + rand() * 0.18), Math.sin(a) * R * (0.5 + rand() * 0.25));
+        limb(foot, top, r, r * 0.3);
+      }
+      const Rv = (H - base) / 2;
+      fill(base + Rv, R * 0.95, Rv, count(20), R * 0.42, 0.2);
+      break;
+    }
+    case 'pine': {
+      // Scots pine: tall trunk, orange above, a few near-level branches, a flat-topped crown.
+      const top = treeMat(sp.barkTop ?? sp.bark, false);
+      limb(V(0, 0, 0), V(0, base, 0), r, r * 0.75);
+      limb(V(0, base, 0), V(rand() * 0.3, H * 0.93, rand() * 0.3), r * 0.75, r * 0.3, top);
+      const branches = 6;
+      for (let i = 0; i < branches; i++) {
+        const a = (i / branches) * Math.PI * 2 + rand() * 0.8;
+        const y0 = base + (H - base) * (0.1 + 0.7 * (i / branches));
+        const reach = R * (0.55 + rand() * 0.4);
+        const tip = V(Math.cos(a) * reach, y0 + 0.4 + rand() * 0.8, Math.sin(a) * reach);
+        limb(V(0, y0, 0), tip, r * 0.3, r * 0.1, top);
+        // A flattened pad of needles at the end of each branch.
+        clump(tip.x, tip.y + 0.25, tip.z, R * (0.38 + rand() * 0.12), 0.45);
+      }
+      clump(0, H * 0.94, 0, R * 0.5, 0.5);
+      break;
+    }
+    case 'bush': {
+      // Leaves right down to the ground: a mound of clumps. In winter, a thicket of twigs.
+      if (leaf < 0.5) {
+        const twigs = 14;
+        for (let i = 0; i < twigs; i++) {
+          const a = rand() * Math.PI * 2;
+          const reach = R * (0.4 + rand() * 0.55);
+          limb(V(Math.cos(a) * 0.05, 0, Math.sin(a) * 0.05), V(Math.cos(a) * reach, H * (0.6 + rand() * 0.4), Math.sin(a) * reach), Math.max(0.012, r * 0.5), 0.006);
+        }
+      }
+      const Rv = H / 2;
+      const n = count(Math.round(10 + t.spread * 4));
+      for (let i = 0; i < n; i++) {
+        const k = (i + 0.5) / n;
+        const phi = Math.acos(1 - k); // upper half: a dome sitting on the ground
+        const theta = i * 2.39996 + rand() * 0.5;
+        const out = 0.5 + rand() * 0.3;
+        const y = Math.max(Rv * 0.35, Math.cos(phi) * H * out + Rv * 0.3);
+        clump(Math.sin(phi) * Math.cos(theta) * R * out, y, Math.sin(phi) * Math.sin(theta) * R * out, Math.min(R, Rv) * 0.62);
+      }
+      break;
+    }
+  }
 }
 
 /**

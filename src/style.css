@@ -1034,3 +1034,30 @@ button.icon {
   margin-top: 10px;
   min-height: 44px;
 }
+
+/* Tool options that are lists (tree species, hedge kinds). */
+.group.picks label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.group.picks label.on {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.group.picks select {
+  width: auto;
+  max-width: 128px;
+  min-height: 30px;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bar);
+  color: var(--fg);
+}

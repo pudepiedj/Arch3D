@@ -11,7 +11,7 @@ import { Vec2, pointInPolygon } from './geom';
 import { computeFootprints, type Footprint } from './joints';
 import { openingsOf } from './openings';
 import { patioShapes } from './patios';
-import { trunkRadius } from './trees';
+import { solidRadius } from './trees';
 import { hedgeFootprints } from './hedges';
 import { isGate } from './gates';
 import { catalogueItem, footprint, standingHeight } from './furniture';
@@ -64,7 +64,7 @@ export class WalkWorld {
         // A square post is treated as the circle round it.
         r: q.shape === 'round' ? q.size / 2 : (q.size / 2) * Math.SQRT2,
       }));
-      for (const t of Object.values(level.trees ?? {})) posts.push({ x: t.x, y: t.y, r: trunkRadius(t) });
+      for (const t of Object.values(level.trees ?? {})) posts.push({ x: t.x, y: t.y, r: solidRadius(t) });
       // Hedges and fences are in the way.
       for (const h of Object.values(level.hedges ?? {})) {
         for (const poly of hedgeFootprints(h, level)) this.blocks.push({ poly, bottom: elevation, top: elevation + h.height });

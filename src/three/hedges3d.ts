@@ -3,7 +3,7 @@
 // close-board: posts, a gravel board and overlapping featheredge boards.
 
 import * as THREE from 'three';
-import { FENCE_BAY, type HedgeRun } from '../model/hedges';
+import { FENCE_BAY, type HedgeRun, hedgeClosed, offsetLine } from '../model/hedges';
 import type { Hedge } from '../model/types';
 import type { Season } from './build';
 
@@ -51,6 +51,7 @@ export function buildHedge(h: Hedge, runs: HedgeRun[], season: Season): THREE.Gr
   const g = new THREE.Group();
   g.name = `hedge:${h.id}`;
   if (h.kind === 'fence') buildFence(g, h, runs);
+  else if (h.kind === 'ditch') buildDitch(g, h);
   else {
     const mat = material(hedgeColour(h, season));
     for (const { a, b, openA, openB } of runs) {
@@ -146,5 +147,51 @@ function buildFence(g: THREE.Group, h: Hedge, runs: HedgeRun[]) {
     boards.forEach((m, i) => inst.setMatrixAt(i, m));
     inst.castShadow = inst.receiveShadow = true;
     g.add(inst);
+  }
+}
+
+/**
+ * An open ditch: grassy banks sloping down from the ground to a narrower muddy bottom, with
+ * water standing in it, and ends closed off. The ground has a hole cut to match (View3D).
+ */
+function buildDitch(g: THREE.Group, h: Hedge) {
+  const pts = h.points.filter((p, i) => i === 0 || Math.hypot(p.x - h.points[i - 1].x, p.y - h.points[i - 1].y) > 1e-6);
+  if (pts.length < 2) return;
+  const D = h.height;
+  const W = h.width;
+  const Wb = Math.max(0.25, W * 0.25);
+  const wet = Math.min(0.25, D * 0.3);
+  const Ww = Wb + ((W - Wb) * wet) / D;
+  const top = -0.01;
+  const side = (w: number) => [offsetLine(pts, w / 2), offsetLine(pts, -w / 2)] as const;
+  const [tl, tr] = side(W);
+  const [bl, br] = side(Wb);
+  const [wl, wr] = side(Ww);
+  const tris: Record<'bank' | 'bed' | 'water', number[]> = { bank: [], bed: [], water: [] };
+  const P = (p: { x: number; y: number }, y: number) => [p.x, y, p.y];
+  const quad = (list: number[], a: number[], b: number[], c: number[], d: number[]) => list.push(...a, ...b, ...c, ...a, ...c, ...d);
+  for (let i = 0; i + 1 < pts.length; i++) {
+    quad(tris.bank, P(tl[i], top), P(tl[i + 1], top), P(bl[i + 1], -D), P(bl[i], -D));
+    quad(tris.bank, P(tr[i], top), P(tr[i + 1], top), P(br[i + 1], -D), P(br[i], -D));
+    quad(tris.bed, P(bl[i], -D), P(bl[i + 1], -D), P(br[i + 1], -D), P(br[i], -D));
+    quad(tris.water, P(wl[i], -D + wet), P(wl[i + 1], -D + wet), P(wr[i + 1], -D + wet), P(wr[i], -D + wet));
+  }
+  if (!hedgeClosed(h)) {
+    for (const i of [0, pts.length - 1]) quad(tris.bank, P(tl[i], top), P(tr[i], top), P(br[i], -D), P(bl[i], -D));
+  }
+  const colours = { bank: 0x6f7f45, bed: 0x4a3f30, water: 0x4d6c82 };
+  for (const k of ['bank', 'bed', 'water'] as const) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(tris[k], 3));
+    geo.computeVertexNormals();
+    let m = materials.get(colours[k] + 1);
+    if (!m) {
+      m = new THREE.MeshStandardMaterial({ color: colours[k], roughness: k === 'water' ? 0.15 : 0.95, metalness: k === 'water' ? 0.1 : 0, side: THREE.DoubleSide });
+      materials.set(colours[k] + 1, m);
+    }
+    const mesh = new THREE.Mesh(geo, m);
+    mesh.receiveShadow = true;
+    mesh.castShadow = k === 'bank';
+    g.add(mesh);
   }
 }

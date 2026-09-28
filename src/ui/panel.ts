@@ -6,10 +6,11 @@ import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, parapetHeight, roofAreaRings,
 import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
 import { PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
-import { TREE_DEFAULTS } from '../model/trees';
+import { SPECIES, TREE_DEFAULTS, TREE_ORDER, speciesOf } from '../model/trees';
+import { forget, remember, remembered } from './sizes';
 import { MAX_LEAF, gateLeaves, isGate } from '../model/gates';
 import { HEDGE_DEFAULTS, HEDGE_NAMES, hedgeClosed, hedgeLength } from '../model/hedges';
-import { GRAND_MODELS, catalogueItem } from '../model/furniture';
+import { GRAND_MODELS, TANK_STAND, catalogueItem, tankLitres } from '../model/furniture';
 import { stretchSummary } from '../model/stretch';
 import { DEFAULT_INVERT, DEFAULT_TANK, FITTING_NAMES, deleteDrainNode, pipeFall, pipeLength, tankVolume } from '../model/drains';
 import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
@@ -493,6 +494,9 @@ export class Panel {
     const f = level.furniture?.[id];
     if (!f) return;
     const c = catalogueItem(f.kind);
+    const key = `furniture:${f.kind}`;
+    // Sizes and finish you set are kept for the next piece of this kind (until Reset size).
+    const keep = () => remember(key, { width: f.width, depth: f.depth, height: f.height, ...(f.finish ? { finish: f.finish } : {}) });
     this.title(c?.name ?? 'Furniture');
     if (f.kind === 'grand') {
       const model = GRAND_MODELS.find((m) => Math.abs(m.depth - f.depth) < 0.005 && Math.abs(m.width - f.width) < 0.005);
@@ -504,26 +508,36 @@ export class Panel {
         if (!m) return;
         f.width = m.width;
         f.depth = m.depth;
+        keep();
         this.done();
       });
     }
     if (c?.finishes) {
-      this.select('Finish', f.finish ?? c.finishes[0], c.finishes.map((v): [string, string] => [v, v[0].toUpperCase() + v.slice(1)]), (v) => {
+      // For the clothes dryer the "finish" is whether the washing is out.
+      const names: Record<string, string> = f.kind === 'rotary' ? { empty: 'None (empty lines)', washing: 'Hung out' } : {};
+      this.select(f.kind === 'rotary' ? 'Washing' : 'Finish', f.finish ?? c.finishes[0], c.finishes.map((v): [string, string] => [v, names[v] ?? v[0].toUpperCase() + v.slice(1)]), (v) => {
         f.finish = v;
+        keep();
         this.done();
       });
     }
-    this.number('Width', f.width, 0.01, 0.2, 6, (v) => {
+    this.number(c?.labels?.width ?? 'Width', f.width, 0.01, 0.2, 6, (v) => {
       f.width = v;
+      keep();
       this.done();
     }, 'm');
-    this.number(f.kind === 'grand' ? 'Length' : 'Depth', f.depth, 0.01, 0.2, 6, (v) => {
+    this.number(c?.labels?.depth ?? (f.kind === 'grand' ? 'Length' : 'Depth'), f.depth, 0.01, 0.2, 6, (v) => {
       f.depth = v;
+      // A tank's height is its diameter on its stand.
+      if (f.kind === 'oiltank') f.height = v + TANK_STAND;
+      keep();
       this.done();
     }, 'm');
-    if (!c?.flat && f.kind !== 'grand') {
-      this.number('Height', f.height, 0.01, 0.2, 3, (v) => {
+    if (f.kind === 'oiltank') this.note(`Holds about ${Math.round(tankLitres(f.width, f.depth) / 100) * 100} litres (brim-full).`);
+    if (!c?.flat && f.kind !== 'grand' && !c?.fixedHeight) {
+      this.number(c?.labels?.height ?? 'Height', f.height, 0.01, 0.2, 3, (v) => {
         f.height = v;
+        keep();
         this.done();
       }, 'm');
     }
@@ -537,9 +551,19 @@ export class Panel {
         ? 'The keyboard end is the front. The dashed box in front is the stool. Drag to move; [ and ] turn it.'
         : isGate(f.kind)
           ? `Set on a hedge or fence, it sits in its line and makes its own gap; drag it along. ${f.kind === 'gate5' ? `Wider than ${MAX_LEAF + 0.3} m it becomes a pair of gates. ` : ''}Turn 180° to make it open the other way. Open, you can walk through it.`
-          : 'Drag to move; it keeps tight to a wall it is square to. [ and ] turn it; Ctrl/⌘+D puts a copy alongside.',
+          : f.kind === 'rotary'
+            ? 'Open or folded, with or without washing (Finish): with the Sun study on, see where its shadow falls and when the lines are in sun through the day.'
+            : f.kind === 'oiltank'
+              ? 'A horizontal tank on its stand. Set its length and diameter; its height follows. Regulations want it on a base extending 300 mm all round, and away from boundaries and buildings.'
+              : 'Drag to move; it keeps tight to a wall it is square to. [ and ] turn it; Ctrl/⌘+D puts a copy alongside.',
     );
     const btns: [string, () => void, boolean?][] = [];
+    if (f.kind === 'rotary') {
+      btns.push([f.open ? 'Fold it up' : 'Open it out', () => {
+        f.open = !f.open || undefined;
+        this.done();
+      }]);
+    }
     if (isGate(f.kind)) {
       btns.push([f.open ? 'Shut gate' : 'Open gate', () => {
         f.open = !f.open || undefined;
@@ -567,6 +591,16 @@ export class Panel {
       this.done();
     }]);
     btns.push(['Duplicate', () => this.editor.duplicateSelection()]);
+    if (c) {
+      btns.push(['Reset size', () => {
+        f.width = c.width;
+        f.depth = c.depth;
+        f.height = c.height;
+        if (c.finishes) f.finish = c.finishes[0];
+        forget(key);
+        this.done();
+      }]);
+    }
     btns.push(['Delete', () => {
       delete level.furniture![id];
       this.editor.select(null);
@@ -739,29 +773,45 @@ export class Panel {
     const level = this.store.plan;
     const t = level.trees?.[id];
     if (!t) return;
-    this.title('Tree');
-    this.select('Kind', t.kind, [
-      ['deciduous', 'Broad-leaved'],
-      ['conifer', 'Conifer (evergreen)'],
-    ], (v) => {
+    const sp = speciesOf(t);
+    const key = () => `tree:${t.kind}`;
+    // What you set is kept for the next one of this kind (until Reset size).
+    const keep = () => remember(key(), { height: t.height, spread: t.spread });
+    this.title(sp.shape === 'bush' ? 'Bush' : 'Tree');
+    this.select('Kind', t.kind, TREE_ORDER.map((k): [string, string] => [k, SPECIES[k].name]), (v) => {
       t.kind = v as TreeKind;
-      Object.assign(t, TREE_DEFAULTS[t.kind]);
+      Object.assign(t, TREE_DEFAULTS[t.kind], remembered(key()) ?? {});
       this.done();
     });
-    this.number('Height', t.height, 0.5, 1, 40, (v) => {
+    this.number('Height', t.height, 0.5, 0.3, 40, (v) => {
       t.height = v;
+      keep();
       this.done();
     }, 'm');
-    this.number('Crown spread', t.spread, 0.5, 0.5, 30, (v) => {
+    this.number(sp.shape === 'bush' ? 'Spread' : 'Crown spread', t.spread, 0.5, 0.3, 30, (v) => {
       t.spread = v;
+      keep();
       this.done();
     }, 'm', 'Diameter of the crown');
-    this.note(
-      t.kind === 'deciduous'
-        ? 'In leaf from May to October, bare in winter: the Sun study shows it as it is on the chosen date. Drag the trunk to move it.'
-        : 'Evergreen: the same shade all year. Drag the trunk to move it.',
-    );
+    this.number('Lean', t.lean ?? 0, 1, 0, 30, (v) => {
+      t.lean = v || undefined;
+      this.done();
+    }, '°', 'How far it leans from upright');
+    if (t.lean) {
+      const points: [string, string][] = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'].map((p, i) => [String(i * 45), p]);
+      const to = Math.round((((t.leanTo ?? 0) % 360) + 360) % 360 / 45) * 45 % 360;
+      this.select('Leans towards', String(to), points, (v) => {
+        t.leanTo = Number(v);
+        this.done();
+      });
+    }
+    this.note(`${sp.note} The Sun study shows it as it is on the chosen date. Drag it to move it. A size you set is used for the next ${sp.name.toLowerCase()} too.`);
     this.buttons([
+      ['Reset size', () => {
+        Object.assign(t, TREE_DEFAULTS[t.kind]);
+        forget(key());
+        this.done();
+      }],
       ['Delete', () => {
         delete level.trees![id];
         this.editor.select(null);
@@ -775,29 +825,39 @@ export class Panel {
     const h = level.hedges?.[id];
     if (!h) return;
     this.title(HEDGE_NAMES[h.kind]);
+    const key = () => `hedge:${h.kind}`;
+    const keep = () => remember(key(), { height: h.height, width: h.width });
     this.select('Kind', h.kind, (Object.keys(HEDGE_NAMES) as HedgeKind[]).map((k): [string, string] => [k, HEDGE_NAMES[k]]), (v) => {
       h.kind = v as HedgeKind;
-      Object.assign(h, HEDGE_DEFAULTS[h.kind]);
+      Object.assign(h, HEDGE_DEFAULTS[h.kind], remembered(key()) ?? {});
       this.done();
     });
-    this.number('Height', h.height, 0.1, 0.3, 6, (v) => {
+    this.number(h.kind === 'ditch' ? 'Depth' : 'Height', h.height, 0.1, 0.2, 6, (v) => {
       h.height = v;
+      keep();
       this.done();
     }, 'm');
     if (h.kind !== 'fence') {
-      this.number('Thickness', h.width, 0.05, 0.2, 3, (v) => {
+      this.number(h.kind === 'ditch' ? 'Width at top' : 'Thickness', h.width, 0.05, 0.2, 6, (v) => {
         h.width = v;
+        keep();
         this.done();
-      }, 'm', 'Through the hedge, face to face');
+      }, 'm', h.kind === 'ditch' ? 'Across the ditch from bank to bank' : 'Through the hedge, face to face');
     }
     const season = {
       privet: 'Evergreen (semi-evergreen in a hard winter).',
       hawthorn: 'In leaf from May to October; twiggy and bare in winter.',
       beech: 'Fresh green in summer, copper in autumn, and it keeps its brown leaves through the winter.',
       fence: 'Timber posts at most 1.8 m apart, a gravel board, and featheredge boards.',
+      ditch: 'An open drainage ditch dug into the ground, with water in the bottom. Run surface-water drains to it with an "Outfall into a ditch" fitting.',
     }[h.kind];
     this.note(`${hedgeLength(h).toFixed(1)} m long${hedgeClosed(h) ? ', all the way round' : ''}. ${season} Drag it to move it; drag a corner to reshape it, a circle to add a corner; double-click a corner to remove it.`);
     this.buttons([
+      ['Reset size', () => {
+        Object.assign(h, HEDGE_DEFAULTS[h.kind]);
+        forget(key());
+        this.done();
+      }],
       ['Delete', () => {
         delete level.hedges![id];
         this.editor.select(null);

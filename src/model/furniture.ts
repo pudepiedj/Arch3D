@@ -23,6 +23,10 @@ export interface CatalogueItem {
   flat?: boolean;
   /** Can be walked under (a pergola): not in the way in walk mode. */
   walkUnder?: boolean;
+  /** Names for its width, depth and height in the panel, where they mean something else. */
+  labels?: { width?: string; depth?: string; height?: string };
+  /** Its height follows from its other sizes (not set on its own). */
+  fixedHeight?: boolean;
 }
 
 export const CATEGORIES = ['Music', 'Living', 'Heating', 'Dining', 'Office', 'Bedroom', 'Kitchen', 'Bathroom', 'Garden'];
@@ -87,6 +91,8 @@ export const CATALOGUE: CatalogueItem[] = [
   { kind: 'pergolaplant', name: 'Pergola with climber', category: 'Garden', width: 2.0, depth: 2.0, height: 2.4, finishes: ['oak', 'grey', 'green'], walkUnder: true },
   { kind: 'bbq', name: 'Barbecue', category: 'Garden', width: 1.2, depth: 0.55, height: 1.1 },
   { kind: 'planter', name: 'Planter', category: 'Garden', width: 0.6, depth: 0.6, height: 1.1 },
+  { kind: 'oiltank', name: 'Oil tank (horizontal)', category: 'Garden', width: 2.0, depth: 1.2, height: 1.5, finishes: ['green', 'black', 'steel'], labels: { width: 'Length', depth: 'Diameter' }, fixedHeight: true },
+  { kind: 'rotary', name: 'Rotary clothes dryer', category: 'Garden', width: 3.0, depth: 3.0, height: 1.8, finishes: ['empty', 'washing'], openable: true, walkUnder: true, labels: { width: 'Across', depth: 'Across (other way)', height: 'Line height' } },
   { kind: 'gate5', name: 'Five-bar gate', category: 'Garden', width: 3.0, depth: 0.15, height: 1.2, finishes: GATE_FINISHES, openable: true },
   { kind: 'pathgate', name: 'Path gate (picket)', category: 'Garden', width: 1.0, depth: 0.12, height: 1.0, finishes: GATE_FINISHES, openable: true },
   { kind: 'pathgatetall', name: 'Path gate (close-board, as the fence)', category: 'Garden', width: 1.0, depth: 0.12, height: 1.8, finishes: GATE_FINISHES, openable: true },
@@ -115,6 +121,7 @@ export function addFurniture(level: Level, kind: string, at: Vec2, angle = 0): F
     f.open = true;
     f.stool = true;
   }
+  if (kind === 'rotary') f.open = true;
   level.furniture ??= {};
   level.furniture[id] = f;
   return f;
@@ -211,4 +218,12 @@ export function grandOutline(w: number, d: number): Vec2[] {
   pts.push(...cubic(P(0.0, 0.8), P(-0.06, 0.93), P(-0.22, 1.0), P(-0.36, 1.0), 12));
   pts.push(...cubic(P(-0.36, 1.0), P(-0.45, 1.0), P(-0.5, 0.98), P(-0.5, 0.92), 6));
   return pts;
+}
+
+/** An oil tank on its stand: the stand's height under the tank. */
+export const TANK_STAND = 0.3;
+
+/** A horizontal cylindrical tank's capacity in litres (length x diameter, in metres). */
+export function tankLitres(length: number, diameter: number): number {
+  return Math.PI * (diameter / 2) ** 2 * length * 1000;
 }

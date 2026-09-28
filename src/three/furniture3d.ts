@@ -3,7 +3,7 @@
 // width, depth and height; the caller places and turns it.
 
 import * as THREE from 'three';
-import { grandOutline } from '../model/furniture';
+import { TANK_STAND, grandOutline } from '../model/furniture';
 import { gateLeaves, gatePost } from '../model/gates';
 import type { Vec2 } from '../model/geom';
 import type { Furniture } from '../model/types';
@@ -369,7 +369,100 @@ function gate(k: Kit, f: Furniture, w: number, h: number) {
   }
 }
 
+/**
+ * A horizontal oil tank: a cylinder along the piece's width, with domed ends, a filler and
+ * gauge on top, on a stand (steel cradles, or brick piers for a plastic tank), all on a
+ * concrete base.
+ */
+function oilTank(k: Kit, f: Furniture, w: number, d: number) {
+  const colours: Record<string, number> = { green: 0x3f5f3a, black: 0x222326, steel: 0xa9adb1 };
+  const m = plain(colours[f.finish ?? 'green'] ?? colours.green, f.finish === 'steel' ? 0.45 : 0.6, f.finish === 'steel' ? 0.5 : 0);
+  const r = d / 2;
+  const stand = TANK_STAND;
+  const cy = stand + r;
+  // Domed ends 0.35 of the radius deep, so the whole tank is its length.
+  const body = Math.max(0.1, w - r * 0.7);
+  const tank = k.mesh(new THREE.CylinderGeometry(r, r, body, 28), m, 0, 0, cy);
+  tank.rotation.z = Math.PI / 2;
+  for (const s of [-1, 1]) {
+    const end = k.mesh(new THREE.SphereGeometry(r, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), m, (s * body) / 2, 0, cy);
+    end.rotation.z = -s * (Math.PI / 2);
+    end.scale.y = 0.35;
+  }
+  const concrete = plain(0xb3b0a8, 0.9);
+  k.box(w + 0.6, d + 0.6, 0.1, 0, 0, 0, concrete);
+  const cradle = f.finish === 'steel' ? dark() : plain(0x9a5b45, 0.9);
+  const n = Math.max(2, Math.round(w / 1.2) + 1);
+  for (let i = 0; i < n; i++) {
+    const x = -body / 2 + (body * i) / (n - 1);
+    k.box(0.22, d * 0.8, stand + r * 0.35 - 0.1, x, 0, 0.1, cradle);
+  }
+  // Filler cap, vent and contents gauge on top.
+  k.cyl(0.07, 0.08, -body * 0.3, 0, stand + d - 0.02, dark());
+  k.cyl(0.02, 0.2, body * 0.1, 0, stand + d - 0.02, dark());
+  k.box(0.12, 0.12, 0.06, body * 0.3, 0, stand + d - 0.03, dark());
+}
+
+/**
+ * A rotary clothes dryer: a pole, four arms and the lines strung between them in
+ * squares; folded, the arms lie up against the pole. With washing, sheets and shirts hang
+ * from the lines, so their shadows (and their sun) show in a sun study.
+ */
+function rotaryDryer(k: Kit, f: Furniture, w: number, d: number, h: number) {
+  const metal = plain(0xc9ccd0, 0.35, 0.6);
+  const line = plain(0xe9e6df, 0.6);
+  const hub = h - 0.15;
+  k.cyl(0.02, h + 0.2, 0, 0, 0, metal);
+  if (!f.open) {
+    // Folded: arms up against the pole, lines bundled round them, under a cover.
+    k.cyl(0.07, 1.1, 0, 0, hub - 0.7, plain(0x6d7f8f, 0.8), 0.03);
+    return;
+  }
+  const ax = w / 2;
+  const ay = d / 2;
+  const arms = [
+    { x: ax, y: 0 },
+    { x: 0, y: ay },
+    { x: -ax, y: 0 },
+    { x: 0, y: -ay },
+  ];
+  for (const a of arms) {
+    k.rod({ x: 0, y: 0, z: hub }, { x: a.x, y: a.y, z: h }, 0.012, metal);
+    // Strut from lower on the pole to halfway along the arm.
+    k.rod({ x: 0, y: 0, z: hub - 0.45 }, { x: a.x * 0.5, y: a.y * 0.5, z: (hub + h) / 2 }, 0.008, metal);
+  }
+  // Lines: squares at rising fractions along the arms.
+  const rings = 6;
+  for (let i = 1; i <= rings; i++) {
+    const t = i / rings;
+    const z = hub + (h - hub) * t;
+    for (let j = 0; j < 4; j++) {
+      const a = arms[j];
+      const b = arms[(j + 1) % 4];
+      k.rod({ x: a.x * t, y: a.y * t, z }, { x: b.x * t, y: b.y * t, z }, 0.003, line);
+    }
+  }
+  if (f.finish !== 'washing') return;
+  // A line of washing: sheets on the outer lines, smaller things further in.
+  const cloth = [0xf4f1ea, 0x9fb8d8, 0xe8c9c0, 0xdfe7cf, 0xf4f1ea];
+  let c = 0;
+  for (const [t, drop, size] of [[0.95, 1.1, 0.9], [0.62, 0.7, 0.45], [0.35, 0.45, 0.3]] as const) {
+    const z = hub + (h - hub) * t;
+    for (let j = 0; j < 4; j++) {
+      const a = arms[j];
+      const b = arms[(j + 1) % 4];
+      const mx = ((a.x + b.x) / 2) * t;
+      const my = ((a.y + b.y) / 2) * t;
+      const len = Math.hypot(b.x - a.x, b.y - a.y) * t;
+      const piece = k.box(Math.min(size * 1.6, len * 0.8), 0.01, drop, mx, my, z - drop, plain(cloth[c++ % cloth.length], 0.95));
+      piece.rotation.y = -Math.atan2(b.y - a.y, b.x - a.x);
+    }
+  }
+}
+
 const BUILDERS: Record<string, Builder> = {
+  oiltank: (k, f, w, d) => oilTank(k, f, w, d),
+  rotary: (k, f, w, d, h) => rotaryDryer(k, f, w, d, h),
   gate5: (k, f, w, _d, h) => gate(k, f, w, h),
   pathgate: (k, f, w, _d, h) => gate(k, f, w, h),
   pathgatetall: (k, f, w, _d, h) => gate(k, f, w, h),
