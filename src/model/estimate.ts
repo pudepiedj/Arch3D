@@ -102,6 +102,7 @@ export const DEFAULT_PRICES: Record<string, number> = {
   paving: 35,
   decking: 60,
   gravel: 12,
+  rubber: 30, // interlocking rubber tiles, 20 mm, £/m²
   'sub-base': 45,
   fence: 45,
   hedge: 4,
@@ -615,8 +616,8 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
       for (const pt of Object.values(level.patios ?? {})) {
         if (!inside(centroid(pt.points.map((p) => ({ ...p, z: 0 }))))) continue;
         const m2 = patioArea(level, pt);
-        add({ id: `patio:${pt.id}`, price: pt.surface, group: 'Garden and drains', item: `${{ paving: 'Paving', decking: 'Decking', gravel: 'Gravel' }[pt.surface]}`, detail: pt.surface === 'paving' ? `${m2.toFixed(1)} m²: about ${Math.ceil((m2 / (pt.module * pt.module)) * 1.05)} slabs of ${Math.round(pt.module * 100)} cm` : undefined, qty: m2, unit: 'm²' });
-        if (pt.surface !== 'decking') add({ id: `subbase:${pt.id}`, price: 'sub-base', group: 'Garden and drains', item: 'Sub-base (MOT type 1, 100 mm)', qty: m2 * 0.1, unit: 'm³' });
+        add({ id: `patio:${pt.id}`, price: pt.surface, group: 'Garden and drains', item: `${{ paving: 'Paving', decking: 'Decking', gravel: 'Gravel', rubber: 'Rubber floor tiles' }[pt.surface]}`, detail: pt.surface === 'paving' || pt.surface === 'rubber' ? `${m2.toFixed(1)} m²: about ${Math.ceil((m2 / (pt.module * pt.module)) * 1.05)} ${pt.surface === 'rubber' ? 'tiles' : 'slabs'} of ${Math.round(pt.module * 100)} cm` : undefined, qty: m2, unit: 'm²' });
+        if (pt.surface === 'paving' || pt.surface === 'gravel') add({ id: `subbase:${pt.id}`, price: 'sub-base', group: 'Garden and drains', item: 'Sub-base (MOT type 1, 100 mm)', qty: m2 * 0.1, unit: 'm³' });
       }
       for (const h of Object.values(level.hedges ?? {})) {
         const mid = h.points[Math.floor(h.points.length / 2)];

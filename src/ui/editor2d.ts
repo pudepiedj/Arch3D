@@ -1777,7 +1777,7 @@ export class Editor2D {
   private drawPatios(C: Record<string, string>) {
     const ctx = this.ctx;
     const plan = this.plan;
-    const fills = { paving: 'rgba(196, 184, 164, 0.55)', decking: 'rgba(170, 118, 76, 0.45)', gravel: 'rgba(170, 162, 148, 0.5)' };
+    const fills = { paving: 'rgba(196, 184, 164, 0.55)', decking: 'rgba(170, 118, 76, 0.45)', gravel: 'rgba(170, 162, 148, 0.5)', rubber: 'rgba(58, 60, 64, 0.75)' };
     const list = Object.values(plan.patios ?? {}).sort((a, b) => a.height - b.height);
     for (const pt of list) {
       const shapes = patioShapes(plan, pt);
@@ -1803,9 +1803,9 @@ export class Editor2D {
         const c = pt.points.reduce((a, p) => ({ x: a.x + p.x / pt.points.length, y: a.y + p.y / pt.points.length }), { x: 0, y: 0 });
         const R = Math.max(...pt.points.map((p) => dist(p, c))) + step;
         const n = Math.ceil(R / step);
-        ctx.strokeStyle = pt.surface === 'decking' ? 'rgba(90, 55, 30, 0.45)' : 'rgba(110, 100, 85, 0.45)';
+        ctx.strokeStyle = pt.surface === 'decking' ? 'rgba(90, 55, 30, 0.45)' : pt.surface === 'rubber' ? 'rgba(20, 20, 22, 0.6)' : 'rgba(110, 100, 85, 0.45)';
         ctx.lineWidth = 1;
-        const dirs = pt.surface === 'paving' ? [[along, across], [across, along]] : [[along, across]];
+        const dirs = pt.surface === 'paving' || pt.surface === 'rubber' ? [[along, across], [across, along]] : [[along, across]];
         for (const [d, o] of dirs) {
           // Lines through points on a grid anchored at the plan origin, so they don't jump as the patio is dragged.
           const base = Math.round((c.x * o.x + c.y * o.y) / step) * step;
@@ -2556,8 +2556,6 @@ export class Editor2D {
     const plan = this.plan;
     this.fps = computeFootprints(plan);
     if (!this.printing) this.drawGrid(W, H, C.grid, C.gridMajor);
-    if (!this.printing || this.printing.garden) this.drawPatios(C);
-
 
     // Rooms.
     ctx.font = '12px system-ui, sans-serif';
@@ -2569,6 +2567,8 @@ export class Editor2D {
       ctx.fillStyle = C.room;
       ctx.fill();
     }
+    // Patios after the rooms, so a floor covering drawn inside one (rubber tiles) shows.
+    if (!this.printing || this.printing.garden) this.drawPatios(C);
 
     if (!this.printing || this.printing.furniture) this.drawFurniture(C);
     if (this.onGround && (!this.printing || this.printing.drains)) this.drawDrains(C);

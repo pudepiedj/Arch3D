@@ -180,7 +180,7 @@ export class View3D {
       m.needsUpdate = true;
     };
     see(this.groundMat, 0.25);
-    for (const m of [this.mats.floor, this.mats.paving, this.mats.decking, this.mats.gravel, this.mats.paveEdge, this.mats.deckEdge]) see(m, 0.4);
+    for (const m of [this.mats.floor, this.mats.paving, this.mats.decking, this.mats.gravel, this.mats.rubber, this.mats.paveEdge, this.mats.deckEdge]) see(m, 0.4);
     if (this.drainsObj) this.drainsObj.below.visible = on;
     this.orbit.maxPolarAngle = on ? Math.PI - 0.05 : Math.PI / 2 - 0.02;
     if (!on && this.camera.position.y < 0.5) this.frame();

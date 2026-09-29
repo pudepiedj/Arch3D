@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createBuilding } from '../src/model/building';
+import { demoBuilding } from '../src/model/demo';
+import { detectRooms } from '../src/model/rooms';
 import { addPatio, patioArea, patioAt, patioShapes, setPatioSurface } from '../src/model/patios';
 import { addWall } from '../src/model/plan';
 import { WalkWorld } from '../src/model/walk';
@@ -56,5 +58,16 @@ describe('patios', () => {
     expect(world.groundAt({ x: 8, y: 1 }, 0)).toBe(0);
     const r = world.move({ x: 12, y: 1 }, 0, { x: -3, y: 0 });
     expect(r.p.x).toBeGreaterThan(10);
+  });
+});
+
+describe('a floor covering inside a room', () => {
+  it('stops at the walls round it rather than vanishing under the house', () => {
+    const level = demoBuilding().levels[0];
+    const room = detectRooms(level).sort((a, b) => b.netArea - a.netArea)[0];
+    // Drawn along the wall centre lines, as a patio would be.
+    const pt = addPatio(level, room.polygon, 'rubber');
+    expect(pt.module).toBe(0.5);
+    expect(patioArea(level, pt)).toBeCloseTo(room.netArea, 0);
   });
 });

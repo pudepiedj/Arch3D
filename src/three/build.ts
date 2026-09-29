@@ -51,6 +51,7 @@ export interface Materials {
   paving: THREE.Material;
   decking: THREE.Material;
   gravel: THREE.Material;
+  rubber: THREE.Material;
   paveEdge: THREE.Material;
   deckEdge: THREE.Material;
   bark: THREE.Material;
@@ -87,6 +88,7 @@ export function createMaterials(): Materials {
     paving: new THREE.MeshStandardMaterial({ color: 0xffffff, map: pavingTexture(), roughness: 0.9 }),
     decking: new THREE.MeshStandardMaterial({ color: 0xffffff, map: deckingTexture(), roughness: 0.75 }),
     gravel: new THREE.MeshStandardMaterial({ color: 0xffffff, map: gravelTexture(), roughness: 1 }),
+    rubber: new THREE.MeshStandardMaterial({ color: 0xffffff, map: rubberTexture(), roughness: 0.95 }),
     paveEdge: new THREE.MeshStandardMaterial({ color: 0xb9b3a8, roughness: 0.9 }),
     deckEdge: new THREE.MeshStandardMaterial({ color: 0x8a6446, roughness: 0.75 }),
     bark: new THREE.MeshStandardMaterial({ color: 0x5a4a3c, roughness: 1 }),
@@ -210,9 +212,55 @@ function gravelTexture() {
   });
 }
 
+/** 4 x 4 interlocking rubber tiles: near-black, with a fine grain and the jigsaw joints. */
+function rubberTexture() {
+  return canvasTexture(512, 512, (ctx) => {
+    const r = rng(13);
+    const s = 512 / SLABS;
+    ctx.fillStyle = '#2c2d30';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let k = 0; k < 6000; k++) {
+      ctx.fillStyle = `rgba(${r() < 0.5 ? '255,255,255' : '0,0,0'}, ${0.04 + r() * 0.06})`;
+      ctx.fillRect(r() * 512, r() * 512, 1 + r() * 2, 1 + r() * 2);
+    }
+    // The joints, with the dovetails of the interlock along them.
+    ctx.strokeStyle = '#18191b';
+    ctx.lineWidth = 2;
+    for (let i = 0; i <= SLABS; i++) {
+      for (let k = 0; k < 4; k++) {
+        const t = (k + 0.5) * (s / 4);
+        for (let j = 0; j < SLABS; j++) {
+          const bump = (k % 2 ? 1 : -1) * 5;
+          // Across (a vertical joint at x = i*s) and along (a horizontal one at y = i*s).
+          ctx.beginPath();
+          ctx.moveTo(i * s, j * s + t - 6);
+          ctx.lineTo(i * s + bump, j * s + t - 4);
+          ctx.lineTo(i * s + bump, j * s + t + 4);
+          ctx.lineTo(i * s, j * s + t + 6);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(j * s + t - 6, i * s);
+          ctx.lineTo(j * s + t - 4, i * s + bump);
+          ctx.lineTo(j * s + t + 4, i * s + bump);
+          ctx.lineTo(j * s + t + 6, i * s);
+          ctx.stroke();
+        }
+      }
+      ctx.beginPath();
+      ctx.moveTo(i * s, 0);
+      ctx.lineTo(i * s, 512);
+      ctx.moveTo(0, i * s);
+      ctx.lineTo(512, i * s);
+      ctx.globalAlpha = 0.5;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  });
+}
+
 /** Size in metres of one repeat of the texture: along the courses/boards, and across them. */
 function patioPeriod(p: Patio): { along: number; across: number } {
-  if (p.surface === 'paving') return { along: SLABS * p.module, across: SLABS * p.module };
+  if (p.surface === 'paving' || p.surface === 'rubber') return { along: SLABS * p.module, across: SLABS * p.module };
   if (p.surface === 'decking') return { along: BOARD_RUN, across: BOARDS * (p.module + BOARD_GAP) };
   return { along: 1, across: 1 };
 }

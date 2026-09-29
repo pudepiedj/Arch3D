@@ -550,7 +550,7 @@ const HINTS: Record<Tool, string> = {
   furniture: 'Click to place it (near a wall it backs onto the wall) · [ and ] turn it · Esc when done',
   tree: 'Click to plant a tree; drag it to move it, set its size in the panel',
   hedge: 'Click along the line of the hedge, fence or ditch · click its start to go all the way round · double-click, Enter or Esc to finish',
-  patio: 'Click the corners of the patio (snaps to walls; the house is cut out) · click the first corner, double-click or Enter to finish',
+  patio: 'Click the corners (snaps to walls; outside, the house is cut out; inside a room, it covers the floor) · click the first corner, double-click or Enter to finish',
 };
 
 function syncToolbar() {
