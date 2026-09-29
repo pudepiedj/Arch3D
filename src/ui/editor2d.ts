@@ -15,6 +15,7 @@ import {
   sub,
   vec,
 } from '../model/geom';
+import { type Clip, copyArea, describeClip, pasteClip } from '../model/copyarea';
 import { getLevel, levelBelow } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
 import { addPatio, patioShapes } from '../model/patios';
@@ -56,7 +57,7 @@ import { remembered } from './sizes';
 import type { DrainKind, Furniture, Hedge, HedgeKind, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain' | 'hedge';
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain' | 'hedge' | 'copyArea' | 'pasteArea';
 export type Selection = {
   kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'drainNode' | 'drainPipe' | 'hedge';
   id: string;
@@ -138,6 +139,11 @@ export class Editor2D {
   printArea: Box | null = null;
   showPrintArea = false;
   private areaPick: ((b: Box | null) => void) | null = null;
+  /** What the box being dragged is for, and the box so far. */
+  private areaPurpose: 'print' | 'copy' = 'print';
+  private pickDraft: Box | null = null;
+  /** Part of a plan copied with the Copy area tool, to paste (kept on this device). */
+  areaClip: Clip | null = loadClip();
   /** Stretch every floor (true) or only the one being edited. */
   stretchAll = true;
   /** Drain tool: foul or surface water, and the last node of the run being drawn. */
@@ -296,13 +302,35 @@ export class Editor2D {
 
   setTool(t: Tool) {
     if (this.tool === 'wall' && t !== 'wall') this.finishChain();
+    if (this.tool === 'copyArea' && t !== 'copyArea' && this.areaPick) {
+      this.areaPick = null;
+      this.pickDraft = null;
+    }
     this.stairStart = null;
     this.sectionPts = [];
     if (t !== 'stretch' && this.stretchBox) this.setStretchBox(null);
     this.drainLast = null;
     this.tool = t;
+    if (t === 'copyArea') this.pickArea((b) => this.copyBox(b), 'copy');
+    if (t === 'pasteArea' && !this.areaClip) this.tool = 'select';
     this.onToolChange?.();
     this.requestRender();
+  }
+
+  /** Copy everything in the box on this floor, ready to paste here or into another drawing. */
+  private copyBox(b: Box | null) {
+    this.setTool('select');
+    if (!b) return;
+    const clip = copyArea(this.plan, b);
+    if (!clip) {
+      this.flash('Nothing there to copy', { x: b.x0, y: b.y0 });
+      return;
+    }
+    this.areaClip = clip;
+    this.clipboard = null;
+    saveClip(clip);
+    this.flash(`Copied ${describeClip(clip)}: Paste area (⌘V) to put it down, here or in another drawing`, { x: b.x0, y: b.y0 });
+    this.onToolChange?.();
   }
 
   select(s: Selection) {
@@ -579,6 +607,7 @@ export class Editor2D {
     // Choosing the area to print: drag a box, whatever the tool.
     if (this.areaPick) {
       this.gesture = { kind: 'areaBox', start: this.toWorld(s) };
+      this.pickDraft = null;
       return;
     }
 
@@ -690,7 +719,7 @@ export class Editor2D {
       }
       case 'areaBox': {
         const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
-        this.printArea = boxFrom(cur.start, { x: snapTo(w.x), y: snapTo(w.y) });
+        this.pickDraft = boxFrom(cur.start, { x: snapTo(w.x), y: snapTo(w.y) });
         this.requestRender();
         break;
       }
@@ -887,10 +916,11 @@ export class Editor2D {
         if (!this.dragging) this.click(this.toWorld(this.eventPoint(e)));
         break;
       case 'areaBox': {
-        const b = this.printArea;
+        const b = this.pickDraft;
         if (!this.dragging || !b || b.x1 - b.x0 < 0.3 || b.y1 - b.y0 < 0.3) break;
         const done = this.areaPick;
         this.areaPick = null;
+        this.pickDraft = null;
         done?.(b);
         this.requestRender();
         break;
@@ -1176,6 +1206,16 @@ export class Editor2D {
         this.select({ kind: 'solar', id: sa.id });
         break;
       }
+      case 'pasteArea': {
+        const clip = this.areaClip;
+        if (!clip) break;
+        pasteClip(plan, clip, this.pasteCorner(w, clip));
+        this.store.commit();
+        // Back to selecting, so a tap on an iPad doesn't put down another by mistake.
+        this.setTool('select');
+        this.flash(`Pasted ${describeClip(clip)} (⌘Z takes it back)`, w);
+        break;
+      }
       case 'pillar': {
         const q = addPillar(plan, this.snap(w).p);
         this.store.commit();
@@ -1315,9 +1355,13 @@ export class Editor2D {
       return;
     }
     if (mod && e.key.toLowerCase() === 'v') {
+      // Whichever was copied last: a door or window's type, or an area of the plan.
       if (this.clipboard) {
         e.preventDefault();
         this.setTool('paste');
+      } else if (this.areaClip) {
+        e.preventDefault();
+        this.setTool('pasteArea');
       }
       return;
     }
@@ -1363,6 +1407,7 @@ export class Editor2D {
         if (this.areaPick) {
           const done = this.areaPick;
           this.areaPick = null;
+          this.pickDraft = null;
           done(null);
           this.requestRender();
         } else if (this.drainLast) {
@@ -1458,6 +1503,7 @@ export class Editor2D {
     const o = s?.kind === 'opening' ? this.plan.openings[s.id] : null;
     if (!o) return false;
     this.clipboard = templateOf(o);
+    this.areaClip = null;
     this.onToolChange?.();
     return true;
   }
@@ -1861,9 +1907,8 @@ export class Editor2D {
     ctx.restore();
   }
 
-  /** The area chosen for printing: a dashed box, labelled. */
-  private drawPrintArea(C: Record<string, string>) {
-    const b = this.printArea!;
+  /** The area chosen for printing (or being dragged out to copy): a dashed box, labelled. */
+  private drawPrintArea(C: Record<string, string>, b: Box, label: string) {
     const ctx = this.ctx;
     const p = this.toScreen({ x: b.x0, y: b.y0 });
     const q = this.toScreen({ x: b.x1, y: b.y1 });
@@ -1878,15 +1923,17 @@ export class Editor2D {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
     ctx.fillStyle = C.accent;
-    ctx.fillText(`Print area ${(b.x1 - b.x0).toFixed(2)} × ${(b.y1 - b.y0).toFixed(2)} m`, p.x + 4, p.y - 4);
+    ctx.fillText(`${label} ${(b.x1 - b.x0).toFixed(2)} × ${(b.y1 - b.y0).toFixed(2)} m`, p.x + 4, p.y - 4);
   }
 
   /**
    * Choose an area to print: the next box dragged on the plan (whatever the tool) is it.
    * `done` gets the box, or null if Esc was pressed.
    */
-  pickArea(done: (b: Box | null) => void) {
+  pickArea(done: (b: Box | null) => void, purpose: 'print' | 'copy' = 'print') {
     this.areaPick = done;
+    this.areaPurpose = purpose;
+    this.pickDraft = null;
     this.requestRender();
   }
 
@@ -2669,7 +2716,9 @@ export class Editor2D {
     this.drawOutlineHandles(C);
     this.drawToolPreview(C);
     if (this.tool === 'stretch') this.drawStretch(C);
-    if (this.printArea && (this.areaPick || this.showPrintArea)) this.drawPrintArea(C);
+    const picking = this.areaPick ? (this.pickDraft ?? (this.areaPurpose === 'print' ? this.printArea : null)) : null;
+    if (picking) this.drawPrintArea(C, picking, this.areaPurpose === 'copy' ? 'Copy' : 'Print area');
+    else if (this.printArea && this.showPrintArea) this.drawPrintArea(C, this.printArea, 'Print area');
 
     for (const g of this.lastGuides) this.guide(g.from, g.to, C.accent);
     const sel = this.selection;
@@ -2679,9 +2728,61 @@ export class Editor2D {
     }
   }
 
+  /** Where a pasted area's top left corner goes, for the pointer at its middle (to the grid). */
+  private pasteCorner(w: Vec2, clip: Clip): Vec2 {
+    const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
+    return { x: snapTo(w.x - clip.w / 2), y: snapTo(w.y - clip.h / 2) };
+  }
+
+  /** The copied area, following the pointer: its box, walls, and outlines. */
+  private drawPasteGhost(C: Record<string, string>, clip: Clip, at: Vec2) {
+    const ctx = this.ctx;
+    const p = this.toScreen(at);
+    const q = this.toScreen({ x: at.x + clip.w, y: at.y + clip.h });
+    ctx.fillStyle = hexAlpha(C.accent, 0.06);
+    ctx.fillRect(p.x, p.y, q.x - p.x, q.y - p.y);
+    ctx.strokeStyle = C.accent;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([8, 5]);
+    ctx.strokeRect(p.x, p.y, q.x - p.x, q.y - p.y);
+    ctx.setLineDash([]);
+    const nodes = new Map(clip.nodes.map((n) => [n.id, n]));
+    ctx.lineCap = 'butt';
+    for (const w of clip.walls) {
+      const a = nodes.get(w.a)!;
+      const b = nodes.get(w.b)!;
+      const sa = this.toScreen({ x: a.x + at.x, y: a.y + at.y });
+      const sb = this.toScreen({ x: b.x + at.x, y: b.y + at.y });
+      ctx.beginPath();
+      ctx.moveTo(sa.x, sa.y);
+      ctx.lineTo(sb.x, sb.y);
+      ctx.strokeStyle = hexAlpha(C.accent, 0.55);
+      ctx.lineWidth = Math.max(2, w.thickness * this.view.scale);
+      ctx.stroke();
+    }
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = C.accent;
+    const moved = (v: Vec2) => ({ x: v.x + at.x, y: v.y + at.y });
+    for (const s of [...clip.patios, ...clip.roofSections]) {
+      this.path(s.points.map(moved));
+      ctx.stroke();
+    }
+    for (const hg of clip.hedges) for (let i = 0; i + 1 < hg.points.length; i++) this.line(moved(hg.points[i]), moved(hg.points[i + 1]));
+    for (const t of [...clip.trees, ...clip.pillars, ...clip.furniture, ...clip.stairs]) {
+      const c = this.toScreen({ x: t.x + at.x, y: t.y + at.y });
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
   private drawToolPreview(C: Record<string, string>) {
     const ctx = this.ctx;
     const h = this.hover;
+    if (this.tool === 'pasteArea' && this.areaClip && h) {
+      this.drawPasteGhost(C, this.areaClip, this.pasteCorner(h, this.areaClip));
+      return;
+    }
     if (this.tool === 'wall') {
       const s = h ? this.snap(h, { from: this.drawStart }) : null;
       if (this.drawStart && s) {
@@ -3051,3 +3152,23 @@ function hexAlpha(color: string, a: number): string {
   return `rgba(${(v >> 16) & 255}, ${(v >> 8) & 255}, ${v & 255}, ${a})`;
 }
 
+
+const CLIP_KEY = 'arch3d.copiedArea';
+
+/** The area last copied on this device (it outlasts the drawing, to paste into another). */
+function loadClip(): Clip | null {
+  try {
+    const c = JSON.parse(localStorage.getItem(CLIP_KEY) ?? 'null');
+    return c?.version === 1 ? c : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveClip(c: Clip) {
+  try {
+    localStorage.setItem(CLIP_KEY, JSON.stringify(c));
+  } catch {
+    /* too big to keep: it can still be pasted until the page is reloaded */
+  }
+}
