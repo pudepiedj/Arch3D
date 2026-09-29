@@ -917,6 +917,8 @@ const BUILDERS: Record<string, Builder> = {
     for (let i = 0; i < 3; i++) k.box(w - 0.1, 0.02, 0.1, 0, -d / 2 + 0.05, 0.5 + i * 0.12, m);
     void h;
   },
+  // The garden chair: the bench, one seat wide.
+  gardenchair: (k, f, w, d, h) => BUILDERS.bench(k, f, w, d, h),
   parasol: (k, f, w, _d, h) => {
     const c = FABRIC[f.finish ?? 'cream'] ?? FABRIC.cream;
     k.box(0.5, 0.5, 0.06, 0, 0, 0, dark());

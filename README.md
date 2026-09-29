@@ -44,7 +44,7 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 | **Chimney** (C) | Click on the roof to place a chimney stack (on the floor whose roof it goes through). |
 | **Solar** | Click on a roof slope to lay a solar panel array on it. |
 | **Rooflight** | Click on a roof. A flat roof gets a rooflight box; a sloping roof gets a window lying in the slope. |
-| **Patio** (T) | Choose Paving, Decking, Gravel or **Rubber** (interlocking 500 mm rubber tiles, for a garage, gym or play area), then click the corners of the area. Click the first corner, double-click or press Enter to finish. Outside, it stops at the house; drawn inside a room (click the room's corners), it is a floor covering and stops at the walls round it. |
+| **Patio** (T) | Choose Paving, Decking, Gravel, **Lawn** (mown grass with stripes: set their width and direction in the panel; a lawn stops at the patios and paths laid in it) or **Rubber** (interlocking 500 mm rubber tiles, for a garage, gym or play area), then click the corners of the area. Click the first corner, double-click or press Enter to finish. Outside, it stops at the house; drawn inside a room (click the room's corners), it is a floor covering and stops at the walls round it. |
 | **Tree** (E) | Choose from the **Plant** list: oak, ash, beech, hazel, silver birch, rowan, Lombardy poplar, Scots pine, a general broad-leaved tree or conifer, or a **bush** with its leaves down to the ground. Click to plant one. Drag it to move it; set its height and spread in the panel. |
 | **Hedge / fence** (H) | Choose from the **Line** list: privet, hawthorn or beech hedge, close-board fence, or a **drainage ditch**. Click along its line; click its start to take it all the way round, and double-click, Enter or Esc to finish. Drag to move it; drag a corner to reshape it, a small circle to add a corner, and double-click a corner to remove it. Set its height (a ditch's depth) and thickness (a ditch's width) in the panel. |
 | **Furniture** (F) | Opens the catalogue. Pick a piece, then click to place it: near a wall it turns its back to the wall and sits tight against it. [ and ] turn it in 15° steps. Esc when done. |
@@ -64,7 +64,7 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 - **Kitchen:** base, sink, hob and oven, tall units, fridge, island.
 - **Bathroom:** bath, shower, WC, basin.
 - **Garage:** boltless steel **shelving** (angle uprights and plain steel shelves, 1.8 m × 90 × 45 cm to start with; grey, galvanised, black or blue).
-- **Garden:** table and chairs, lounger, bench, parasol, barbecue, planter, and a 2 m timber pergola (four posts, beams, cross-rafters, battens for climbers, knee braces), with or without a climber growing over it. You can walk under a pergola in walk mode.
+- **Garden:** table and chairs, lounger, bench, a single garden chair (slatted, to match the bench; teak, oak, grey or white), parasol, barbecue, planter, and a 2 m timber pergola (four posts, beams, cross-rafters, battens for climbers, knee braces), with or without a climber growing over it. You can walk under a pergola in walk mode.
 
 Select a piece to change its finish, width, depth and height, or to turn, duplicate or delete it. **Ctrl/⌘+D** puts a copy alongside, which is handy for a run of kitchen units. Pieces stand on patios and decks at the right height, and in walk mode you walk round them (except rugs).
 

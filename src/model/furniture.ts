@@ -88,9 +88,10 @@ export const CATALOGUE: CatalogueItem[] = [
   // Boltless steel shelving: angle uprights and plain steel shelves.
   { kind: 'shelving', name: 'Garage shelving (steel)', category: 'Garage', width: 0.9, depth: 0.45, height: 1.8, finishes: ['grey', 'galvanised', 'black', 'blue'] },
 
-  { kind: 'gardenset', name: 'Garden table, 4 chairs', category: 'Garden', width: 1.8, depth: 1.8, height: 0.72, finishes: ['teak', 'grey', 'white'] },
+  { kind: 'gardenset', name: 'Garden table, 4 chairs', category: 'Garden', width: 1.8, depth: 1.8, height: 0.72, finishes: ['teak', 'oak', 'grey', 'white'] },
   { kind: 'lounger', name: 'Sun lounger', category: 'Garden', width: 0.7, depth: 1.95, height: 0.8, finishes: ['teak', 'grey', 'white'] },
-  { kind: 'bench', name: 'Garden bench', category: 'Garden', width: 1.5, depth: 0.6, height: 0.85, finishes: ['teak', 'grey', 'white'] },
+  { kind: 'bench', name: 'Garden bench', category: 'Garden', width: 1.5, depth: 0.6, height: 0.85, finishes: ['teak', 'oak', 'grey', 'white'] },
+  { kind: 'gardenchair', name: 'Garden chair', category: 'Garden', width: 0.65, depth: 0.6, height: 0.85, finishes: ['teak', 'oak', 'grey', 'white'] },
   { kind: 'parasol', name: 'Parasol', category: 'Garden', width: 2.7, depth: 2.7, height: 2.5, finishes: ['cream', 'green', 'blue'] },
   { kind: 'pergola', name: 'Pergola', category: 'Garden', width: 2.0, depth: 2.0, height: 2.4, finishes: ['oak', 'grey', 'green'], walkUnder: true },
   { kind: 'pergolaplant', name: 'Pergola with climber', category: 'Garden', width: 2.0, depth: 2.0, height: 2.4, finishes: ['oak', 'grey', 'green'], walkUnder: true },

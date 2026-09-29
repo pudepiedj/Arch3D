@@ -870,13 +870,14 @@ export class Panel {
     const level = this.store.plan;
     const pt = level.patios?.[id];
     if (!pt) return;
-    const names: Record<PatioSurface, string> = { paving: 'Patio', decking: 'Deck', gravel: 'Gravel', rubber: 'Rubber floor' };
+    const names: Record<PatioSurface, string> = { paving: 'Patio', decking: 'Deck', gravel: 'Gravel', rubber: 'Rubber floor', lawn: 'Lawn' };
     this.title(names[pt.surface]);
     this.select('Surface', pt.surface, [
       ['paving', 'Paving'],
       ['decking', 'Decking'],
       ['gravel', 'Gravel'],
       ['rubber', 'Rubber tiles'],
+      ['lawn', 'Lawn'],
     ], (v) => {
       setPatioSurface(pt, v as PatioSurface);
       this.done();
@@ -887,14 +888,16 @@ export class Panel {
     }, 'm', 'Height of the top above this floor (the ground, for the ground floor)');
     if (pt.surface !== 'gravel') {
       const slab = pt.surface === 'paving' || pt.surface === 'rubber';
-      this.number(slab ? (pt.surface === 'rubber' ? 'Tile size' : 'Slab size') : 'Board width', pt.module, 0.005, slab ? 0.2 : 0.08, slab ? 1.2 : 0.3, (v) => {
+      const lawn = pt.surface === 'lawn';
+      const [label, lo, hi] = lawn ? ['Stripe width', 0.3, 3] : slab ? [pt.surface === 'rubber' ? 'Tile size' : 'Slab size', 0.2, 1.2] : ['Board width', 0.08, 0.3];
+      this.number(label, pt.module, 0.005, lo, hi, (v) => {
         pt.module = v;
         this.done();
       }, 'm');
-      this.number(slab ? 'Direction' : 'Boards run', ((((Math.round((pt.angle * 180) / Math.PI) % 360) + 540) % 360) - 180), 5, -180, 180, (v) => {
+      this.number(lawn ? 'Stripes run' : slab ? 'Direction' : 'Boards run', ((((Math.round((pt.angle * 180) / Math.PI) % 360) + 540) % 360) - 180), 5, -180, 180, (v) => {
         pt.angle = (v * Math.PI) / 180;
         this.done();
-      }, '°', 'Direction of the courses or boards, from left-right on the plan');
+      }, '°', 'Direction of the courses, boards or mowing stripes, from left-right on the plan');
     }
     const std = PATIO_DEFAULTS[pt.surface].height;
     this.note(

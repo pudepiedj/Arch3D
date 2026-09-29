@@ -400,6 +400,7 @@ const SYMBOLS: Record<string, Symbol> = {
     rect(ctx, -w / 2, -d / 2, w, d, fill);
     for (let i = 1; i < 4; i++) line(ctx, -w / 2 + 0.05, -d / 2 + (d * i) / 4, w / 2 - 0.05, -d / 2 + (d * i) / 4);
   },
+  gardenchair: (ctx, f, w, d, fill) => SYMBOLS.bench(ctx, f, w, d, fill),
   parasol: (ctx, _f, w, _d, fill) => {
     ctx.save();
     ctx.globalAlpha = 0.5;
