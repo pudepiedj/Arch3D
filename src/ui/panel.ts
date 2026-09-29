@@ -18,7 +18,7 @@ import { stairGeometry } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
 import { deleteNode, deleteOpening, deleteWall, finishNodeMove, moveNode, normalize, setWallLength, splitWallAt } from '../model/plan';
-import { DEFAULTS, type OpeningKind, type DrainFitting, type DrainKind, type GlazedStyle, type PatioSurface, type Pillar, type TreeKind, type HedgeKind, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
+import { DEFAULTS, type OpeningKind, type DrainFitting, type DrainKind, type FrameColour, type GlazedStyle, type PatioSurface, type Pillar, type TreeKind, type HedgeKind, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
 import type { Editor2D } from './editor2d';
 import type { Store } from './store';
 
@@ -192,6 +192,17 @@ export class Panel {
         ['bifold', 'Bi-fold doors'],
       ], (v) => {
         o.style = v as GlazedStyle;
+        this.done();
+      });
+    }
+    if (o.kind === 'window' || o.kind === 'glazed') {
+      this.select('Frame', o.frameColour ?? (o.kind === 'glazed' ? 'anthracite' : 'white'), [
+        ['white', 'White'],
+        ['anthracite', 'Anthracite grey'],
+        ['black', 'Black'],
+        ['oak', 'Oak'],
+      ], (v) => {
+        o.frameColour = v as FrameColour;
         this.done();
       });
     }

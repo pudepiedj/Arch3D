@@ -1,6 +1,9 @@
-// Drains in 3D: pipes at their depths below ground, chambers, gullies and a soakaway, with
-// covers and gratings at the surface (always shown) and downpipes up the wall. Everything
-// below ground is in the `below` group, shown only in the Underground view.
+// Drains in 3D: pipes at their depths below ground, chambers, gullies and a soakaway, their
+// covers and gratings at the surface, and downpipes up the wall. Everything below ground is
+// in the `below` group, and the covers in `covers`: both shown only in the Underground view,
+// the covers then on top of whatever the ground is there (a patio, a lawn), so they are
+// never lost under it. What stands above ground (downpipes, a headwall, a blower's kiosk)
+// is in `surface`, always shown.
 
 import * as THREE from 'three';
 import type { Drains } from '../model/types';
@@ -22,11 +25,13 @@ const M = {
   headwall: mat(0x9f9c94, { roughness: 0.9 }),
 };
 
-export function buildDrains(d: Drains): { below: THREE.Group; surface: THREE.Group } {
+export function buildDrains(d: Drains, groundAt: (x: number, y: number) => number = () => 0): { below: THREE.Group; covers: THREE.Group; surface: THREE.Group } {
   const below = new THREE.Group();
   below.name = 'drains-below';
   const surface = new THREE.Group();
   surface.name = 'drains-surface';
+  const covers = new THREE.Group();
+  covers.name = 'drains-covers';
   const add = (g: THREE.Group, geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number) => {
     const mesh = new THREE.Mesh(geo, m);
     mesh.position.set(x, y, z);
@@ -48,21 +53,29 @@ export function buildDrains(d: Drains): { below: THREE.Group; surface: THREE.Gro
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
   }
 
+  /** A cover or grating `t` thick, lying on the ground (or the patio) at x, y. */
+  const cover = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, t: number) => {
+    const mesh = add(covers, geo, m, x, groundAt(x, y) + t / 2 + 0.003, y);
+    // Drawn after the see-through ground and patios of the Underground view.
+    mesh.renderOrder = 2;
+    return mesh;
+  };
+
   for (const n of Object.values(d.nodes)) {
     const depth = n.invert;
     switch (n.fitting) {
       case 'chamber':
         if (n.round) {
           add(below, new THREE.CylinderGeometry(0.3, 0.3, depth + 0.15, 24), M.concrete, n.x, -(depth + 0.15) / 2, n.y);
-          add(surface, new THREE.CylinderGeometry(0.3, 0.3, 0.02, 24), M.cover, n.x, 0.01, n.y);
+          cover(new THREE.CylinderGeometry(0.3, 0.3, 0.02, 24), M.cover, n.x, n.y, 0.02);
         } else {
           add(below, new THREE.BoxGeometry(0.6, depth + 0.15, 0.6), M.concrete, n.x, -(depth + 0.15) / 2, n.y);
-          add(surface, new THREE.BoxGeometry(0.6, 0.02, 0.6), M.cover, n.x, 0.01, n.y);
+          cover(new THREE.BoxGeometry(0.6, 0.02, 0.6), M.cover, n.x, n.y, 0.02);
         }
         break;
       case 'gully':
         add(below, new THREE.CylinderGeometry(0.15, 0.15, depth, 16), M.concrete, n.x, -depth / 2, n.y);
-        add(surface, new THREE.BoxGeometry(0.3, 0.02, 0.3), M.cover, n.x, 0.01, n.y);
+        cover(new THREE.BoxGeometry(0.3, 0.02, 0.3), M.cover, n.x, n.y, 0.02);
         break;
       case 'downpipe':
         add(below, new THREE.CylinderGeometry(0.05, 0.05, depth, 12), M.surface, n.x, -depth / 2, n.y);
@@ -70,7 +83,7 @@ export function buildDrains(d: Drains): { below: THREE.Group; surface: THREE.Gro
         break;
       case 'soakaway':
         add(below, new THREE.BoxGeometry(1.2, 1.0, 1.2), M.soakaway, n.x, -depth - 0.4, n.y);
-        add(surface, new THREE.BoxGeometry(0.45, 0.02, 0.45), M.cover, n.x, 0.01, n.y);
+        cover(new THREE.BoxGeometry(0.45, 0.02, 0.45), M.cover, n.x, n.y, 0.02);
         break;
       case 'sewer':
         add(below, new THREE.SphereGeometry(0.2, 16, 12), M.sewer, n.x, -depth, n.y);
@@ -91,7 +104,7 @@ export function buildDrains(d: Drains): { below: THREE.Group; surface: THREE.Gro
         for (const k of [-1, 0, 1]) {
           const x = n.x + k * gap;
           add(below, new THREE.CylinderGeometry(0.18, 0.18, -top, 20), M.concrete, x, top / 2, n.y);
-          add(surface, new THREE.CylinderGeometry(0.2, 0.2, 0.03, 24), M.lid, x, 0.015, n.y);
+          cover(new THREE.CylinderGeometry(0.2, 0.2, 0.03, 24), M.lid, x, n.y, 0.03);
         }
         // The air blower's kiosk beside it.
         add(surface, new THREE.BoxGeometry(0.5, 0.6, 0.4), M.kiosk, n.x + t.width / 2 + 0.6, 0.3, n.y);
@@ -102,5 +115,6 @@ export function buildDrains(d: Drains): { below: THREE.Group; surface: THREE.Gro
     }
   }
   below.visible = false;
-  return { below, surface };
+  covers.visible = false;
+  return { below, covers, surface };
 }

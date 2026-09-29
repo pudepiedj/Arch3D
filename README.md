@@ -87,7 +87,7 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - Select a pipe to set what it carries and its bore (100, 150 or 225 mm), and to read its length and **fall** ("1 in 60"). It warns if a pipe runs uphill (backfall), is level, or is flatter or steeper than the usual guidance for house drains. Check real work against Building Regulations Part H and your building control officer. **Reverse flow** swaps its direction.
 - Inspection chambers can be **square or round** (set in the panel).
 - A **sewage treatment plant** is a round or rectangular tank (about 2 m³ to start with: set its diameter or width and depth, and the panel gives the volume), with three access lids for pump-out and desludging and the blower kiosk beside it. Draw the foul drain into it and the treated outflow on to a soakaway, drainage field or ditch.
-- **View → Underground (drains)** makes the ground, floors and patios see-through, shows the pipes, chambers and soakaway at their depths, and lets the 3D view go below the surface. Chamber covers, gully gratings and downpipes show all the time.
+- **View → Underground (drains)** makes the ground, floors and patios see-through, shows the pipes, chambers and soakaway at their depths, and lets the 3D view go below the surface. Chamber covers, gully gratings and lids show only then, lying on top of whatever is there (a patio, a lawn, gravel) so a patio never hides them; downpipes, headwalls and a treatment plant's blower, which stand above ground, show all the time.
 - The demo house has a foul run from the soil stack and kitchen gully to the sewer under the road, and rainwater from two downpipes to a soakaway in the garden.
 
 **Dimensions:** **View → Dimensions** (or M) writes every room's inside measurements along its walls, face to face of the plaster line; the length of each straight run of hedge, fence or ditch, in green along its outside; and each tree's height, boxed in red (↕ 8.0 m) so it can't be taken for a length on the plan. The setting is remembered on each device.
@@ -99,7 +99,7 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - **Duplicate** (Ctrl/⌘+D) puts a copy right beside the selected one.
 - **Match copied** resizes an existing door or window to the copied one.
 
-**Glass doors:** full-height glazing in slim anthracite frames, 2.4 m wide and 2.4 m high to start with.
+**Glass doors:** full-height glazing in slim anthracite frames, 2.4 m wide and 2.4 m high to start with. **Frame** in the panel changes the colour (white, anthracite grey, black or oak) for glass doors and windows alike, so the glass doors can match the windows beside them.
 - **Style:** **French doors** (two leaves swinging from the jambs), **Sliding doors** (two panels on two tracks) or **Bi-fold doors** (leaves of about 80 cm).
 - **Show open** swings the leaves out, slides the moving panel behind the fixed one, or folds the bi-folds into a stack at one end. You can walk through when they are shown open.
 - **Full height** takes them up to the ceiling. **Open to other side**, **Slide other way** and **Fold to other end** change the direction.

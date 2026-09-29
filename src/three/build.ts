@@ -28,7 +28,7 @@ import { patioShapes } from '../model/patios';
 import { type Species, crownBase, leanDirection, speciesOf, trunkRadius } from '../model/trees';
 import { standingHeight } from '../model/furniture';
 import { buildFurniture } from './furniture3d';
-import type { Building, Furniture, Hedge, Opening, Patio, Pillar, Plan, Tree } from '../model/types';
+import type { Building, FrameColour, Furniture, Hedge, Opening, Patio, Pillar, Plan, Tree } from '../model/types';
 import { buildHedge } from './hedges3d';
 import { type HedgeRun, hedgeRuns } from '../model/hedges';
 
@@ -1364,6 +1364,21 @@ function endCap(m: Mesher, fp: Footprint, end: 'a' | 'b', from: number, mid: Vec
   }
 }
 
+const FRAME_COLOURS: Record<FrameColour, number> = { white: 0xfafafa, anthracite: 0x3b4046, black: 0x18191b, oak: 0xb08556 };
+const frameMats = new Map<FrameColour, THREE.Material>();
+
+/** A window's or glass door's frame, in its chosen colour (the usual one if not chosen). */
+function frameMaterial(o: Opening, mats: Materials): THREE.Material {
+  const c = o.frameColour;
+  if (!c) return o.kind === 'glazed' ? mats.darkFrame : mats.frame;
+  let m = frameMats.get(c);
+  if (!m) {
+    m = new THREE.MeshStandardMaterial({ color: FRAME_COLOURS[c], roughness: c === 'oak' ? 0.7 : 0.5, metalness: c === 'white' || c === 'oak' ? 0 : 0.3, side: THREE.DoubleSide });
+    frameMats.set(c, m);
+  }
+  return m;
+}
+
 /** Frame, glass and door leaf, built in the wall's local frame (u along, y up, v across). */
 function buildOpeningObject(fp: Footprint, o: Opening, mats: Materials): THREE.Object3D {
   const g = new THREE.Group();
@@ -1386,12 +1401,13 @@ function buildOpeningObject(fp: Footprint, o: Opening, mats: Materials): THREE.O
   };
 
   if (o.kind === 'window') {
+    const frame = frameMaterial(o, mats);
     const depth = Math.min(0.08, t);
-    box(FRAME, o.height, depth, lo + FRAME / 2, o.sill + o.height / 2, 0, mats.frame);
-    box(FRAME, o.height, depth, hi - FRAME / 2, o.sill + o.height / 2, 0, mats.frame);
-    box(o.width, FRAME, depth, o.offset, top - FRAME / 2, 0, mats.frame);
-    box(o.width, FRAME, depth, o.offset, o.sill + FRAME / 2, 0, mats.frame);
-    if (o.width > 1.0) box(FRAME * 0.8, o.height, depth, o.offset, o.sill + o.height / 2, 0, mats.frame);
+    box(FRAME, o.height, depth, lo + FRAME / 2, o.sill + o.height / 2, 0, frame);
+    box(FRAME, o.height, depth, hi - FRAME / 2, o.sill + o.height / 2, 0, frame);
+    box(o.width, FRAME, depth, o.offset, top - FRAME / 2, 0, frame);
+    box(o.width, FRAME, depth, o.offset, o.sill + FRAME / 2, 0, frame);
+    if (o.width > 1.0) box(FRAME * 0.8, o.height, depth, o.offset, o.sill + o.height / 2, 0, frame);
     // Window board on the inside and a small sill outside.
     box(o.width + 0.1, 0.03, t / 2 + 0.04, o.offset, o.sill - 0.015, t / 4 + 0.02, mats.frame);
     const glass = new THREE.Mesh(new THREE.PlaneGeometry(o.width - 2 * FRAME, o.height - 2 * FRAME), mats.glass);
@@ -1460,7 +1476,7 @@ function buildGlazed(g: THREE.Group, o: Opening, t: number, mats: Materials) {
   const F = 0.06; // outer frame
   const S = 0.05; // leaf frame (sash)
   const depth = Math.min(0.1, t);
-  const box = (w: number, h: number, d: number, x: number, y: number, z: number, parent: THREE.Object3D, mat = mats.darkFrame) => {
+  const box = (w: number, h: number, d: number, x: number, y: number, z: number, parent: THREE.Object3D, mat = frameMaterial(o, mats)) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     m.position.set(x, y, z);
     m.castShadow = true;
