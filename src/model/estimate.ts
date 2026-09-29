@@ -7,7 +7,7 @@
 // (how the walls are built, what the roof is covered with) the assumptions say.
 
 import { levelAbove } from './building';
-import { type Vec2, dist } from './geom';
+import { type Vec2, dist, projectOnSegment } from './geom';
 import { computeFootprints, wallPoint } from './joints';
 import { levelRoofs, type Point3 } from './roof';
 import { rooflightGeometry } from './roofitems';
@@ -102,6 +102,7 @@ export const DEFAULT_PRICES: Record<string, number> = {
   paving: 35,
   decking: 60,
   gravel: 12,
+  rubber: 30, // interlocking rubber tiles, 20 mm, £/m²
   'sub-base': 45,
   fence: 45,
   hedge: 4,
@@ -417,6 +418,70 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
       }
     }
 
+    // ---- Beams from post to post: along each roof edge that stands on posts rather than a
+    // wall, one beam for each span between supports (a post, or the wall an edge ends on).
+    const pillars = Object.values(level.pillars ?? {});
+    const onWall = (p: Vec2) => [...fps.values()].some((fp) => projectOnSegment(p, fp.a, fp.b).dist <= fp.thickness / 2 + 0.2);
+    const spansSeen = new Set<string>();
+    for (const r of roofs) {
+      if (!r.geometry || !pillars.length) continue;
+      const ring = r.ring;
+      for (let i = 0; i < ring.length; i++) {
+        const e0 = ring[i];
+        const e1 = ring[(i + 1) % ring.length];
+        const len = dist(e0, e1);
+        if (len < 0.3) continue;
+        // Posts under this edge (they stand just inside it).
+        const posts = pillars
+          .map((pl) => ({ pl, pr: projectOnSegment(pl, e0, e1) }))
+          .filter(({ pl, pr }) => pr.dist <= pl.size / 2 + 0.35 && pr.t > -0.01 && pr.t < 1.01);
+        if (!posts.length) continue;
+        const supports: { t: number; what: string }[] = posts.map(({ pr }) => ({ t: pr.t, what: 'post' }));
+        if (onWall(e0)) supports.push({ t: 0, what: 'wall' });
+        if (onWall(e1)) supports.push({ t: 1, what: 'wall' });
+        supports.sort((u, v) => u.t - v.t);
+        // How much roof the edge carries: pitched roofs as over a wall; a flat roof's joists
+        // span the short way, so an edge along them carries only a narrow strip.
+        const dir = { x: (e1.x - e0.x) / len, y: (e1.y - e0.y) / len };
+        const along = ring.map((q) => (q.x - e0.x) * dir.x + (q.y - e0.y) * dir.y);
+        const width = Math.max(...along) - Math.min(...along);
+        const depth = Math.max(...ring.map((q) => Math.abs((q.x - e0.x) * -dir.y + (q.y - e0.y) * dir.x)));
+        const pitched = r.roof.kind === 'gable' || r.roof.kind === 'hip';
+        for (let k = 0; k + 1 < supports.length; k++) {
+          const s0 = supports[k];
+          const s1 = supports[k + 1];
+          const L = (s1.t - s0.t) * len;
+          if (L < 0.5) continue;
+          const at = (t: number) => ({ x: e0.x + (e1.x - e0.x) * t, y: e0.y + (e1.y - e0.y) * t });
+          const mid = at((s0.t + s1.t) / 2);
+          // Over a wall already (an opening's beam deals with that), or outside the area.
+          if (!inside(mid) || onWall(mid)) continue;
+          const key = [at(s0.t), at(s1.t)].map((v) => `${v.x.toFixed(1)},${v.y.toFixed(1)}`).sort().join('|');
+          if (spansSeen.has(key)) continue;
+          spansSeen.add(key);
+          let load: { g: number; q: number; how: string };
+          if (pitched) load = edgeLoad(mid) ?? { g: 0.6, q: 0.3, how: 'the roof edge' };
+          else {
+            const trib = (depth <= width + 1e-6 ? depth / 2 : 0.6) + r.roof.overhang;
+            load = { g: FLAT_DEAD * trib, q: ROOF_IMPOSED * trib, how: depth <= width + 1e-6 ? `the flat roof's joists (${trib.toFixed(1)} m of roof)` : 'the edge of the flat roof' };
+          }
+          const Lb = L + 0.1; // onto the cap plates
+          const { beam } = sizeBeam(Lb, load.g, load.q);
+          const kg = beam ? beam.mass * Lb : 0;
+          add({
+            id: `postbeam:${level.id}:${r.id}:${i}:${k}`,
+            price: 'steel',
+            group: 'Structure',
+            item: `Steel beam between ${s0.what === 'wall' || s1.what === 'wall' ? 'post and wall' : 'posts'}, ${Lb.toFixed(2)} m`,
+            detail: beam ? `${beam.name}, ${Math.round(kg)} kg: carries ${load.how}.` : `Needs a deeper section than listed: ask an engineer (span ${Lb.toFixed(1)} m).`,
+            qty: kg,
+            unit: 'kg',
+            key: true,
+          });
+        }
+      }
+    }
+
     // ---- Walls, and the foundations under the ground floor's.
     let external = 0;
     let externalLen = 0;
@@ -551,8 +616,8 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
       for (const pt of Object.values(level.patios ?? {})) {
         if (!inside(centroid(pt.points.map((p) => ({ ...p, z: 0 }))))) continue;
         const m2 = patioArea(level, pt);
-        add({ id: `patio:${pt.id}`, price: pt.surface, group: 'Garden and drains', item: `${{ paving: 'Paving', decking: 'Decking', gravel: 'Gravel' }[pt.surface]}`, detail: pt.surface === 'paving' ? `${m2.toFixed(1)} m²: about ${Math.ceil((m2 / (pt.module * pt.module)) * 1.05)} slabs of ${Math.round(pt.module * 100)} cm` : undefined, qty: m2, unit: 'm²' });
-        if (pt.surface !== 'decking') add({ id: `subbase:${pt.id}`, price: 'sub-base', group: 'Garden and drains', item: 'Sub-base (MOT type 1, 100 mm)', qty: m2 * 0.1, unit: 'm³' });
+        add({ id: `patio:${pt.id}`, price: pt.surface, group: 'Garden and drains', item: `${{ paving: 'Paving', decking: 'Decking', gravel: 'Gravel', rubber: 'Rubber floor tiles' }[pt.surface]}`, detail: pt.surface === 'paving' || pt.surface === 'rubber' ? `${m2.toFixed(1)} m²: about ${Math.ceil((m2 / (pt.module * pt.module)) * 1.05)} ${pt.surface === 'rubber' ? 'tiles' : 'slabs'} of ${Math.round(pt.module * 100)} cm` : undefined, qty: m2, unit: 'm²' });
+        if (pt.surface === 'paving' || pt.surface === 'gravel') add({ id: `subbase:${pt.id}`, price: 'sub-base', group: 'Garden and drains', item: 'Sub-base (MOT type 1, 100 mm)', qty: m2 * 0.1, unit: 'm³' });
       }
       for (const h of Object.values(level.hedges ?? {})) {
         const mid = h.points[Math.floor(h.points.length / 2)];

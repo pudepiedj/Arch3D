@@ -22,6 +22,9 @@
             <button data-tool="stretch" title="Move a whole part of the house, stretching the walls that cross into it (Q)">Stretch <kbd>Q</kbd></button>
             <button data-tool="stair" title="Place a stair up to the next floor (S)">Stair <kbd>S</kbd></button>
             <button data-tool="pillar" title="Place a pillar, e.g. under a veranda roof (P)">Pillar <kbd>P</kbd></button>
+            <hr />
+            <button data-tool="copyArea" title="Drag a box round part of the plan to copy it, to paste here, on another floor or into another drawing">Copy area…</button>
+            <button data-tool="pasteArea" id="pasteAreaBtn" title="Put down a copy of the area last copied (Ctrl/⌘+V)">Paste area <kbd>⌘V</kbd></button>
           </div>
         </details>
         <details class="menu toolmenu" data-label="Openings">
@@ -45,7 +48,7 @@
         <details class="menu toolmenu" data-label="Garden">
           <summary title="Patios, trees and drains">Garden</summary>
           <div class="menu-items">
-            <button data-tool="patio" title="Draw a paved patio, a deck or a gravelled area (T)">Patio <kbd>T</kbd></button>
+            <button data-tool="patio" title="Draw a paved patio, a deck, a gravelled area or a rubber floor (T)">Patio <kbd>T</kbd></button>
             <button data-tool="tree" title="Plant a tree (E)">Tree <kbd>E</kbd></button>
             <button data-tool="hedge" title="Draw a hedge or a fence (H)">Hedge / fence <kbd>H</kbd></button>
             <button data-tool="drain" title="Draw drains below ground, on the ground floor (J)">Drain <kbd>J</kbd></button>
@@ -72,6 +75,7 @@
         <button data-surface="paving" title="600 mm paving slabs">Paving</button>
         <button data-surface="decking" title="Timber decking, one step up">Decking</button>
         <button data-surface="gravel" title="Gravel">Gravel</button>
+        <button data-surface="rubber" title="Interlocking rubber tiles, 500 mm: a garage, gym or play area floor (inside a room it stops at the walls)">Rubber</button>
       </div>
       <div class="group" id="drainKind" aria-label="Drain">
         <button data-kind="foul" title="Foul drains: WCs, sinks, baths">Foul</button>
@@ -102,7 +106,7 @@
       <details class="menu viewmenu">
         <summary title="What the plan and the 3D view show">View</summary>
         <div class="menu-items">
-          <button id="dims" class="check" title="Show the inside dimensions of every room (M)">Room dimensions <kbd>M</kbd></button>
+          <button id="dims" class="check" title="Show the inside dimensions of every room, the lengths of hedges and fences, and the heights of trees (M)">Dimensions <kbd>M</kbd></button>
           <button id="underground" class="check" title="See the drains below ground: the ground becomes see-through and the view can go beneath it">Underground (drains)</button>
           <button id="cutaway" class="check" title="In orbit view, hide the floors above the one you are editing">Cutaway: hide floors above</button>
         </div>
@@ -220,7 +224,7 @@
         </div>
         <h3>Show</h3>
         <div class="print-checks">
-          <label><input type="checkbox" name="dims" checked /> Room dimensions on plans</label>
+          <label><input type="checkbox" name="dims" checked /> Dimensions on plans (rooms, hedges, tree heights)</label>
           <label><input type="checkbox" name="furniture" checked /> Furniture on plans</label>
           <label><input type="checkbox" name="garden" checked /> Patios and trees on plans</label>
           <label><input type="checkbox" name="drains" /> Drains on the ground floor plan</label>

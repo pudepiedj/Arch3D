@@ -870,12 +870,13 @@ export class Panel {
     const level = this.store.plan;
     const pt = level.patios?.[id];
     if (!pt) return;
-    const names: Record<PatioSurface, string> = { paving: 'Patio', decking: 'Deck', gravel: 'Gravel' };
+    const names: Record<PatioSurface, string> = { paving: 'Patio', decking: 'Deck', gravel: 'Gravel', rubber: 'Rubber floor' };
     this.title(names[pt.surface]);
     this.select('Surface', pt.surface, [
       ['paving', 'Paving'],
       ['decking', 'Decking'],
       ['gravel', 'Gravel'],
+      ['rubber', 'Rubber tiles'],
     ], (v) => {
       setPatioSurface(pt, v as PatioSurface);
       this.done();
@@ -885,8 +886,8 @@ export class Panel {
       this.done();
     }, 'm', 'Height of the top above this floor (the ground, for the ground floor)');
     if (pt.surface !== 'gravel') {
-      const slab = pt.surface === 'paving';
-      this.number(slab ? 'Slab size' : 'Board width', pt.module, 0.005, slab ? 0.2 : 0.08, slab ? 1.2 : 0.3, (v) => {
+      const slab = pt.surface === 'paving' || pt.surface === 'rubber';
+      this.number(slab ? (pt.surface === 'rubber' ? 'Tile size' : 'Slab size') : 'Board width', pt.module, 0.005, slab ? 0.2 : 0.08, slab ? 1.2 : 0.3, (v) => {
         pt.module = v;
         this.done();
       }, 'm');
@@ -900,7 +901,7 @@ export class Panel {
       `${patioArea(level, pt).toFixed(1)} m². ` +
         (pt.height > std + 0.2
           ? 'Raised: more than a step up, so it needs steps to walk onto.'
-          : 'Drag to move. Where it meets the house it stops at the walls.'),
+          : 'Drag to move. Where it meets the house it stops at the walls; drawn inside a room, it covers the floor up to them.'),
     );
     this.buttons([
       ['Turn 90°', () => {

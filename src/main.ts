@@ -535,6 +535,8 @@ const HINTS: Record<Tool, string> = {
   window: 'Click on a wall to place a window',
   split: 'Click on a wall to add a joint you can drag',
   paste: 'Click on walls to place exact copies · Esc when done',
+  copyArea: 'Drag a box round what to copy (walls crossing the box are cut off at it) · Esc to cancel',
+  pasteArea: 'Click where the copy goes (the pointer is its middle; joints landing on joints join up) · Esc to cancel',
   stair: 'Click where the stair starts (its bottom step), then click in the direction it goes up',
   roof: 'Click a roof to select it · click an edge of the selected roof to switch eave / gable end, or (flat roof) to take its parapet off or put it back',
   garage: 'Click on a wall to place a garage roller door (2.5 m wide; change it in the panel)',
@@ -548,7 +550,7 @@ const HINTS: Record<Tool, string> = {
   furniture: 'Click to place it (near a wall it backs onto the wall) · [ and ] turn it · Esc when done',
   tree: 'Click to plant a tree; drag it to move it, set its size in the panel',
   hedge: 'Click along the line of the hedge, fence or ditch · click its start to go all the way round · double-click, Enter or Esc to finish',
-  patio: 'Click the corners of the patio (snaps to walls; the house is cut out) · click the first corner, double-click or Enter to finish',
+  patio: 'Click the corners (snaps to walls; outside, the house is cut out; inside a room, it covers the floor) · click the first corner, double-click or Enter to finish',
 };
 
 function syncToolbar() {
@@ -591,6 +593,7 @@ function syncToolbar() {
   $('#cutaway').hidden = store.building.levels.length < 2 || view.mode === 'walk';
   const clip = editor.clipboard;
   $('#pasteTool').hidden = !clip;
+  $<HTMLButtonElement>('#pasteAreaBtn').disabled = !editor.areaClip;
   if (clip) $('#pasteTool').textContent = `Paste ${clip.kind} ${Math.round(clip.width * 100)}×${Math.round(clip.height * 100)}`;
   $('#hint').textContent =
     editor.tool === 'roof' && editor.roofMode === 'draw'
