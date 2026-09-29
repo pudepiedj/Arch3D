@@ -17,6 +17,8 @@ export const PATIO_DEFAULTS: Record<PatioSurface, { height: number; module: numb
   gravel: { height: 0.02, module: 0 },
   // Interlocking rubber tiles (garage, gym or play area), 500 mm square, 20 mm thick.
   rubber: { height: 0.02, module: 0.5 },
+  // Mown grass, level with the ground: the module is the width of the mowing stripes.
+  lawn: { height: 0.01, module: 0.8 },
 };
 
 /** Patios higher than this are raised decks (e.g. on a flat roof) and are not cut by the walls. */
@@ -47,6 +49,12 @@ export function patioShapes(level: Level, patio: Patio): Shape[] {
   const outer = outerFaces(level);
   const indoors = outer.some((ring) => patio.points.every((p) => pointInPolygon(p, ring)));
   const cut = indoors ? [...computeFootprints(level).values()].map((fp) => [fp.polygon]) : outer.map((ring) => [ring]);
+  // A lawn stops at the patios, paths and beds laid in it.
+  if (patio.surface === 'lawn') {
+    for (const other of Object.values(level.patios ?? {})) {
+      if (other.id !== patio.id && other.surface !== 'lawn' && other.height < CUT_BELOW && other.points.length >= 3) cut.push([other.points]);
+    }
+  }
   return subtract(patio.points, cut).filter((s) => s[0].length >= 3);
 }
 

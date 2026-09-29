@@ -1777,7 +1777,7 @@ export class Editor2D {
   private drawPatios(C: Record<string, string>) {
     const ctx = this.ctx;
     const plan = this.plan;
-    const fills = { paving: 'rgba(196, 184, 164, 0.55)', decking: 'rgba(170, 118, 76, 0.45)', gravel: 'rgba(170, 162, 148, 0.5)', rubber: 'rgba(58, 60, 64, 0.75)' };
+    const fills = { paving: 'rgba(196, 184, 164, 0.55)', decking: 'rgba(170, 118, 76, 0.45)', gravel: 'rgba(170, 162, 148, 0.5)', rubber: 'rgba(58, 60, 64, 0.75)', lawn: 'rgba(96, 146, 74, 0.55)' };
     const list = Object.values(plan.patios ?? {}).sort((a, b) => a.height - b.height);
     for (const pt of list) {
       const shapes = patioShapes(plan, pt);
@@ -1799,7 +1799,21 @@ export class Editor2D {
       const along = { x: Math.cos(pt.angle), y: Math.sin(pt.angle) };
       const across = { x: -along.y, y: along.x };
       const step = pt.surface === 'decking' ? pt.module + 0.006 : pt.module;
-      if (pt.surface !== 'gravel' && step * this.view.scale > 4) {
+      if (pt.surface === 'lawn') {
+        // Mowing stripes: every other band a lighter green.
+        const c = pt.points.reduce((a, p) => ({ x: a.x + p.x / pt.points.length, y: a.y + p.y / pt.points.length }), { x: 0, y: 0 });
+        const R = Math.max(...pt.points.map((p) => dist(p, c))) + step;
+        const base = Math.round((c.x * across.x + c.y * across.y) / step) * step - (c.x * across.x + c.y * across.y);
+        ctx.fillStyle = sel ? 'rgba(255, 255, 255, 0.12)' : 'rgba(150, 200, 110, 0.35)';
+        for (let k = -Math.ceil(R / step); k <= Math.ceil(R / step); k += 1) {
+          // Anchored to the plan grid, so the stripes don't jump as the lawn is dragged.
+          if ((Math.round((base + k * step + (c.x * across.x + c.y * across.y)) / step) & 1) === 0) continue;
+          const m0 = add(c, scale(across, base + k * step));
+          const m1 = add(c, scale(across, base + (k + 1) * step));
+          this.path([add(m0, scale(along, -R)), add(m0, scale(along, R)), add(m1, scale(along, R)), add(m1, scale(along, -R))]);
+          ctx.fill();
+        }
+      } else if (pt.surface !== 'gravel' && step * this.view.scale > 4) {
         const c = pt.points.reduce((a, p) => ({ x: a.x + p.x / pt.points.length, y: a.y + p.y / pt.points.length }), { x: 0, y: 0 });
         const R = Math.max(...pt.points.map((p) => dist(p, c))) + step;
         const n = Math.ceil(R / step);

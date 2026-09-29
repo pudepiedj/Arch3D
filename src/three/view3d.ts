@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
+import { patioAt } from '../model/patios';
 import { planBounds } from '../model/plan';
 import { dist } from '../model/geom';
 import { offsetLine } from '../model/hedges';
@@ -42,7 +43,7 @@ export class View3D {
   private ground!: THREE.Mesh;
   /** The ditches the ground was last cut for, so it is only re-cut when they change. */
   private groundCut = '';
-  private drainsObj: { below: THREE.Group; surface: THREE.Group } | null = null;
+  private drainsObj: { below: THREE.Group; covers: THREE.Group; surface: THREE.Group } | null = null;
   /** Doors shown shut, which swing open in walk mode as the walker reaches them. */
   private doors: { pivot: THREE.Object3D; x: number; y: number; floor: number; open: number }[] = [];
   private world: WalkWorld | null = null;
@@ -180,8 +181,8 @@ export class View3D {
       m.needsUpdate = true;
     };
     see(this.groundMat, 0.25);
-    for (const m of [this.mats.floor, this.mats.paving, this.mats.decking, this.mats.gravel, this.mats.rubber, this.mats.paveEdge, this.mats.deckEdge]) see(m, 0.4);
-    if (this.drainsObj) this.drainsObj.below.visible = on;
+    for (const m of [this.mats.floor, this.mats.paving, this.mats.decking, this.mats.gravel, this.mats.rubber, this.mats.lawn, this.mats.lawnEdge, this.mats.paveEdge, this.mats.deckEdge]) see(m, 0.4);
+    if (this.drainsObj) this.drainsObj.below.visible = this.drainsObj.covers.visible = on;
     this.orbit.maxPolarAngle = on ? Math.PI - 0.05 : Math.PI / 2 - 0.02;
     if (!on && this.camera.position.y < 0.5) this.frame();
   }
@@ -250,15 +251,21 @@ export class View3D {
       this.scene.add(this.shadowObj);
     }
     this.world = new WalkWorld(b);
-    for (const g of [this.drainsObj?.below, this.drainsObj?.surface]) {
+    for (const g of [this.drainsObj?.below, this.drainsObj?.covers, this.drainsObj?.surface]) {
       if (!g) continue;
       this.scene.remove(g);
       disposeObject(g);
     }
-    this.drainsObj = b.drains ? buildDrains(b.drains) : null;
+    // Covers lie on the ground floor's patios, lawns and decks where there are any.
+    const ground = b.levels[0];
+    const groundAt = (x: number, y: number) => {
+      const id = patioAt(ground, { x, y });
+      return id ? ground.patios![id].height : 0;
+    };
+    this.drainsObj = b.drains ? buildDrains(b.drains, groundAt) : null;
     if (this.drainsObj) {
-      this.drainsObj.below.visible = this.underground;
-      this.scene.add(this.drainsObj.below, this.drainsObj.surface);
+      this.drainsObj.below.visible = this.drainsObj.covers.visible = this.underground;
+      this.scene.add(this.drainsObj.below, this.drainsObj.covers, this.drainsObj.surface);
     }
     this.cutGround(b);
     this.placeSun();

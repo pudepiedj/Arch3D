@@ -26,6 +26,8 @@ export type OpeningKind = 'door' | 'window' | 'garage' | 'glazed';
 
 export type GlazedStyle = 'french' | 'sliding' | 'bifold';
 
+export type FrameColour = 'white' | 'anthracite' | 'black' | 'oak';
+
 export interface Opening {
   id: string;
   wallId: string;
@@ -44,6 +46,8 @@ export interface Opening {
   open?: boolean;
   /** Glazed doors: how the glass panels open (default French doors). */
   style?: GlazedStyle;
+  /** Colour of the frame (windows and glass doors): unset is white for windows, anthracite for glass doors. */
+  frameColour?: FrameColour;
   /** Door shown shut (doors are shown open unless this is set). In walk mode it opens as you reach it. */
   shut?: boolean;
 }
@@ -102,7 +106,7 @@ export interface Rooflight {
   solarMotor: boolean;
 }
 
-export type PatioSurface = 'paving' | 'decking' | 'gravel' | 'rubber';
+export type PatioSurface = 'paving' | 'decking' | 'gravel' | 'rubber' | 'lawn';
 
 /** A paved, decked or gravelled area outside, drawn as a polygon on a floor's plan. */
 export interface Patio {

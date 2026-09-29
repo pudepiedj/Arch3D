@@ -71,3 +71,14 @@ describe('a floor covering inside a room', () => {
     expect(patioArea(level, pt)).toBeCloseTo(room.netArea, 0);
   });
 });
+
+describe('a lawn', () => {
+  it('stops at the patios laid in it', () => {
+    const b = createBuilding();
+    const l = b.levels[0];
+    const lawn = addPatio(l, [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }], 'lawn');
+    expect(patioArea(l, lawn)).toBeCloseTo(100);
+    addPatio(l, [{ x: 2, y: 2 }, { x: 4, y: 2 }, { x: 4, y: 5 }, { x: 2, y: 5 }], 'paving');
+    expect(patioArea(l, lawn)).toBeCloseTo(94);
+  });
+});

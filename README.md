@@ -44,7 +44,7 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 | **Chimney** (C) | Click on the roof to place a chimney stack (on the floor whose roof it goes through). |
 | **Solar** | Click on a roof slope to lay a solar panel array on it. |
 | **Rooflight** | Click on a roof. A flat roof gets a rooflight box; a sloping roof gets a window lying in the slope. |
-| **Patio** (T) | Choose Paving, Decking, Gravel or **Rubber** (interlocking 500 mm rubber tiles, for a garage, gym or play area), then click the corners of the area. Click the first corner, double-click or press Enter to finish. Outside, it stops at the house; drawn inside a room (click the room's corners), it is a floor covering and stops at the walls round it. |
+| **Patio** (T) | Choose Paving, Decking, Gravel, **Lawn** (mown grass with stripes: set their width and direction in the panel; a lawn stops at the patios and paths laid in it) or **Rubber** (interlocking 500 mm rubber tiles, for a garage, gym or play area), then click the corners of the area. Click the first corner, double-click or press Enter to finish. Outside, it stops at the house; drawn inside a room (click the room's corners), it is a floor covering and stops at the walls round it. |
 | **Tree** (E) | Choose from the **Plant** list: oak, ash, beech, hazel, silver birch, rowan, Lombardy poplar, Scots pine, a general broad-leaved tree or conifer, or a **bush** with its leaves down to the ground. Click to plant one. Drag it to move it; set its height and spread in the panel. |
 | **Hedge / fence** (H) | Choose from the **Line** list: privet, hawthorn or beech hedge, close-board fence, or a **drainage ditch**. Click along its line; click its start to take it all the way round, and double-click, Enter or Esc to finish. Drag to move it; drag a corner to reshape it, a small circle to add a corner, and double-click a corner to remove it. Set its height (a ditch's depth) and thickness (a ditch's width) in the panel. |
 | **Furniture** (F) | Opens the catalogue. Pick a piece, then click to place it: near a wall it turns its back to the wall and sits tight against it. [ and ] turn it in 15° steps. Esc when done. |
@@ -54,16 +54,17 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 | **Drain** (J) | On the ground floor: choose Foul or Surface water, then click to lay a pipe run. Each new point is set 1 in 60 deeper than the last, so the pipe falls; click an existing chamber or pipe to join it. Double-click, Enter or Esc finishes the run. |
 | **Split** (X) | Click on a wall to add a joint, which is then selected so you can drag it (to make a bay, a nib or a step in the wall). |
 
-**Furniture:** about 50 pieces in nine groups:
+**Furniture:** about 50 pieces in ten groups:
 - **Music:** grand piano, upright piano, music stand.
-- **Living:** sofas, armchair, coffee table, TV, bookcase, lamp, rug.
-- **Heating:** fireplace with mantelpiece and a lit fire (stone, white, marble or oak surround), wood-burning stove on a slate hearth with its flue to the ceiling, and panel or column radiators. Like everything else, they back onto the nearest wall; radiators are fixed 15 cm above the floor.
+- **Living:** sofas, armchair, coffee table, TV, bookcase, lamp, rug (in black it is a plain mat, and doubles as a rubber mat).
+- **Heating:** fireplace with mantelpiece and a lit fire (stone, white, marble or oak surround), wood-burning stove on a slate hearth with its flue to the ceiling, panel or column radiators, and a floor-standing **oil-fired boiler** (90 cm high, 45 wide, 60 deep, with its flue out of the top; white, grey or green). Like everything else, they back onto the nearest wall; radiators are fixed 15 cm above the floor.
 - **Dining:** table with 6 chairs, round table with 4 chairs, chair, sideboard.
 - **Office:** desk with computer and chair, desk with two monitors, corner desk with computer, office desk, swivel office chair, filing cabinet. The computer sets have a monitor (or two, turned in), keyboard and mouse on the desk and a PC tower under it.
 - **Bedroom:** beds, bedside table, wardrobe, chest of drawers, desk.
 - **Kitchen:** base, sink, hob and oven, tall units, fridge, island.
 - **Bathroom:** bath, shower, WC, basin.
-- **Garden:** table and chairs, lounger, bench, parasol, barbecue, planter, and a 2 m timber pergola (four posts, beams, cross-rafters, battens for climbers, knee braces), with or without a climber growing over it. You can walk under a pergola in walk mode.
+- **Garage:** boltless steel **shelving** (angle uprights and plain steel shelves, 1.8 m × 90 × 45 cm to start with; grey, galvanised, black or blue).
+- **Garden:** table and chairs, lounger, bench, a single garden chair (slatted, to match the bench; teak, oak, grey or white), parasol, barbecue, planter, and a 2 m timber pergola (four posts, beams, cross-rafters, battens for climbers, knee braces), with or without a climber growing over it. You can walk under a pergola in walk mode.
 
 Select a piece to change its finish, width, depth and height, or to turn, duplicate or delete it. **Ctrl/⌘+D** puts a copy alongside, which is handy for a run of kitchen units. Pieces stand on patios and decks at the right height, and in walk mode you walk round them (except rugs).
 
@@ -86,7 +87,7 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - Select a pipe to set what it carries and its bore (100, 150 or 225 mm), and to read its length and **fall** ("1 in 60"). It warns if a pipe runs uphill (backfall), is level, or is flatter or steeper than the usual guidance for house drains. Check real work against Building Regulations Part H and your building control officer. **Reverse flow** swaps its direction.
 - Inspection chambers can be **square or round** (set in the panel).
 - A **sewage treatment plant** is a round or rectangular tank (about 2 m³ to start with: set its diameter or width and depth, and the panel gives the volume), with three access lids for pump-out and desludging and the blower kiosk beside it. Draw the foul drain into it and the treated outflow on to a soakaway, drainage field or ditch.
-- **View → Underground (drains)** makes the ground, floors and patios see-through, shows the pipes, chambers and soakaway at their depths, and lets the 3D view go below the surface. Chamber covers, gully gratings and downpipes show all the time.
+- **View → Underground (drains)** makes the ground, floors and patios see-through, shows the pipes, chambers and soakaway at their depths, and lets the 3D view go below the surface. Chamber covers, gully gratings and lids show only then, lying on top of whatever is there (a patio, a lawn, gravel) so a patio never hides them; downpipes, headwalls and a treatment plant's blower, which stand above ground, show all the time.
 - The demo house has a foul run from the soil stack and kitchen gully to the sewer under the road, and rainwater from two downpipes to a soakaway in the garden.
 
 **Dimensions:** **View → Dimensions** (or M) writes every room's inside measurements along its walls, face to face of the plaster line; the length of each straight run of hedge, fence or ditch, in green along its outside; and each tree's height, boxed in red (↕ 8.0 m) so it can't be taken for a length on the plan. The setting is remembered on each device.
@@ -98,7 +99,7 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - **Duplicate** (Ctrl/⌘+D) puts a copy right beside the selected one.
 - **Match copied** resizes an existing door or window to the copied one.
 
-**Glass doors:** full-height glazing in slim anthracite frames, 2.4 m wide and 2.4 m high to start with.
+**Glass doors:** full-height glazing in slim anthracite frames, 2.4 m wide and 2.4 m high to start with. **Frame** in the panel changes the colour (white, anthracite grey, black or oak) for glass doors and windows alike, so the glass doors can match the windows beside them.
 - **Style:** **French doors** (two leaves swinging from the jambs), **Sliding doors** (two panels on two tracks) or **Bi-fold doors** (leaves of about 80 cm).
 - **Show open** swings the leaves out, slides the moving panel behind the fixed one, or folds the bi-folds into a stack at one end. You can walk through when they are shown open.
 - **Full height** takes them up to the ceiling. **Open to other side**, **Slide other way** and **Fold to other end** change the direction.

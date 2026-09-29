@@ -207,6 +207,17 @@ const SYMBOLS: Record<string, Symbol> = {
     ], fill);
     monitor(ctx, -w / 2 + 0.42, -d / 2 + 0.38, -Math.PI / 4);
   },
+  oilboiler: (ctx, _f, w, d, fill) => {
+    rect(ctx, -w / 2, -d / 2, w, d, fill);
+    line(ctx, -w / 2, d / 2 - 0.04, w / 2, d / 2 - 0.04);
+    circle(ctx, 0, -d / 4, 0.05);
+  },
+  shelving: (ctx, _f, w, d, fill) => {
+    rect(ctx, -w / 2, -d / 2, w, d, fill);
+    // The uprights at the corners.
+    const a = 0.035;
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) rect(ctx, sx * (w / 2 - a / 2) - a / 2, sy * (d / 2 - a / 2) - a / 2, a, a, '#777b80');
+  },
   filing: (ctx, _f, w, d, fill) => {
     rect(ctx, -w / 2, -d / 2, w, d, fill);
     line(ctx, -w / 2, d / 2 - 0.03, w / 2, d / 2 - 0.03);
@@ -279,7 +290,11 @@ const SYMBOLS: Record<string, Symbol> = {
     line(ctx, -w / 2, 0, w / 2, 0);
     line(ctx, 0, -w / 2, 0, w / 2);
   },
-  rug: (ctx, _f, w, d, fill) => {
+  rug: (ctx, f, w, d, fill) => {
+    if (f.finish === 'black') {
+      rect(ctx, -w / 2, -d / 2, w, d, 'rgba(34, 35, 38, 0.8)');
+      return;
+    }
     rect(ctx, -w / 2, -d / 2, w, d, fill);
     rect(ctx, -w / 2 + 0.25, -d / 2 + 0.25, w - 0.5, d - 0.5);
   },
@@ -385,6 +400,7 @@ const SYMBOLS: Record<string, Symbol> = {
     rect(ctx, -w / 2, -d / 2, w, d, fill);
     for (let i = 1; i < 4; i++) line(ctx, -w / 2 + 0.05, -d / 2 + (d * i) / 4, w / 2 - 0.05, -d / 2 + (d * i) / 4);
   },
+  gardenchair: (ctx, f, w, d, fill) => SYMBOLS.bench(ctx, f, w, d, fill),
   parasol: (ctx, _f, w, _d, fill) => {
     ctx.save();
     ctx.globalAlpha = 0.5;

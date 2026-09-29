@@ -26,7 +26,7 @@ const glass = () =>
   mat('glass', () => new THREE.MeshPhysicalMaterial({ color: 0xd8ecf4, roughness: 0.05, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false }));
 
 const WOOD: Record<string, number> = { oak: 0xc49a6c, walnut: 0x6b4a32, white: 0xf1efe9, teak: 0xa0703f, grey: 0x7f8387, mahogany: 0x5a2418, black: 0x151517 };
-const FABRIC: Record<string, number> = { grey: 0x8c8f94, blue: 0x46638c, green: 0x5b7a55, cream: 0xe2d8c4, rust: 0xa8573a, red: 0x9e3b35 };
+const FABRIC: Record<string, number> = { black: 0x1b1c1e, grey: 0x8c8f94, blue: 0x46638c, green: 0x5b7a55, cream: 0xe2d8c4, rust: 0xa8573a, red: 0x9e3b35 };
 const UNIT: Record<string, number> = { white: 0xf4f3ef, sage: 0x9fb09a, navy: 0x2f3e5a, oak: 0xc49a6c };
 
 const wood = (f?: string) => plain(WOOD[f ?? 'oak'] ?? WOOD.oak, 0.6);
@@ -506,6 +506,40 @@ const BUILDERS: Record<string, Builder> = {
     tower(k, w / 2 - 0.25, -d / 2 + 0.3);
     officeChair(k, -w / 2 + ret + 0.3, -d / 2 + back + 0.3, (Math.PI * 3) / 4);
   },
+  oilboiler: (k, f, w, d, h) => {
+    const casing = plain({ white: 0xf1f0ec, grey: 0x9a9ea3, green: 0x4f6a4a }[f.finish ?? 'white'] ?? 0xf1f0ec, 0.5, 0.1);
+    k.box(w, d, h, 0, 0, 0, casing);
+    // The control panel along the top of the front, with its dial and display.
+    k.box(w - 0.04, 0.012, 0.09, 0, d / 2 + 0.006, h - 0.12, plain(0x2a2c30, 0.4));
+    k.cyl(0.018, 0.012, -w / 4, d / 2 + 0.018, h - 0.085, chrome()).rotation.x = Math.PI / 2;
+    k.box(0.07, 0.004, 0.03, w / 6, d / 2 + 0.014, h - 0.09, plain(0x4a90c0, 0.3));
+    // The door's outline below it, and the flue out of the top at the back.
+    k.box(w - 0.06, 0.004, 0.004, 0, d / 2 + 0.002, h - 0.16, plain(0x000000, 1));
+    k.cyl(0.05, 0.3, 0, -d / 4, h, steel());
+    k.cyl(0.065, 0.04, 0, -d / 4, h + 0.3, steel());
+  },
+  shelving: (k, f, w, d, h) => {
+    const colour = { grey: 0x7c8085, galvanised: 0xb8bcc0, black: 0x1f2023, blue: 0x2f5a8c }[f.finish ?? 'grey'] ?? 0x7c8085;
+    const m = plain(colour, f.finish === 'galvanised' ? 0.35 : 0.55, 0.6);
+    // Four angle uprights, each an L of two thin flanges.
+    const a = 0.035;
+    const t = 0.003;
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        const x = sx * (w / 2 - a / 2);
+        const y = sy * (d / 2 - a / 2);
+        k.box(a, t, h, x, sy * (d / 2 - t / 2), 0, m);
+        k.box(t, a, h, sx * (w / 2 - t / 2), y, 0, m);
+      }
+    }
+    // Plain steel shelves with a folded lip front and back: the bottom one just off the floor.
+    const shelves = Math.max(2, Math.round(h / 0.4) + 1);
+    for (let i = 0; i < shelves; i++) {
+      const z = 0.08 + (i / (shelves - 1)) * (h - 0.1);
+      k.box(w - 0.006, d - 0.006, 0.006, 0, 0, z - 0.006, m);
+      for (const sy of [-1, 1]) k.box(w - 0.006, 0.006, 0.03, 0, sy * (d / 2 - 0.006), z - 0.03, m);
+    }
+  },
   filing: (k, f, w, d, h) => cabinet(k, w, d, h, plain(METAL[f.finish ?? 'grey'] ?? 0x9a9ea3, 0.45, 0.4), 3, 1),
 
   fireplace: (k, f, w, d, h) => {
@@ -723,6 +757,11 @@ const BUILDERS: Record<string, Builder> = {
   },
 
   rug: (k, f, w, d) => {
+    // Black: a plain mat (it doubles as a rubber mat), no border.
+    if (f.finish === 'black') {
+      k.box(w, d, 0.01, 0, 0, 0, plain(FABRIC.black, 0.95));
+      return;
+    }
     const c = FABRIC[f.finish ?? 'red'] ?? FABRIC.red;
     k.box(w, d, 0.008, 0, 0, 0, plain(0xe7ddc9, 1));
     k.box(w - 0.16, d - 0.16, 0.01, 0, 0, 0, plain(c, 1));
@@ -878,6 +917,8 @@ const BUILDERS: Record<string, Builder> = {
     for (let i = 0; i < 3; i++) k.box(w - 0.1, 0.02, 0.1, 0, -d / 2 + 0.05, 0.5 + i * 0.12, m);
     void h;
   },
+  // The garden chair: the bench, one seat wide.
+  gardenchair: (k, f, w, d, h) => BUILDERS.bench(k, f, w, d, h),
   parasol: (k, f, w, _d, h) => {
     const c = FABRIC[f.finish ?? 'cream'] ?? FABRIC.cream;
     k.box(0.5, 0.5, 0.06, 0, 0, 0, dark());
