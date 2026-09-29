@@ -67,3 +67,15 @@ describe('roofLines', () => {
     expect(r.valleys).toBe(0);
   });
 });
+
+describe('beams between posts', () => {
+  it('puts a steel beam along each roof edge the demo porch posts hold up', () => {
+    const lines = estimate(demoBuilding(), null);
+    const beams = lines.filter((l) => l.id.startsWith('postbeam:'));
+    expect(beams.length).toBeGreaterThan(0);
+    for (const l of beams) {
+      expect(l.unit).toBe('kg');
+      expect(l.detail).toMatch(/UB/);
+    }
+  });
+});

@@ -2222,6 +2222,76 @@ export class Editor2D {
     }
   }
 
+  /**
+   * With the dimensions on: each hedge, fence or ditch's lengths, run by run, along its
+   * outside (away from what it encloses, or from the house); and each tree's height, in a red
+   * box so it can't be taken for a length on the plan.
+   */
+  private drawGardenDims(C: Record<string, string>) {
+    const ctx = this.ctx;
+    const k = this.view.scale;
+    const fps = [...this.fps.values()];
+    const house = fps.length ? scale(fps.reduce((s, fp) => add(s, add(fp.a, fp.b)), vec(0, 0)), 1 / (2 * fps.length)) : null;
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.font = '600 11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const green = '#2f6b3a';
+    for (const h of Object.values(this.plan.hedges ?? {})) {
+      const pts = h.points;
+      const closed = pts.length > 3 && dist(pts[0], pts[pts.length - 1]) < 1e-6;
+      const ring = closed ? pts.slice(0, -1) : null;
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        const len = dist(a, b);
+        if (len * k < 40) continue;
+        const d = unit(sub(b, a));
+        let n = vec(-d.y, d.x);
+        const mid = scale(add(a, b), 0.5);
+        // Outside: away from what a closed hedge goes round, else away from the house.
+        if (ring ? pointInPolygon(add(mid, scale(n, 0.05)), ring) : house && dot(sub(house, mid), n) > 0) n = scale(n, -1);
+        const off = h.width / 2 + 10 / k;
+        const pa = add(a, scale(n, off));
+        const pb = add(b, scale(n, off));
+        ctx.strokeStyle = hexAlpha(green, 0.8);
+        this.line(pa, pb);
+        const t = 3 / k;
+        this.line(add(pa, scale(n, -t)), add(pa, scale(n, t)));
+        this.line(add(pb, scale(n, -t)), add(pb, scale(n, t)));
+        const m = this.toScreen(add(mid, scale(n, off + 8 / k)));
+        let ang = Math.atan2(d.y, d.x);
+        if (ang > Math.PI / 2 + 1e-6) ang -= Math.PI;
+        if (ang <= -Math.PI / 2 + 1e-6) ang += Math.PI;
+        ctx.save();
+        ctx.translate(m.x, m.y);
+        ctx.rotate(ang);
+        ctx.fillStyle = green;
+        ctx.fillText(len.toFixed(2), 0, 0);
+        ctx.restore();
+      }
+    }
+    // Tree heights: boxed in red, with an up-and-down arrow, just below the crown.
+    const red = C.danger;
+    for (const t of Object.values(this.plan.trees ?? {})) {
+      const c = this.toScreen(crownCentre(t, siteOf(this.store.building).north));
+      const R = (t.spread / 2) * k;
+      const text = `↕ ${t.height.toFixed(1)} m`;
+      const w = ctx.measureText(text).width + 8;
+      const y = c.y + Math.max(R * 0.55, 14);
+      ctx.beginPath();
+      ctx.rect(Math.round(c.x - w / 2) + 0.5, Math.round(y - 8) + 0.5, Math.round(w), 16);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+      ctx.fill();
+      ctx.strokeStyle = red;
+      ctx.stroke();
+      ctx.fillStyle = red;
+      ctx.fillText(text, c.x, y + 0.5);
+    }
+    ctx.restore();
+  }
+
   /** A north arrow in the corner, from the building's site orientation. */
   private drawNorth(C: Record<string, string>, W: number, H: number) {
     const ctx = this.ctx;
@@ -2589,6 +2659,7 @@ export class Editor2D {
 
     if (!this.printing || this.printing.garden) this.drawHedges(C);
     if (!this.printing || this.printing.garden) this.drawTrees(C);
+    if (this.showDims && (!this.printing || this.printing.garden)) this.drawGardenDims(C);
     if (this.printing) {
       this.drawOverall(C);
       return;

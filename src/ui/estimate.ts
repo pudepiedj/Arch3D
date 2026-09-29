@@ -25,11 +25,13 @@ interface Saved {
   assumptions: Assumptions;
   /** Labour and overheads, as a percentage of the materials. */
   labour: number;
+  /** Contingency for the unforeseen, as a percentage of materials and labour. */
+  contingency: number;
   vat: boolean;
   scope: 'all' | 'area';
 }
 
-const fresh = (): Saved => ({ prices: {}, left: [], assumptions: { ...DEFAULT_ASSUMPTIONS }, labour: 0, vat: false, scope: 'all' });
+const fresh = (): Saved => ({ prices: {}, left: [], assumptions: { ...DEFAULT_ASSUMPTIONS }, labour: 0, contingency: 10, vat: false, scope: 'all' });
 
 const money = (n: number) => `£${Math.round(n).toLocaleString('en-GB')}`;
 const qtyText = (n: number) => (Number.isInteger(n) ? String(n) : n < 10 ? n.toFixed(2) : n.toFixed(1));
@@ -183,6 +185,7 @@ export class Estimator {
         <label>Foundations <select name="foundationDepth">${[0.75, 1, 1.2, 1.5].map((d) => opt(String(d), `${d.toFixed(2)} m deep`, String(a.foundationDepth))).join('')}</select></label>
         <label><input type="checkbox" name="ufh"${a.ufh ? ' checked' : ''} /> Underfloor heating</label>
         <label>Labour and overheads <input type="number" name="labour" inputmode="decimal" min="0" max="300" step="5" value="${this.s.labour}" /> %</label>
+        <label title="For the unforeseen: 10% is usual, 15–20% for work on an old house">Contingency <input type="number" name="contingency" inputmode="decimal" min="0" max="100" step="5" value="${this.s.contingency}" /> %</label>
         <label><input type="checkbox" name="vat"${this.s.vat ? ' checked' : ''} /> Add VAT (20%)</label>
       </div>
       <p class="est-note">A rough guide for judging whether it is affordable: UK supply prices for 2025, materials only unless labour is added, measured from the drawing. Steel and timber sizes are first guesses by the usual hand methods — <strong>a structural engineer must design them</strong>, and Building Control approve them. Change any price: it changes every line priced the same way. Untick what you don't need.</p>
@@ -207,19 +210,26 @@ export class Estimator {
       const cell = this.body.querySelector(`[data-subtotal="${CSS.escape(g)}"]`);
       if (cell) cell.textContent = money(totalOf(this.lines.filter((l) => l.group === g), this.prices, left));
     }
-    const materials = totalOf(this.lines, this.prices, left);
-    const labour = (materials * this.s.labour) / 100;
-    const vat = this.s.vat ? (materials + labour) * 0.2 : 0;
-    const all = materials + labour + vat;
+    const { materials, labour, contingency, vat, all } = this.sums();
     const foot = [`<tr><th colspan="4">Materials</th><td class="num">${money(materials)}</td></tr>`];
     if (this.s.labour) foot.push(`<tr><th colspan="4">Labour and overheads, ${this.s.labour}%</th><td class="num">${money(labour)}</td></tr>`);
+    if (this.s.contingency) foot.push(`<tr><th colspan="4">Contingency, ${this.s.contingency}%</th><td class="num">${money(contingency)}</td></tr>`);
     if (this.s.vat) foot.push(`<tr><th colspan="4">VAT, 20%</th><td class="num">${money(vat)}</td></tr>`);
     foot.push(`<tr class="grand"><th colspan="4">Total</th><td class="num">${money(all)}</td></tr>`);
     this.body.querySelector('#estFoot')!.innerHTML = foot.join('');
     this.body.querySelector('#estSummary')!.innerHTML = `
-      <div><span>Total${this.s.labour ? '' : ', materials only'}${this.s.vat ? ', with VAT' : ''}</span><strong>${money(all)}</strong></div>
+      <div><span>Total${this.s.labour ? '' : ', materials only'}${this.s.contingency ? `, ${this.s.contingency}% contingency` : ''}${this.s.vat ? ', with VAT' : ''}</span><strong>${money(all)}</strong></div>
       <div><span>Structure: steel, posts and lintels</span><strong>${money(totalOf(this.lines.filter((l) => l.group === 'Structure'), this.prices, left))}</strong></div>
       <div><span>Glazing, doors and windows</span><strong>${money(totalOf(this.lines.filter((l) => l.group === 'Glazing, doors and windows'), this.prices, left))}</strong></div>`;
+  }
+
+  /** Materials, then labour on them, contingency on both, and VAT on the lot. */
+  private sums() {
+    const materials = totalOf(this.lines, this.prices, new Set(this.s.left));
+    const labour = (materials * this.s.labour) / 100;
+    const contingency = ((materials + labour) * this.s.contingency) / 100;
+    const vat = this.s.vat ? (materials + labour + contingency) * 0.2 : 0;
+    return { materials, labour, contingency, vat, all: materials + labour + contingency + vat };
   }
 
   private onInput(t: HTMLInputElement) {
@@ -233,9 +243,9 @@ export class Estimator {
       for (const other of this.body.querySelectorAll<HTMLInputElement>(`input[data-price="${CSS.escape(key)}"]`)) if (other !== t) other.value = String(v);
       this.save();
       this.totals();
-    } else if (t.name === 'labour') {
+    } else if (t.name === 'labour' || t.name === 'contingency') {
       const v = parseFloat(t.value);
-      this.s.labour = Number.isFinite(v) && v >= 0 ? v : 0;
+      this.s[t.name] = Number.isFinite(v) && v >= 0 ? v : 0;
       this.save();
       this.totals();
     }
@@ -261,10 +271,10 @@ export class Estimator {
       this.totals();
       return;
     }
-    if (t.dataset.price || t.name === 'labour') {
+    if (t.dataset.price || t.name === 'labour' || t.name === 'contingency') {
       // Tidy what was typed once the box is left.
       if (t.dataset.price) t.value = String(this.price(t.dataset.price));
-      else t.value = String(this.s.labour);
+      else t.value = String(this.s[t.name as 'labour' | 'contingency']);
       return;
     }
     const a = this.s.assumptions;
@@ -322,12 +332,12 @@ export class Estimator {
       const p = this.price(l.price);
       rows.push([l.group, l.item, l.detail ?? '', l.qty, l.unit, p, l.qty * p, left.has(l.id) ? 'no' : 'yes']);
     }
-    const materials = totalOf(this.lines, this.prices, left);
-    const labour = (materials * this.s.labour) / 100;
+    const { materials, labour, contingency, vat, all } = this.sums();
     rows.push([], ['', 'Materials', '', '', '', '', materials]);
     if (this.s.labour) rows.push(['', `Labour and overheads, ${this.s.labour}%`, '', '', '', '', labour]);
-    if (this.s.vat) rows.push(['', 'VAT, 20%', '', '', '', '', (materials + labour) * 0.2]);
-    rows.push(['', 'Total', '', '', '', '', (materials + labour) * (this.s.vat ? 1.2 : 1)]);
+    if (this.s.contingency) rows.push(['', `Contingency, ${this.s.contingency}%`, '', '', '', '', contingency]);
+    if (this.s.vat) rows.push(['', 'VAT, 20%', '', '', '', '', vat]);
+    rows.push(['', 'Total', '', '', '', '', all]);
     const text = rows.map((r) => r.map(cell).join(',')).join('\r\n');
     const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
     const link = document.createElement('a');
