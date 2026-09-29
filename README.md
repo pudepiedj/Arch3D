@@ -54,15 +54,16 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 | **Drain** (J) | On the ground floor: choose Foul or Surface water, then click to lay a pipe run. Each new point is set 1 in 60 deeper than the last, so the pipe falls; click an existing chamber or pipe to join it. Double-click, Enter or Esc finishes the run. |
 | **Split** (X) | Click on a wall to add a joint, which is then selected so you can drag it (to make a bay, a nib or a step in the wall). |
 
-**Furniture:** about 50 pieces in nine groups:
+**Furniture:** about 50 pieces in ten groups:
 - **Music:** grand piano, upright piano, music stand.
-- **Living:** sofas, armchair, coffee table, TV, bookcase, lamp, rug.
-- **Heating:** fireplace with mantelpiece and a lit fire (stone, white, marble or oak surround), wood-burning stove on a slate hearth with its flue to the ceiling, and panel or column radiators. Like everything else, they back onto the nearest wall; radiators are fixed 15 cm above the floor.
+- **Living:** sofas, armchair, coffee table, TV, bookcase, lamp, rug (in black it is a plain mat, and doubles as a rubber mat).
+- **Heating:** fireplace with mantelpiece and a lit fire (stone, white, marble or oak surround), wood-burning stove on a slate hearth with its flue to the ceiling, panel or column radiators, and a floor-standing **oil-fired boiler** (90 cm high, 45 wide, 60 deep, with its flue out of the top; white, grey or green). Like everything else, they back onto the nearest wall; radiators are fixed 15 cm above the floor.
 - **Dining:** table with 6 chairs, round table with 4 chairs, chair, sideboard.
 - **Office:** desk with computer and chair, desk with two monitors, corner desk with computer, office desk, swivel office chair, filing cabinet. The computer sets have a monitor (or two, turned in), keyboard and mouse on the desk and a PC tower under it.
 - **Bedroom:** beds, bedside table, wardrobe, chest of drawers, desk.
 - **Kitchen:** base, sink, hob and oven, tall units, fridge, island.
 - **Bathroom:** bath, shower, WC, basin.
+- **Garage:** boltless steel **shelving** (angle uprights and plain steel shelves, 1.8 m × 90 × 45 cm to start with; grey, galvanised, black or blue).
 - **Garden:** table and chairs, lounger, bench, parasol, barbecue, planter, and a 2 m timber pergola (four posts, beams, cross-rafters, battens for climbers, knee braces), with or without a climber growing over it. You can walk under a pergola in walk mode.
 
 Select a piece to change its finish, width, depth and height, or to turn, duplicate or delete it. **Ctrl/⌘+D** puts a copy alongside, which is handy for a run of kitchen units. Pieces stand on patios and decks at the right height, and in walk mode you walk round them (except rugs).

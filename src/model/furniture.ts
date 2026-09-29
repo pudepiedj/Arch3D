@@ -29,7 +29,7 @@ export interface CatalogueItem {
   fixedHeight?: boolean;
 }
 
-export const CATEGORIES = ['Music', 'Living', 'Heating', 'Dining', 'Office', 'Bedroom', 'Kitchen', 'Bathroom', 'Garden'];
+export const CATEGORIES = ['Music', 'Living', 'Heating', 'Dining', 'Office', 'Bedroom', 'Kitchen', 'Bathroom', 'Garage', 'Garden'];
 
 const WOODS = ['oak', 'walnut', 'white'];
 const GATE_FINISHES = ['oak', 'grey', 'green', 'white', 'black'];
@@ -47,11 +47,13 @@ export const CATALOGUE: CatalogueItem[] = [
   { kind: 'tvunit', name: 'TV and unit', category: 'Living', width: 1.6, depth: 0.45, height: 1.25, finishes: WOODS },
   { kind: 'bookcase', name: 'Bookcase', category: 'Living', width: 1.0, depth: 0.32, height: 2.0, finishes: WOODS },
   { kind: 'lamp', name: 'Floor lamp', category: 'Living', width: 0.4, depth: 0.4, height: 1.6 },
-  { kind: 'rug', name: 'Rug', category: 'Living', width: 2.4, depth: 1.7, height: 0.01, finishes: ['red', 'blue', 'grey', 'cream'], flat: true },
+  { kind: 'rug', name: 'Rug', category: 'Living', width: 2.4, depth: 1.7, height: 0.01, finishes: ['red', 'blue', 'grey', 'cream', 'black'], flat: true },
 
   { kind: 'fireplace', name: 'Fireplace and mantelpiece', category: 'Heating', width: 1.5, depth: 0.7, height: 1.2, finishes: ['stone', 'white', 'marble', 'oak'] },
   { kind: 'woodburner', name: 'Wood-burning stove', category: 'Heating', width: 1.0, depth: 0.9, height: 2.6, finishes: ['black', 'grey', 'cream'] },
   { kind: 'radiator', name: 'Radiator', category: 'Heating', width: 1.0, depth: 0.1, height: 0.6, finishes: ['white', 'anthracite'] },
+  // A floor-standing oil boiler (kitchen, utility or garage model), with its flue out of the top.
+  { kind: 'oilboiler', name: 'Oil-fired boiler', category: 'Heating', width: 0.45, depth: 0.6, height: 0.9, finishes: ['white', 'grey', 'green'] },
   { kind: 'columnrad', name: 'Column radiator', category: 'Heating', width: 0.8, depth: 0.12, height: 0.6, finishes: ['white', 'anthracite', 'cream'] },
   { kind: 'dining6', name: 'Dining table, 6 chairs', category: 'Dining', width: 1.8, depth: 1.9, height: 0.75, finishes: WOODS },
   { kind: 'dininground', name: 'Round table, 4 chairs', category: 'Dining', width: 1.9, depth: 1.9, height: 0.75, finishes: WOODS },
@@ -82,6 +84,9 @@ export const CATALOGUE: CatalogueItem[] = [
   { kind: 'shower', name: 'Shower', category: 'Bathroom', width: 0.9, depth: 0.9, height: 2.0 },
   { kind: 'wc', name: 'WC', category: 'Bathroom', width: 0.4, depth: 0.68, height: 0.8 },
   { kind: 'basin', name: 'Basin', category: 'Bathroom', width: 0.6, depth: 0.45, height: 0.85 },
+
+  // Boltless steel shelving: angle uprights and plain steel shelves.
+  { kind: 'shelving', name: 'Garage shelving (steel)', category: 'Garage', width: 0.9, depth: 0.45, height: 1.8, finishes: ['grey', 'galvanised', 'black', 'blue'] },
 
   { kind: 'gardenset', name: 'Garden table, 4 chairs', category: 'Garden', width: 1.8, depth: 1.8, height: 0.72, finishes: ['teak', 'grey', 'white'] },
   { kind: 'lounger', name: 'Sun lounger', category: 'Garden', width: 0.7, depth: 1.95, height: 0.8, finishes: ['teak', 'grey', 'white'] },
