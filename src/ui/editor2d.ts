@@ -2228,6 +2228,7 @@ export class Editor2D {
       beech: ['#aab06a', '#6d6a34'],
       fence: ['#9b7550', '#6f5237'],
       ditch: ['#b9a77e', '#7a6644'],
+      wall: ['#d8c6a0', '#8a7a5c'],
     };
     const plan = this.plan;
     // Ditches first, under everything: the banks, and the water down the middle.

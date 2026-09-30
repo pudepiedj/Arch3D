@@ -103,7 +103,8 @@ export const DEFAULT_PRICES: Record<string, number> = {
   decking: 60,
   gravel: 12,
   lawn: 7, // turf, with a little topsoil, £/m²
-  rubber: 30, // interlocking rubber tiles, 20 mm, £/m²
+  rubber: 30,
+  'garden-wall': 140, // stone walling, coping and footing, materials, £/m² of wall face // interlocking rubber tiles, 20 mm, £/m²
   'sub-base': 45,
   fence: 45,
   hedge: 4,
@@ -624,7 +625,8 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
         const mid = h.points[Math.floor(h.points.length / 2)];
         if (!mid || !inside(mid) || h.kind === 'ditch') continue;
         const L = hedgeLength(h);
-        if (h.kind === 'fence') add({ id: `fence:${h.id}`, price: 'fence', group: 'Garden and drains', item: 'Close-board fence', detail: `${L.toFixed(1)} m, ${h.height} m high`, qty: L, unit: 'm' });
+        if (h.kind === 'wall') add({ id: `gardenwall:${h.id}`, price: 'garden-wall', group: 'Garden and drains', item: `Garden wall, ${h.finish && h.finish !== 'stone' ? h.finish.replace('-', ' ') : 'stone'}`, detail: `${L.toFixed(1)} m long, ${h.height} m high, ${Math.round(h.width * 100)} cm thick, with coping and footing`, qty: L * h.height, unit: 'm²' });
+        else if (h.kind === 'fence') add({ id: `fence:${h.id}`, price: 'fence', group: 'Garden and drains', item: 'Close-board fence', detail: `${L.toFixed(1)} m, ${h.height} m high`, qty: L, unit: 'm' });
         else add({ id: `hedge:${h.id}`, price: 'hedge', group: 'Garden and drains', item: `${h.kind[0].toUpperCase()}${h.kind.slice(1)} hedge plants`, detail: `${L.toFixed(1)} m, 5 a metre in a double row`, qty: Math.ceil(L * 5), unit: 'no.' });
       }
       for (const f of Object.values(level.furniture ?? {})) {

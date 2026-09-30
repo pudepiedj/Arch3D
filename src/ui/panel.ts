@@ -853,11 +853,17 @@ export class Panel {
       Object.assign(h, HEDGE_DEFAULTS[h.kind], remembered(key()) ?? {});
       this.done();
     });
-    this.number(h.kind === 'ditch' ? 'Depth' : 'Height', h.height, 0.1, 0.2, 6, (v) => {
+    this.number(h.kind === 'ditch' ? 'Depth' : 'Height', h.height, 0.1, 0.2, 8, (v) => {
       h.height = v;
       keep();
       this.done();
     }, 'm');
+    if (h.kind === 'wall') {
+      this.select('Finish', h.finish ?? 'stone', Object.entries(WALL_FINISHES).map(([k, v]): [string, string] => [k, v.name]), (v) => {
+        h.finish = v === 'stone' ? undefined : (v as WallFinish);
+        this.done();
+      });
+    }
     if (h.kind !== 'fence') {
       this.number(h.kind === 'ditch' ? 'Width at top' : 'Thickness', h.width, 0.05, 0.2, 6, (v) => {
         h.width = v;
@@ -870,6 +876,7 @@ export class Panel {
       hawthorn: 'In leaf from May to October; twiggy and bare in winter.',
       beech: 'Fresh green in summer, copper in autumn, and it keeps its brown leaves through the winter.',
       fence: 'Timber posts at most 1.8 m apart, a gravel board, and featheredge boards.',
+      wall: 'A free-standing wall with a coping along the top, e.g. a boundary wall. Gates can stand in it.',
       ditch: 'An open drainage ditch dug into the ground, with water in the bottom. Run surface-water drains to it with an "Outfall into a ditch" fitting.',
     }[h.kind];
     this.note(`${hedgeLength(h).toFixed(1)} m long${hedgeClosed(h) ? ', all the way round' : ''}. ${season} Drag it to move it; drag a corner to reshape it, a circle to add a corner; double-click a corner to remove it.`);

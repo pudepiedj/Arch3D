@@ -145,7 +145,7 @@ export interface Tree {
   leanTo?: number;
 }
 
-export type HedgeKind = 'privet' | 'hawthorn' | 'beech' | 'fence' | 'ditch';
+export type HedgeKind = 'privet' | 'hawthorn' | 'beech' | 'fence' | 'ditch' | 'wall';
 
 /**
  * A hedge, fence or open drainage ditch along a line of points (closed if its last point is
@@ -158,6 +158,8 @@ export interface Hedge {
   height: number;
   /** Thickness through the hedge (a fence is always a board's thickness; a ditch's width at the top). */
   width: number;
+  /** A garden wall's finish (dressed stone if unset). */
+  finish?: WallFinish;
 }
 
 /** A free-standing post, e.g. holding up a veranda or carport roof. */

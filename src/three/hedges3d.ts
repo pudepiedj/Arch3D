@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { FENCE_BAY, type HedgeRun, hedgeClosed, offsetLine } from '../model/hedges';
 import type { Hedge } from '../model/types';
 import type { Season } from './build';
+import { wallMaterial } from './finishes';
 
 /** One material per colour, shared by every hedge. */
 const materials = new Map<number, THREE.MeshStandardMaterial>();
@@ -52,6 +53,7 @@ export function buildHedge(h: Hedge, runs: HedgeRun[], season: Season): THREE.Gr
   g.name = `hedge:${h.id}`;
   if (h.kind === 'fence') buildFence(g, h, runs);
   else if (h.kind === 'ditch') buildDitch(g, h);
+  else if (h.kind === 'wall') buildGardenWall(g, h, runs);
   else {
     const mat = material(hedgeColour(h, season));
     for (const { a, b, openA, openB } of runs) {
@@ -194,4 +196,49 @@ function buildDitch(g: THREE.Group, h: Hedge) {
     mesh.castShadow = k === 'bank';
     g.add(mesh);
   }
+}
+
+/**
+ * A free-standing garden wall: a solid block along each run in its finish (stone unless set
+ * otherwise), with a coping a little wider than the wall along its top. Texture coordinates
+ * are set in metres, so the stone courses are their real size.
+ */
+function buildGardenWall(g: THREE.Group, h: Hedge, runs: HedgeRun[]) {
+  const mat = wallMaterial(h.finish ?? 'stone');
+  const coping = wallMaterial('stone');
+  const COPE = 0.06;
+  for (const { a, b, openA, openB } of runs) {
+    const L = Math.hypot(b.x - a.x, b.y - a.y);
+    if (L < 1e-6) continue;
+    const e0 = openA ? 0 : h.width / 2;
+    const e1 = openB ? 0 : h.width / 2;
+    const len = L + e0 + e1;
+    const angle = Math.atan2(b.y - a.y, b.x - a.x);
+    const mid = (e1 - e0) / 2 / L;
+    const cx = (a.x + b.x) / 2 + (b.x - a.x) * mid;
+    const cy = (a.y + b.y) / 2 + (b.y - a.y) * mid;
+    const block = (w: number, ht: number, d: number, y: number, m: THREE.Material) => {
+      const geo = metreBox(w, ht, d);
+      const mesh = new THREE.Mesh(geo, m);
+      mesh.position.set(cx, y + ht / 2, cy);
+      mesh.rotation.y = -angle;
+      mesh.castShadow = mesh.receiveShadow = true;
+      g.add(mesh);
+    };
+    block(len, h.height - COPE, h.width, 0, mat);
+    block(len + (openA ? 0 : 0.04) + (openB ? 0 : 0.04), COPE, h.width + 0.08, h.height - COPE, coping);
+  }
+}
+
+/** A box whose texture coordinates run in metres on every face (a BoxGeometry's run 0 to 1). */
+function metreBox(w: number, ht: number, d: number): THREE.BoxGeometry {
+  const geo = new THREE.BoxGeometry(w, ht, d);
+  const uv = geo.getAttribute('uv') as THREE.BufferAttribute;
+  // Faces in order: +x, -x, +y, -y, +z, -z, four vertices each.
+  const sizes: [number, number][] = [[d, ht], [d, ht], [w, d], [w, d], [w, ht], [w, ht]];
+  sizes.forEach(([su, sv], f) => {
+    for (let i = f * 4; i < f * 4 + 4; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
+  });
+  uv.needsUpdate = true;
+  return geo;
 }
