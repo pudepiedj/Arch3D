@@ -1458,6 +1458,27 @@ function buildRoofObject(
   return g;
 }
 
+const ARCH_STEPS = 16;
+
+/**
+ * A round-headed opening's arch: where it springs, its crown, and points round it from the
+ * left springing to the right, as (distance along the wall, height). Null if it has none
+ * (or is too low for a half-circle across its width).
+ */
+function archOf(o: Opening): { spring: number; crown: number; arc: [number, number][] } | null {
+  if (o.kind !== 'open' || !o.arched) return null;
+  const r = o.width / 2;
+  const crown = o.sill + o.height;
+  const spring = crown - r;
+  if (spring < o.sill + 0.05) return null;
+  const arc: [number, number][] = [];
+  for (let k = 0; k <= ARCH_STEPS; k++) {
+    const t = Math.PI - (k / ARCH_STEPS) * Math.PI;
+    arc.push([o.offset + r * Math.cos(t), spring + r * Math.sin(t)]);
+  }
+  return { spring, crown, arc };
+}
+
 function buildWall(leftFace: Mesher, rightFace: Mesher, reveals: Mesher, tops: Mesher, fp: Footprint, ops: Opening[]) {
   const H = fp.height;
   const half = fp.thickness / 2;
@@ -1476,6 +1497,20 @@ function buildWall(leftFace: Mesher, rightFace: Mesher, reveals: Mesher, tops: M
       sides.vface(wallPoint(fp, cursor, v), wallPoint(fp, lo, v), 0, H, out);
       sides.vface(wallPoint(fp, lo, v), wallPoint(fp, hi, v), 0, o.sill, out);
       sides.vface(wallPoint(fp, lo, v), wallPoint(fp, hi, v), o.sill + o.height, H, out);
+      const a = archOf(o);
+      if (a) {
+        // The wall filling the corners above the arch: each a curved triangle from the
+        // springing up to the crown.
+        const at = ([u, z]: [number, number]) => w3(wallPoint(fp, u, v), z);
+        const corners: [number, number][][] = [
+          [[lo, a.crown], ...a.arc.slice(0, ARCH_STEPS / 2 + 1)],
+          [...a.arc.slice(ARCH_STEPS / 2), [hi, a.crown]],
+        ];
+        for (const half of corners) {
+          const tris = THREE.ShapeUtils.triangulateShape(half.map(([u, z]) => new THREE.Vector2(u, z)), []);
+          for (const [i, j, k] of tris) sides.tri(at(half[i]), at(half[j]), at(half[k]), out);
+        }
+      }
       cursor = hi;
     }
     sides.vface(wallPoint(fp, cursor, v), wallPoint(fp, u1, v), 0, H, out);
@@ -1487,11 +1522,21 @@ function buildWall(leftFace: Mesher, rightFace: Mesher, reveals: Mesher, tops: M
   for (const o of ops) {
     const lo = o.offset - o.width / 2;
     const hi = o.offset + o.width / 2;
-    const top = o.sill + o.height;
+    const a = archOf(o);
+    const top = a ? a.spring : o.sill + o.height;
     reveals.vface(wallPoint(fp, lo, -half), wallPoint(fp, lo, half), o.sill, top, along);
     reveals.vface(wallPoint(fp, hi, -half), wallPoint(fp, hi, half), o.sill, top, back);
     const rect = [wallPoint(fp, lo, -half), wallPoint(fp, hi, -half), wallPoint(fp, hi, half), wallPoint(fp, lo, half)];
-    if (top < H - 1e-6) reveals.hpoly(rect, top, false);
+    if (a) {
+      // The underside of the arch, round through the wall's thickness.
+      for (let k = 0; k < ARCH_STEPS; k++) {
+        const [u0, z0] = a.arc[k];
+        const [u1, z1] = a.arc[k + 1];
+        const mid = Math.PI - ((k + 0.5) / ARCH_STEPS) * Math.PI;
+        const inward = n3(fp.dir, -Math.cos(mid)).add(new THREE.Vector3(0, -Math.sin(mid), 0));
+        reveals.quad(w3(wallPoint(fp, u0, -half), z0), w3(wallPoint(fp, u1, -half), z1), w3(wallPoint(fp, u1, half), z1), w3(wallPoint(fp, u0, half), z0), inward);
+      }
+    } else if (top < H - 1e-6) reveals.hpoly(rect, top, false);
     if (o.sill > 1e-6) reveals.hpoly(rect, o.sill, true);
   }
 
@@ -1552,6 +1597,9 @@ function buildOpeningObject(fp: Footprint, o: Opening, mats: Materials): THREE.O
     return m;
   };
 
+  // A plain opening: nothing in it (the wall's reveals, and an arch if it has one, are
+  // built with the wall).
+  if (o.kind === 'open') return g;
   if (o.kind === 'window') {
     const frame = frameMaterial(o, mats);
     const depth = Math.min(0.08, t);

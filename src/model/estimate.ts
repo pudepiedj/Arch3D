@@ -395,6 +395,8 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
         add({ id: `glazed:${level.id}:${o.id}`, price: `glazed-${style}`, group: 'Glazing, doors and windows', item: `${{ french: 'French', sliding: 'Sliding', bifold: 'Bi-fold' }[style]} doors ${size}`, detail: 'Floor-to-ceiling glass doors, supply', qty: o.width * o.height, unit: 'm²', key: true });
       } else if (o.kind === 'window') {
         add({ id: `window:${level.id}:${o.id}`, price: 'window', group: 'Glazing, doors and windows', item: `Window ${size}`, qty: o.width * o.height, unit: 'm²' });
+      } else if (o.kind === 'open') {
+        // Nothing to supply: just the lintel (or the arch, built in the wall).
       } else if (o.kind === 'garage') {
         add({ id: `garage:${level.id}:${o.id}`, price: 'garage', group: 'Glazing, doors and windows', item: `Garage roller door ${size}`, qty: 1, unit: 'no.' });
       } else {

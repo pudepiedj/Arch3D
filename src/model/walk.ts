@@ -226,7 +226,7 @@ function buildColliders(plan: Plan): Collider[] {
     let cursor = u0;
     for (const o of openingsOf(plan, fp.wallId)) {
       // Doors, and garage and glazed doors shown open, can be walked through.
-      if (o.kind !== 'door' && !((o.kind === 'garage' || o.kind === 'glazed') && o.open)) continue;
+      if (o.kind !== 'door' && !(o.kind === 'open' && o.sill < 0.2) && !((o.kind === 'garage' || o.kind === 'glazed') && o.open)) continue;
       out.push({ fp, u0: cursor, u1: o.offset - o.width / 2 });
       cursor = o.offset + o.width / 2;
     }

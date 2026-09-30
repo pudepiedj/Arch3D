@@ -58,7 +58,7 @@ import { remembered } from './sizes';
 import type { DrainKind, FloorFinish, Furniture, Hedge, HedgeKind, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind, WallFinish } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain' | 'hedge' | 'copyArea' | 'pasteArea' | 'paint';
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'open' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain' | 'hedge' | 'copyArea' | 'pasteArea' | 'paint';
 export type Selection = {
   kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'drainNode' | 'drainPipe' | 'hedge';
   id: string;
@@ -1255,6 +1255,7 @@ export class Editor2D {
       case 'door':
       case 'window':
       case 'garage':
+      case 'open':
       case 'glazed':
       case 'paste': {
         const fp = this.wallAt(w, 10 / this.view.scale);
@@ -1522,7 +1523,7 @@ export class Editor2D {
 
   /** What a click with the current tool places: a default door/window, or the copied one. */
   private openingSpec(): OpeningKind | OpeningTemplate | null {
-    if (this.tool === 'door' || this.tool === 'window' || this.tool === 'garage' || this.tool === 'glazed') return this.tool;
+    if (this.tool === 'door' || this.tool === 'window' || this.tool === 'garage' || this.tool === 'glazed' || this.tool === 'open') return this.tool;
     if (this.tool === 'paste') return this.clipboard;
     return null;
   }
@@ -2887,7 +2888,7 @@ export class Editor2D {
         ctx.lineWidth = 2;
         ctx.stroke();
       }
-    } else if ((this.tool === 'door' || this.tool === 'window' || this.tool === 'garage' || this.tool === 'glazed' || this.tool === 'paste') && h) {
+    } else if ((this.tool === 'door' || this.tool === 'window' || this.tool === 'garage' || this.tool === 'glazed' || this.tool === 'open' || this.tool === 'paste') && h) {
       const fp = this.wallAt(h, 10 / this.view.scale);
       const spec = this.openingSpec();
       if (fp && spec) {
@@ -3021,6 +3022,12 @@ export class Editor2D {
       ctx.setLineDash([]);
     } else if (o.kind === 'glazed') {
       this.drawGlazed(fp, o, half);
+    } else if (o.kind === 'open') {
+      // Nothing in it: the head (or the arch) shown dashed across the gap, as on a drawing.
+      ctx.setLineDash([4, 3]);
+      ctx.lineWidth = 1;
+      this.line(wallPoint(fp, lo, 0), wallPoint(fp, hi, 0));
+      ctx.setLineDash([]);
     } else if (o.kind === 'window') {
       this.line(wallPoint(fp, lo, half * 0.25), wallPoint(fp, hi, half * 0.25));
       this.line(wallPoint(fp, lo, -half * 0.25), wallPoint(fp, hi, -half * 0.25));

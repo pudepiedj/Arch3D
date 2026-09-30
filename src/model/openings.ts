@@ -51,10 +51,11 @@ export interface OpeningTemplate {
   swingFlip?: boolean;
   style?: GlazedStyle;
   frameColour?: FrameColour;
+  arched?: boolean;
 }
 
 export function templateOf(o: Opening): OpeningTemplate {
-  return { kind: o.kind, width: o.width, height: o.height, sill: o.sill, hingeFlip: o.hingeFlip, swingFlip: o.swingFlip, style: o.style, frameColour: o.frameColour };
+  return { kind: o.kind, width: o.width, height: o.height, sill: o.sill, hingeFlip: o.hingeFlip, swingFlip: o.swingFlip, style: o.style, frameColour: o.frameColour, arched: o.arched };
 }
 
 /**
@@ -103,6 +104,7 @@ export function placeOpening(
   if (t.swingFlip) o.swingFlip = true;
   if (t.style) o.style = t.style;
   if (t.frameColour) o.frameColour = t.frameColour;
+  if (t.arched) o.arched = true;
   plan.openings[o.id] = o;
   return o;
 }
@@ -144,6 +146,7 @@ export function matchOpening(
   o.swingFlip = t.swingFlip || undefined;
   o.style = t.style;
   o.frameColour = t.frameColour;
+  o.arched = t.arched;
   o.offset = clamp(o.offset, gap[0] + t.width / 2, gap[1] - t.width / 2);
   return true;
 }

@@ -28,8 +28,9 @@ export type RoofCovering = 'tiles' | 'roman' | 'plain' | 'slate';
 /**
  * 'garage' is a roller door: slats that roll up into a casing above the opening.
  * 'glazed' is a floor-to-ceiling glass door: French doors, sliding doors or bi-folds.
+ * 'open' is just an opening through the wall, with nothing in it (square or arched).
  */
-export type OpeningKind = 'door' | 'window' | 'garage' | 'glazed';
+export type OpeningKind = 'door' | 'window' | 'garage' | 'glazed' | 'open';
 
 export type GlazedStyle = 'french' | 'sliding' | 'bifold';
 
@@ -57,6 +58,8 @@ export interface Opening {
   frameColour?: FrameColour;
   /** Door shown shut (doors are shown open unless this is set). In walk mode it opens as you reach it. */
   shut?: boolean;
+  /** A plain opening with a round (semicircular) head: `height` is to the top of the arch. */
+  arched?: boolean;
 }
 
 /** A chimney stack rising through the roof, with 1-3 pots. */
@@ -395,5 +398,6 @@ export const DEFAULTS = {
   window: { width: 1.2, height: 1.2, sill: 0.9 },
   garage: { width: 2.5, height: 2.1, sill: 0 },
   glazed: { width: 2.4, height: 2.4, sill: 0 },
+  open: { width: 1.2, height: 2.2, sill: 0 },
   pillar: 0.25,
 };

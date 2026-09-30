@@ -168,12 +168,13 @@ export class Panel {
     if (!o) return;
     const fps = computeFootprints(plan);
     const fp = fps.get(o.wallId);
-    this.title(o.kind === 'door' ? 'Door' : o.kind === 'garage' ? 'Garage door' : o.kind === 'glazed' ? 'Glass doors' : 'Window');
+    this.title(o.kind === 'door' ? 'Door' : o.kind === 'garage' ? 'Garage door' : o.kind === 'glazed' ? 'Glass doors' : o.kind === 'open' ? (o.arched ? 'Arched opening' : 'Opening') : 'Window');
     this.select('Type', o.kind, [
       ['door', 'Door'],
       ['window', 'Window'],
       ['glazed', 'Glass doors'],
       ['garage', 'Garage roller door'],
+      ['open', 'Opening (nothing in it)'],
     ], (v) => {
       const k = v as OpeningKind;
       o.kind = k;
@@ -195,6 +196,20 @@ export class Panel {
       o.height = v;
       this.done();
     }, 'm');
+    if (o.kind === 'open') {
+      this.select('Head', o.arched ? 'arch' : 'square', [
+        ['square', 'Square'],
+        ['arch', 'Round arch'],
+      ], (v) => {
+        o.arched = v === 'arch' || undefined;
+        this.done();
+      });
+      this.number('Sill height', o.sill, 0.01, 0, 10, (v) => {
+        o.sill = v;
+        this.done();
+      }, 'm', '0 for a doorway you walk through; higher for an unglazed window opening');
+      if (o.arched) this.note(`Height is to the top of the arch; it springs ${(o.height - o.width / 2).toFixed(2)} m above the sill.`);
+    }
     if (o.kind === 'glazed') {
       this.select('Style', o.style ?? 'french', [
         ['french', 'French doors'],
