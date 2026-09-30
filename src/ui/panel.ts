@@ -1,7 +1,7 @@
 // Properties panel for the current selection. Every change goes through the model's
 // clean-up (normalize), so e.g. thickening a wall re-mitres its corners and re-fits its openings.
 
-import { addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
+import { addLevelBelow, addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
 import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, parapetHeight, roofAreaRings, setAreaRoof } from '../model/roof';
 import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
@@ -332,7 +332,17 @@ export class Panel {
         this.done();
       }, 'm', 'Thickness of this floor, which is also the ceiling structure of the floor below');
     }
-    this.note(`Floor level +${levelElevation(b, id).toFixed(2)} m · ceiling height ${ceilingHeight(b, level).toFixed(2)} m`);
+    const z = levelElevation(b, id);
+    if (!isGround) {
+      this.number('Floor level', z, 0.05, -20, 100, (v) => {
+        level.base = v;
+        this.done();
+      }, 'm', 'Height of this floor above the ground: e.g. 0.6 for a house on a plinth, -1.5 for one half below ground. Floors on top of it follow.');
+    }
+    this.note(
+      `Floor level ${z >= 0 ? '+' : '−'}${Math.abs(z).toFixed(2)} m · ceiling height ${ceilingHeight(b, level).toFixed(2)} m` +
+        (!isGround && level.base !== undefined ? ' · set for this floor (floors on top of it follow it)' : ''),
+    );
 
     // Default roof for the parts of this floor with nothing above them.
     const roof = defaultRoof(b, level) ?? { ...DEFAULT_ROOF, kind: 'none' as const };
@@ -344,6 +354,12 @@ export class Panel {
     this.buttons([
       ['Add floor above', () => this.addFloor(true)],
       ['Add empty floor', () => this.addFloor(false)],
+      ['Add floor below', () => {
+        const below = addLevelBelow(b, level);
+        this.store.commit();
+        this.editor.select(null);
+        this.store.setActive(below.id);
+      }],
       ['Delete floor', () => {
         if (!confirm(`Delete ${level.name} and everything on it? (You can undo this.)`)) return;
         deleteLevel(b, id);
@@ -910,10 +926,10 @@ export class Panel {
       setPatioSurface(pt, v as PatioSurface);
       this.done();
     });
-    this.number('Height', pt.height, 0.01, 0, 6, (v) => {
+    this.number('Height', pt.height, 0.01, -10, 10, (v) => {
       pt.height = v;
       this.done();
-    }, 'm', 'Height of the top above this floor (the ground, for the ground floor)');
+    }, 'm', 'Height of the top above this floor (the ground, for the ground floor): higher than a step for a plinth or terrace (stone sides), below 0 for a sunken area, dug out of the ground with retaining walls round it');
     if (pt.surface !== 'gravel') {
       const slab = pt.surface === 'paving' || pt.surface === 'rubber';
       const lawn = pt.surface === 'lawn';
@@ -930,8 +946,10 @@ export class Panel {
     const std = PATIO_DEFAULTS[pt.surface].height;
     this.note(
       `${patioArea(level, pt).toFixed(1)} m². ` +
-        (pt.height > std + 0.2
-          ? 'Raised: more than a step up, so it needs steps to walk onto.'
+        (pt.height < 0
+          ? `Sunken ${(-pt.height).toFixed(2)} m: the ground is dug away, with retaining walls round it in the outside wall finish.`
+          : pt.height > std + 0.2
+          ? 'Raised: more than a step up, so it needs steps to walk onto; its sides are in the outside wall finish (stone for a plinth).'
           : 'Drag to move. Where it meets the house it stops at the walls; drawn inside a room, it covers the floor up to them.'),
     );
     this.buttons([
@@ -1105,7 +1123,7 @@ export class Panel {
   }
 
   private addFloor(copyOutline: boolean) {
-    const level = addLevelOnTop(this.store.building, copyOutline);
+    const level = addLevelOnTop(this.store.building, copyOutline, this.store.plan);
     this.store.commit();
     this.editor.select(null);
     this.store.setActive(level.id);

@@ -28,24 +28,74 @@ export function getLevel(b: Building, id: string): Level | undefined {
   return b.levels.find((l) => l.id === id);
 }
 
-/** Height of a level's floor above the ground floor. */
+/**
+ * Height of a level's floor above the ground: its own `base` if it has one, else on top of
+ * the floor before it in the list. The first floor is at the ground.
+ */
 export function levelElevation(b: Building, id: string): number {
   let z = 0;
-  for (const l of b.levels) {
+  for (const [i, l] of b.levels.entries()) {
+    if (i > 0 && l.base !== undefined) z = l.base;
     if (l.id === id) return z;
     z += l.height;
   }
   return z;
 }
 
-export function levelBelow(b: Building, id: string): Level | undefined {
+/** The extent of a floor's walls on plan, or null if it has none yet. */
+function wallExtent(l: Level) {
+  const ps = Object.values(l.nodes);
+  if (!ps.length || !Object.keys(l.walls).length) return null;
+  return {
+    x0: Math.min(...ps.map((p) => p.x)),
+    y0: Math.min(...ps.map((p) => p.y)),
+    x1: Math.max(...ps.map((p) => p.x)),
+    y1: Math.max(...ps.map((p) => p.y)),
+  };
+}
+
+/**
+ * The floor directly below or above one: the nearest one lower (or higher) standing over the
+ * same ground, so two houses side by side at different heights (one on a plinth, one half
+ * below ground) are separate stacks. A floor with no walls yet goes by the order of the list.
+ */
+function neighbour(b: Building, id: string, dir: 1 | -1): Level | undefined {
   const i = b.levels.findIndex((l) => l.id === id);
-  return i > 0 ? b.levels[i - 1] : undefined;
+  if (i < 0) return undefined;
+  const level = b.levels[i];
+  const own = wallExtent(level);
+  if (!own) return b.levels[i + dir];
+  const z = levelElevation(b, id);
+  let best: Level | undefined;
+  let bestZ = 0;
+  for (const other of b.levels) {
+    if (other === level) continue;
+    const e = wallExtent(other);
+    if (!e || e.x0 >= own.x1 - 0.05 || own.x0 >= e.x1 - 0.05 || e.y0 >= own.y1 - 0.05 || own.y0 >= e.y1 - 0.05) continue;
+    const oz = levelElevation(b, other.id);
+    if (dir > 0 ? oz <= z + 1e-6 : oz >= z - 1e-6) continue;
+    if (!best || (dir > 0 ? oz < bestZ : oz > bestZ)) {
+      best = other;
+      bestZ = oz;
+    }
+  }
+  return best;
+}
+
+export function levelBelow(b: Building, id: string): Level | undefined {
+  return neighbour(b, id, -1);
 }
 
 export function levelAbove(b: Building, id: string): Level | undefined {
-  const i = b.levels.findIndex((l) => l.id === id);
-  return i >= 0 ? b.levels[i + 1] : undefined;
+  return neighbour(b, id, 1);
+}
+
+/** The floors from the top down, as the floor list shows them. */
+export function levelsTopDown(b: Building): Level[] {
+  return b.levels
+    .map((l, i) => ({ l, i, z: levelElevation(b, l.id) }))
+    .sort((p, q) => q.z - p.z || q.i - p.i)
+    .map((p) => p.l);
 }
 
 /** Clear room height of a level: up to the underside of the floor above. */
@@ -57,9 +107,13 @@ export function ceilingHeight(b: Building, level: Level): number {
  * Add a storey on top of the building. With `copyOutline`, the outside walls of the
  * current top floor are copied up so you can start drawing inside them.
  */
-export function addLevelOnTop(b: Building, copyOutline: boolean): Level {
-  const top = b.levels[b.levels.length - 1];
+export function addLevelOnTop(b: Building, copyOutline: boolean, onto?: Level): Level {
+  const last = b.levels[b.levels.length - 1];
+  const top = onto ?? last;
   const level = createLevel(b, undefined, top?.height ?? DEFAULTS.levelHeight);
+  // On top of a floor that isn't the last in the list: say where it goes, so the floors
+  // after it keep their places.
+  if (top && top !== last) level.base = levelElevation(b, top.id) + top.height;
   if (copyOutline && top) {
     for (const id of outlineWallIds(top)) {
       const w = top.walls[id];
@@ -69,6 +123,23 @@ export function addLevelOnTop(b: Building, copyOutline: boolean): Level {
     for (const id of Object.keys(level.nodes)) if (level.nodes[id]) healNode(level, id);
     normalize(level);
   }
+  b.levels.push(level);
+  return level;
+}
+
+/**
+ * Add a storey below one (a basement, or the lower floor of a house half in the ground),
+ * starting with a copy of its outside walls.
+ */
+export function addLevelBelow(b: Building, under: Level): Level {
+  const level = createLevel(b, 'Lower ground floor', under.height);
+  level.base = levelElevation(b, under.id) - level.height;
+  for (const id of outlineWallIds(under)) {
+    const w = under.walls[id];
+    addWall(level, under.nodes[w.a], under.nodes[w.b], { thickness: w.thickness, height: level.height });
+  }
+  for (const id of Object.keys(level.nodes)) if (level.nodes[id]) healNode(level, id);
+  normalize(level);
   b.levels.push(level);
   return level;
 }

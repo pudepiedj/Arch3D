@@ -6,7 +6,7 @@
 // true areas of the roof slopes, rooms' floor areas, and so on. Where the drawing doesn't say
 // (how the walls are built, what the roof is covered with) the assumptions say.
 
-import { levelAbove } from './building';
+import { levelAbove, levelBelow } from './building';
 import { type Vec2, dist, projectOnSegment } from './geom';
 import { computeFootprints, wallPoint } from './joints';
 import { levelRoofs, type Point3 } from './roof';
@@ -221,7 +221,10 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
   };
 
   b.levels.forEach((level, li) => {
-    const ground = li === 0;
+    // Foundations and ground-floor slabs under whichever floor has nothing below it (the
+    // ground floor, or the lowest floor of each house); the garden on the first floor.
+    const ground = !levelBelow(b, level.id);
+    const garden = li === 0;
     const fps = computeFootprints(level);
     const roofs = levelRoofs(b, level);
     // For an area, only the floors that have a room or a roof in it (not the upper floor of
@@ -614,7 +617,7 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
     }
 
     // ---- Garden and drains (the ground floor's).
-    if (ground) {
+    if (garden) {
       for (const pt of Object.values(level.patios ?? {})) {
         if (!inside(centroid(pt.points.map((p) => ({ ...p, z: 0 }))))) continue;
         const m2 = patioArea(level, pt);

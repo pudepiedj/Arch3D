@@ -186,7 +186,7 @@ export interface LevelRoof {
 
 /** The default roof for a floor's uncovered parts (null for none). */
 export function defaultRoof(b: Building, level: Level): Roof | null {
-  const isTop = b.levels[b.levels.length - 1]?.id === level.id;
+  const isTop = !levelAbove(b, level.id);
   const r = level.roof ?? (isTop ? DEFAULT_ROOF : DEFAULT_LOWER_ROOF);
   return r.kind === 'none' ? null : r;
 }

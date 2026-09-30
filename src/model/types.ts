@@ -254,6 +254,12 @@ export interface Level extends Plan {
   name: string;
   /** Floor-to-floor height. Walls normally run this full height, up to the next floor. */
   height: number;
+  /**
+   * Height of this floor above the ground, when it is not simply on top of the floor before
+   * it in the list: a house on a plinth (+0.6), or half below ground (-1.5). The first floor
+   * in the list (the garden's) is always at 0.
+   */
+  base?: number;
   /** Thickness of this floor's structure (the slab above the storey below). */
   slab: number;
   /** Stairs going up from this level. */

@@ -6,7 +6,7 @@
 // and walking off the top lands on the next floor. Walls of the storey the walker is on,
 // and stair steps too high to step onto, block movement.
 
-import { levelElevation } from './building';
+import { levelBelow, levelElevation } from './building';
 import { Vec2, pointInPolygon } from './geom';
 import { computeFootprints, type Footprint } from './joints';
 import { openingsOf } from './openings';
@@ -53,10 +53,12 @@ interface Block {
 export class WalkWorld {
   private levels: { id: string; elevation: number; colliders: Collider[]; posts: { x: number; y: number; r: number }[] }[] = [];
   private surfaces: Surface[] = [];
+  /** Each storey's floor-to-floor height, in the order of `levels`. */
+  private heights: number[] = [];
   private blocks: Block[] = [];
 
   constructor(b: Building) {
-    b.levels.forEach((level, i) => {
+    b.levels.forEach((level) => {
       const elevation = levelElevation(b, level.id);
       const posts = Object.values(level.pillars ?? {}).map((q) => ({
         x: q.x,
@@ -78,14 +80,15 @@ export class WalkWorld {
         this.blocks.push({ poly: footprint(f), bottom: base, top: base + Math.max(f.height, STEP_UP + 0.05) });
       }
       this.levels.push({ id: level.id, elevation, colliders: buildColliders(level), posts });
-      const below = b.levels[i - 1];
+      this.heights.push(level.height);
+      const below = levelBelow(b, level.id);
       const holes = below ? stairwells(below).map((shape) => shape[0]) : [];
       for (const r of detectRooms(level)) this.surfaces.push({ poly: r.polygon, holes, z: elevation + 0.005 });
       for (const pt of Object.values(level.patios ?? {})) {
         for (const [poly, ...holes] of patioShapes(level, pt)) {
           this.surfaces.push({ poly, holes, z: elevation + pt.height });
           // A raised deck is solid: too high to step onto, and not to be walked through.
-          this.blocks.push({ poly, holes, bottom: elevation, top: elevation + pt.height });
+          if (pt.height > 0) this.blocks.push({ poly, holes, bottom: elevation, top: elevation + pt.height });
         }
       }
       for (const s of Object.values(level.stairs ?? {})) {
@@ -119,6 +122,21 @@ export class WalkWorld {
     return id;
   }
 
+  /**
+   * The walls and posts that stop a walker at `foot`: those of every floor whose storey the
+   * walker's body is in (two houses side by side at different heights both count), or the
+   * floor below them if they are above every storey.
+   */
+  private around(foot: number): { colliders: Collider[]; posts: { x: number; y: number; r: number }[] } {
+    const body = foot + 0.5;
+    let hit = this.levels.filter((l, i) => l.elevation <= body && body < l.elevation + this.heights[i]);
+    if (!hit.length) {
+      const id = this.levelAt(foot);
+      hit = this.levels.filter((l) => l.id === id);
+    }
+    return { colliders: hit.flatMap((l) => l.colliders), posts: hit.flatMap((l) => l.posts) };
+  }
+
   private blocked(p: Vec2, foot: number): boolean {
     return this.blocks.some(
       (b) =>
@@ -137,13 +155,13 @@ export class WalkWorld {
       const r = i === 8 ? 0 : RADIUS;
       if (this.blocked({ x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r }, foot)) return true;
     }
-    const here = this.levels.find((l) => l.id === this.levelAt(foot));
-    for (const c of here?.colliders ?? []) {
+    const here = this.around(foot);
+    for (const c of here.colliders) {
       const t = { ...p };
       pushOut(t, c);
       if (Math.hypot(t.x - p.x, t.y - p.y) > 1e-6) return true;
     }
-    return (here?.posts ?? []).some((q) => Math.hypot(p.x - q.x, p.y - q.y) < RADIUS + q.r);
+    return here.posts.some((q) => Math.hypot(p.x - q.x, p.y - q.y) < RADIUS + q.r);
   }
 
   /** The nearest spot to p (searching outwards) where a walker can stand clear of everything. */
@@ -172,12 +190,12 @@ export class WalkWorld {
         { x: cur.x + sx, y: cur.y },
         { x: cur.x, y: cur.y + sy },
       ];
-      const here = this.levels.find((l) => l.id === this.levelAt(foot));
-      const colliders = here?.colliders ?? [];
+      const here = this.around(foot);
+      const colliders = here.colliders;
       for (const t of tries) {
         for (let iter = 0; iter < 3; iter++) {
           for (const c of colliders) pushOut(t, c);
-          for (const q of here?.posts ?? []) {
+          for (const q of here.posts) {
             const d = Math.hypot(t.x - q.x, t.y - q.y);
             const min = RADIUS + q.r;
             if (d < min && d > 1e-9) {

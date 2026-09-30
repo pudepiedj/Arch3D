@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
-import { patioAt } from '../model/patios';
+import { patioAt, patioShapes } from '../model/patios';
+import { outerFaces } from '../model/roof';
 import { planBounds } from '../model/plan';
-import { dist } from '../model/geom';
+import { type Vec2, dist } from '../model/geom';
 import { offsetLine } from '../model/hedges';
 import { subtract, unionAll } from '../model/clip';
 import { WalkWorld } from '../model/walk';
@@ -277,10 +278,22 @@ export class View3D {
     }
   }
 
-  /** The ground, with holes where ditches are dug into it. */
+  /**
+   * The ground, with holes where it is dug away: ditches, sunken patios (the alley or
+   * courtyard below the ground), and under any floor below the ground, so a basement or a
+   * half-sunk storey shows.
+   */
   private cutGround(b: Building) {
     const ditches = Object.values(b.levels[0]?.hedges ?? {}).filter((h) => h.kind === 'ditch');
-    const key = JSON.stringify(ditches.map((h) => [h.points, h.width]));
+    const dug: Vec2[][] = [];
+    for (const level of b.levels) {
+      const z = levelElevation(b, level.id);
+      if (z < -0.05) dug.push(...outerFaces(level));
+      for (const pt of Object.values(level.patios ?? {})) {
+        if (z + pt.height < -0.005) dug.push(...patioShapes(level, pt).map((shape) => shape[0]));
+      }
+    }
+    const key = JSON.stringify([ditches.map((h) => [h.points, h.width]), dug]);
     if (key === this.groundCut) return;
     this.groundCut = key;
     const circle = Array.from({ length: 96 }, (_, i) => ({ x: 200 * Math.cos((i / 96) * Math.PI * 2), y: 200 * Math.sin((i / 96) * Math.PI * 2) }));
@@ -293,7 +306,8 @@ export class View3D {
         const r = offsetLine(pts, -h.width / 2);
         return pts.slice(1).map((_, i) => [l[i], l[i + 1], r[i + 1], r[i]]);
       });
-      if (!pieces.length) throw new Error('no ditches');
+      pieces.push(...dug);
+      if (!pieces.length) throw new Error('nothing dug');
       const shapes = subtract(circle, unionAll(pieces)).map(([outer, ...holes]) => {
         // Plan (x, y) lies at (x, -y) in the circle's own plane before it is turned flat.
         const s = new THREE.Shape(outer.map((p) => new THREE.Vector2(p.x, -p.y)));

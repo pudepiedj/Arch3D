@@ -6,13 +6,13 @@
 // plan is edited, the result is watertight at joints and has no stray slivers.
 
 import * as THREE from 'three';
-import { Vec2, dot, pointInPolygon, sub } from '../model/geom';
+import { Vec2, dot, pointInPolygon, projectOnSegment, sub } from '../model/geom';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import { openingsOf } from '../model/openings';
 import { detectRooms } from '../model/rooms';
-import { ceilingHeight, levelElevation } from '../model/building';
+import { ceilingHeight, levelBelow, levelElevation } from '../model/building';
 import { type Shape, intersectAll, subtract } from '../model/clip';
-import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs, planeOf } from '../model/roof';
+import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs, outerFaces, planeOf } from '../model/roof';
 import { type StairGeometry, stairGeometry, stairSurfaceAt, stairwells } from '../model/stairs';
 import { type RailLine, againstWall, buildRails, onSegment } from './rails';
 import { pillarHeight } from '../model/pillars';
@@ -385,6 +385,9 @@ export interface LevelOptions {
   furniture?: (Furniture & { base: number })[];
   /** How leafy the broad-leaved trees are: 1 summer, 0 bare; `autumn` colours them. */
   season?: Season;
+  /** The ground's height in this floor's terms (minus the floor's elevation), and the house's outline. */
+  ground?: number;
+  house?: Vec2[][];
   /** The drawing's default finishes (walls outside and in, floors). */
   materials?: { outside: WallFinish; inside: WallFinish; floor: FloorFinish };
 }
@@ -405,27 +408,30 @@ export function buildBuildingObject(
   season: Season = { leaf: 1, autumn: false },
 ): THREE.Group {
   const group = new THREE.Group();
-  const cut = upTo ? b.levels.findIndex((l) => l.id === upTo) : -1;
-  b.levels.forEach((level, i) => {
-    if (cut >= 0 && i > cut) return;
-    const below = b.levels[i - 1];
+  // Cut away: hide the floors higher than the one chosen (and its ceilings and roofs).
+  const cutZ = upTo ? levelElevation(b, upTo) : Infinity;
+  b.levels.forEach((level) => {
+    const z = levelElevation(b, level.id);
+    if (z > cutZ + 1e-6) return;
+    const isCut = level.id === upTo;
+    const below = levelBelow(b, level.id);
     // Rooflight boxes on flat roofs open a light well through the ceiling and the roof.
     const rooflights =
-      i === cut ? [] : Object.values(level.rooflights ?? {}).flatMap((r) => rooflightGeometry(b, level, r) ?? []);
+      isCut ? [] : Object.values(level.rooflights ?? {}).flatMap((r) => rooflightGeometry(b, level, r) ?? []);
     const kerbs = rooflights.filter((r) => r.kind === 'kerb');
-    const roofs = i === cut ? [] : levelRoofs(b, level);
+    const roofs = isCut ? [] : levelRoofs(b, level);
     // Vaulted roofs have no flat ceiling under them: cut their outline out of the ceilings.
     const vaults = roofs.filter((r) => r.roof.vaulted && r.roof.kind !== 'flat' && r.geometry).map((r) => [r.ring]);
     const obj = buildPlanObject(level, mats, {
-      ceiling: i === cut ? null : ceilingHeight(b, level),
+      ceiling: isCut ? null : ceilingHeight(b, level),
       floorHoles: below ? stairwells(below) : [],
       wellExits: below ? Object.values(below.stairs ?? {}).map((st) => stairGeometry(st, below.height).path.at(-1)!) : [],
       ceilingHoles: [...stairwells(level), ...kerbs.map((r) => [r.footprint]), ...vaults],
       slab: level.slab,
       stairs: Object.values(level.stairs ?? {}).map((st) => stairGeometry(st, level.height)),
       pillars: Object.values(level.pillars ?? {}).map((q) => ({ ...q, height: pillarHeight(b, level, q) })),
-      chimneys: i === cut ? [] : Object.values(level.chimneys ?? {}).map((c) => chimneyGeometry(b, level, c)),
-      solar: i === cut ? [] : Object.values(level.solar ?? {}).flatMap((sa) => solarGeometry(b, level, sa) ?? []),
+      chimneys: isCut ? [] : Object.values(level.chimneys ?? {}).map((c) => chimneyGeometry(b, level, c)),
+      solar: isCut ? [] : Object.values(level.solar ?? {}).flatMap((sa) => solarGeometry(b, level, sa) ?? []),
       rooflights,
       roofs: roofs.flatMap((r) => (r.geometry ? [{ ...r.geometry, vaulted: !!r.roof.vaulted && r.roof.kind !== 'flat', glazedGables: !!r.roof.glazedGables && r.roof.kind !== 'flat', covering: r.roof.covering }] : [])),
       patios: Object.values(level.patios ?? {}).map((patio) => ({ patio, shapes: patioShapes(level, patio) })),
@@ -435,6 +441,8 @@ export function buildBuildingObject(
       furniture: Object.values(level.furniture ?? {}).map((f) => ({ ...f, base: standingHeight(level, f) })),
       season,
       materials: { ...DEFAULT_MATERIALS, ...b.materials },
+      ground: -levelElevation(b, level.id),
+      house: Object.values(level.patios ?? {}).some((pt) => pt.height < -levelElevation(b, level.id)) ? outerFaces(level) : [],
     });
     obj.position.y = levelElevation(b, level.id);
     obj.name = `level:${level.id}`;
@@ -539,7 +547,7 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
     group.add(m);
   }
 
-  if (opts.patios?.length) group.add(buildPatios(opts.patios, mats));
+  if (opts.patios?.length) group.add(buildPatios(opts.patios, mats, wallMaterial(finishes.outside), opts.ground ?? 0, opts.house ?? []));
   for (const t of opts.trees ?? []) group.add(buildTree(t, mats, opts.season ?? { leaf: 1, autumn: false }, opts.north ?? 0));
   for (const { hedge, runs } of opts.hedges ?? []) group.add(buildHedge(hedge, runs, opts.season ?? { leaf: 1, autumn: false }));
   for (const f of opts.furniture ?? []) {
@@ -622,10 +630,28 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
  * Patios: a textured top, with the pattern turned to the patio's direction, and edges down
  * to the ground (the level's floor): stone for paving and gravel, a timber fascia for decks.
  */
-function buildPatios(list: { patio: Patio; shapes: Shape[] }[], mats: Materials): THREE.Group {
+/**
+ * Patios, decks and the rest, with their sides: a raised one more than a step high (a
+ * plinth) has sides in the outside wall finish; a sunken one (its top below the ground) has
+ * retaining walls round it in that finish, from its floor up to the ground, except along the
+ * house, whose own wall is there. `ground` is the ground's height in this floor's terms.
+ */
+function buildPatios(
+  list: { patio: Patio; shapes: Shape[] }[],
+  mats: Materials,
+  outside: THREE.Material = mats.paveEdge,
+  ground = 0,
+  house: Vec2[][] = [],
+): THREE.Group {
   const g = new THREE.Group();
   g.name = 'patios';
+  const alongHouse = (p: Vec2, q: Vec2) => {
+    const m = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+    return house.some((ring) => ring.some((a, k) => projectOnSegment(m, a, ring[(k + 1) % ring.length]).dist < 0.03));
+  };
   for (const { patio, shapes } of list) {
+    const sunk = patio.height < ground - 0.005;
+    const plinth = patio.height > ground + 0.25;
     const period = patioPeriod(patio);
     const along = { x: Math.cos(patio.angle), y: Math.sin(patio.angle) };
     const across = { x: -along.y, y: along.x };
@@ -656,7 +682,8 @@ function buildPatios(list: { patio: Patio; shapes: Shape[] }[], mats: Materials)
           const q = ring[(k + 1) % ring.length];
           // Outward normal of the edge p->q, for a ring running counter-clockwise.
           const out = new THREE.Vector3(q.y - p.y, 0, p.x - q.x).multiplyScalar(ccw);
-          edges.vface(p, q, -0.01, z, out);
+          if (!sunk) edges.vface(p, q, ground - 0.01, z, out);
+          else if (!alongHouse(p, q)) edges.vface(p, q, z, ground, out.negate());
         });
       }
     }
@@ -667,7 +694,10 @@ function buildPatios(list: { patio: Patio; shapes: Shape[] }[], mats: Materials)
     const top = new THREE.Mesh(geo, mats[patio.surface]);
     top.receiveShadow = true;
     top.name = `patio:${patio.id}`;
-    const side = new THREE.Mesh(edges.geometry(), patio.surface === 'decking' ? mats.deckEdge : patio.surface === 'lawn' ? mats.lawnEdge : mats.paveEdge);
+    const side = new THREE.Mesh(
+      edges.geometry(),
+      sunk || plinth ? outside : patio.surface === 'decking' ? mats.deckEdge : patio.surface === 'lawn' ? mats.lawnEdge : mats.paveEdge,
+    );
     side.receiveShadow = side.castShadow = true;
     g.add(top, side);
   }

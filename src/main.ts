@@ -1,4 +1,4 @@
-import { addLevelOnTop, migrate } from './model/building';
+import { addLevelOnTop, getLevel, levelsTopDown, migrate } from './model/building';
 import { demoBuilding } from './model/demo';
 import type { Building } from './model/types';
 import { View3D, type ViewMode } from './three/view3d';
@@ -292,14 +292,14 @@ function renderLevels() {
   nav.replaceChildren();
   const add = document.createElement('button');
   add.textContent = '+ Floor';
-  add.title = 'Add a floor on top, starting with a copy of the outside walls below';
+  add.title = 'Add a floor on top of this one, starting with a copy of its outside walls';
   add.addEventListener('click', () => {
-    const level = addLevelOnTop(store.building, true);
+    const level = addLevelOnTop(store.building, true, getLevel(store.building, store.activeId));
     store.commit();
     setLevel(level.id);
   });
   nav.append(add);
-  for (const level of [...store.building.levels].reverse()) {
+  for (const level of levelsTopDown(store.building)) {
     const b = document.createElement('button');
     b.textContent = level.name;
     const active = level.id === store.activeId;
@@ -324,7 +324,7 @@ renderLevels();
 // Page Up / Page Down move between floors.
 window.addEventListener('keydown', (e) => {
   if (e.key !== 'PageUp' && e.key !== 'PageDown') return;
-  const levels = store.building.levels;
+  const levels = levelsTopDown(store.building).reverse();
   const i = levels.findIndex((l) => l.id === store.activeId) + (e.key === 'PageUp' ? 1 : -1);
   if (levels[i]) {
     e.preventDefault();
