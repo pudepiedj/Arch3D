@@ -113,7 +113,7 @@ export interface Rooflight {
   solarMotor: boolean;
 }
 
-export type PatioSurface = 'paving' | 'decking' | 'gravel' | 'rubber' | 'lawn';
+export type PatioSurface = 'paving' | 'decking' | 'gravel' | 'rubber' | 'lawn' | 'pool';
 
 /** A paved, decked or gravelled area outside, drawn as a polygon on a floor's plan. */
 export interface Patio {
@@ -126,6 +126,8 @@ export interface Patio {
   angle: number;
   /** Paving slab size (square), or deck board width. */
   module: number;
+  /** A railing round its edge: glass panels (round a pool), wrought iron or timber. */
+  guard?: Exclude<RailStyle, 'none'>;
 }
 
 /** 'deciduous' and 'conifer' are the generic kinds; the rest are species, plus a bush. */

@@ -103,8 +103,10 @@ export const DEFAULT_PRICES: Record<string, number> = {
   decking: 60,
   gravel: 12,
   lawn: 7, // turf, with a little topsoil, £/m²
-  rubber: 30,
-  'garden-wall': 140, // stone walling, coping and footing, materials, £/m² of wall face // interlocking rubber tiles, 20 mm, £/m²
+  rubber: 30, // interlocking rubber tiles, 20 mm, £/m²
+  pool: 900, // a built pool: shell, mosaic lining, coping, filtration; £/m² of water
+  'glass-balustrade': 350, // £/m
+  'garden-wall': 140, // stone walling, coping and footing, materials, £/m² of wall face
   'sub-base': 45,
   fence: 45,
   hedge: 4,
@@ -621,8 +623,12 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
       for (const pt of Object.values(level.patios ?? {})) {
         if (!inside(centroid(pt.points.map((p) => ({ ...p, z: 0 }))))) continue;
         const m2 = patioArea(level, pt);
-        add({ id: `patio:${pt.id}`, price: pt.surface, group: 'Garden and drains', item: `${{ paving: 'Paving', decking: 'Decking', gravel: 'Gravel', rubber: 'Rubber floor tiles', lawn: 'Lawn: turf and topsoil' }[pt.surface]}`, detail: pt.surface === 'paving' || pt.surface === 'rubber' ? `${m2.toFixed(1)} m²: about ${Math.ceil((m2 / (pt.module * pt.module)) * 1.05)} ${pt.surface === 'rubber' ? 'tiles' : 'slabs'} of ${Math.round(pt.module * 100)} cm` : undefined, qty: m2, unit: 'm²' });
+        add({ id: `patio:${pt.id}`, price: pt.surface, group: 'Garden and drains', item: `${{ paving: 'Paving', decking: 'Decking', gravel: 'Gravel', rubber: 'Rubber floor tiles', lawn: 'Lawn: turf and topsoil', pool: 'Swimming pool: shell, lining, coping and filtration' }[pt.surface]}`, detail: pt.surface === 'paving' || pt.surface === 'rubber' ? `${m2.toFixed(1)} m²: about ${Math.ceil((m2 / (pt.module * pt.module)) * 1.05)} ${pt.surface === 'rubber' ? 'tiles' : 'slabs'} of ${Math.round(pt.module * 100)} cm` : undefined, qty: m2, unit: 'm²' });
         if (pt.surface === 'paving' || pt.surface === 'gravel') add({ id: `subbase:${pt.id}`, price: 'sub-base', group: 'Garden and drains', item: 'Sub-base (MOT type 1, 100 mm)', qty: m2 * 0.1, unit: 'm³' });
+        if (pt.guard === 'glass') {
+          const perimeter = pt.points.reduce((s, p, i) => s + dist(p, pt.points[(i + 1) % pt.points.length]), 0);
+          add({ id: `balustrade:${pt.id}`, price: 'glass-balustrade', group: 'Garden and drains', item: pt.surface === 'pool' ? 'Glass balustrade round the pool' : 'Glass balustrade', qty: perimeter, unit: 'm' });
+        }
       }
       for (const h of Object.values(level.hedges ?? {})) {
         const mid = h.points[Math.floor(h.points.length / 2)];

@@ -19,7 +19,13 @@ export const PATIO_DEFAULTS: Record<PatioSurface, { height: number; module: numb
   rubber: { height: 0.02, module: 0.5 },
   // Mown grass, level with the ground: the module is the width of the mowing stripes.
   lawn: { height: 0.01, module: 0.8 },
+  // A swimming pool: its floor this far below the ground (the water a little below the edge).
+  pool: { height: -1.5, module: 0 },
 };
+
+/** The stone coping round a pool's edge, and how far the water lies below it. */
+export const POOL_COPING = 0.3;
+export const POOL_WATER = 0.15;
 
 /** Patios higher than this are raised decks (e.g. on a flat roof) and are not cut by the walls. */
 const CUT_BELOW = 1;

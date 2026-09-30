@@ -937,7 +937,8 @@ export class Panel {
     const level = this.store.plan;
     const pt = level.patios?.[id];
     if (!pt) return;
-    const names: Record<PatioSurface, string> = { paving: 'Patio', decking: 'Deck', gravel: 'Gravel', rubber: 'Rubber floor', lawn: 'Lawn' };
+    const names: Record<PatioSurface, string> = { paving: 'Patio', decking: 'Deck', gravel: 'Gravel', rubber: 'Rubber floor', lawn: 'Lawn', pool: 'Swimming pool' };
+    const pool = pt.surface === 'pool';
     this.title(names[pt.surface]);
     this.select('Surface', pt.surface, [
       ['paving', 'Paving'],
@@ -945,15 +946,32 @@ export class Panel {
       ['gravel', 'Gravel'],
       ['rubber', 'Rubber tiles'],
       ['lawn', 'Lawn'],
+      ['pool', 'Swimming pool'],
     ], (v) => {
       setPatioSurface(pt, v as PatioSurface);
       this.done();
     });
-    this.number('Height', pt.height, 0.01, -10, 10, (v) => {
-      pt.height = v;
+    if (pool) {
+      this.number('Depth', -pt.height, 0.05, 0.3, 5, (v) => {
+        pt.height = -v;
+        this.done();
+      }, 'm', 'From the edge to the bottom of the pool');
+    } else {
+      this.number('Height', pt.height, 0.01, -10, 10, (v) => {
+        pt.height = v;
+        this.done();
+      }, 'm', 'Height of the top above this floor (the ground, for the ground floor): higher than a step for a plinth or terrace (stone sides), below 0 for a sunken area, dug out of the ground with retaining walls round it');
+    }
+    this.select('Railing', pt.guard ?? 'none', [
+      ['none', 'None'],
+      ['glass', 'Glass panels'],
+      ['iron', 'Wrought iron'],
+      ['timber', 'Timber'],
+    ], (v) => {
+      pt.guard = v === 'none' ? undefined : (v as NonNullable<typeof pt.guard>);
       this.done();
-    }, 'm', 'Height of the top above this floor (the ground, for the ground floor): higher than a step for a plinth or terrace (stone sides), below 0 for a sunken area, dug out of the ground with retaining walls round it');
-    if (pt.surface !== 'gravel') {
+    });
+    if (pt.surface !== 'gravel' && !pool) {
       const slab = pt.surface === 'paving' || pt.surface === 'rubber';
       const lawn = pt.surface === 'lawn';
       const [label, lo, hi] = lawn ? ['Stripe width', 0.3, 3] : slab ? [pt.surface === 'rubber' ? 'Tile size' : 'Slab size', 0.2, 1.2] : ['Board width', 0.08, 0.3];
@@ -969,7 +987,9 @@ export class Panel {
     const std = PATIO_DEFAULTS[pt.surface].height;
     this.note(
       `${patioArea(level, pt).toFixed(1)} m². ` +
-        (pt.height < 0
+        (pool
+          ? `About ${Math.round(patioArea(level, pt) * (-pt.height - 0.15))} m³ of water (${Math.round(patioArea(level, pt) * (-pt.height - 0.15) * 1000).toLocaleString('en-GB')} litres). Mosaic-lined, with a stone coping round the edge; a railing stands at the outside of the coping.`
+          : pt.height < 0
           ? `Sunken ${(-pt.height).toFixed(2)} m: the ground is dug away, with retaining walls round it in the outside wall finish.`
           : pt.height > std + 0.2
           ? 'Raised: more than a step up, so it needs steps to walk onto; its sides are in the outside wall finish (stone for a plinth).'

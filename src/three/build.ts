@@ -6,13 +6,13 @@
 // plan is edited, the result is watertight at joints and has no stray slivers.
 
 import * as THREE from 'three';
-import { Vec2, dot, pointInPolygon, projectOnSegment, sub } from '../model/geom';
+import { Vec2, dot, pointInPolygon, polygonArea, projectOnSegment, sub } from '../model/geom';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import { openingsOf } from '../model/openings';
 import { detectRooms } from '../model/rooms';
 import { ceilingHeight, levelBelow, levelElevation } from '../model/building';
 import { type Shape, intersectAll, subtract } from '../model/clip';
-import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs, outerFaces, planeOf } from '../model/roof';
+import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs, outerFaces, outsetLoop, planeOf } from '../model/roof';
 import { type StairGeometry, reachesFloorAbove, stairGeometry, stairRise, stairSurfaceAt, stairwells } from '../model/stairs';
 import { type RailLine, againstWall, buildRails, onSegment } from './rails';
 import { pillarHeight } from '../model/pillars';
@@ -24,7 +24,7 @@ import {
   rooflightGeometry,
   solarGeometry,
 } from '../model/roofitems';
-import { patioShapes } from '../model/patios';
+import { POOL_COPING, POOL_WATER, patioShapes } from '../model/patios';
 import { type Species, crownBase, leanDirection, speciesOf, trunkRadius } from '../model/trees';
 import { standingHeight } from '../model/furniture';
 import { buildFurniture } from './furniture3d';
@@ -55,6 +55,9 @@ export interface Materials {
   gravel: THREE.Material;
   rubber: THREE.Material;
   lawn: THREE.Material;
+  /** A pool's mosaic lining (floor and sides), and its water. */
+  pool: THREE.Material;
+  water: THREE.Material;
   lawnEdge: THREE.Material;
   paveEdge: THREE.Material;
   deckEdge: THREE.Material;
@@ -94,6 +97,8 @@ export function createMaterials(): Materials {
     gravel: new THREE.MeshStandardMaterial({ color: 0xffffff, map: gravelTexture(), roughness: 1 }),
     rubber: new THREE.MeshStandardMaterial({ color: 0xffffff, map: rubberTexture(), roughness: 0.95 }),
     lawn: new THREE.MeshStandardMaterial({ color: 0xffffff, map: lawnTexture(), roughness: 1 }),
+    pool: new THREE.MeshStandardMaterial({ color: 0xffffff, map: mosaicTexture(), roughness: 0.3, side: THREE.DoubleSide }),
+    water: new THREE.MeshPhysicalMaterial({ color: 0x3f9fc8, roughness: 0.05, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }),
     lawnEdge: new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 1 }),
     paveEdge: new THREE.MeshStandardMaterial({ color: 0xb9b3a8, roughness: 0.9 }),
     deckEdge: new THREE.MeshStandardMaterial({ color: 0x8a6446, roughness: 0.75 }),
@@ -256,6 +261,23 @@ function lawnTexture() {
       const y = r() * 512;
       ctx.fillStyle = `hsla(${88 + r() * 24}, ${30 + r() * 25}%, ${y < 256 ? 42 + r() * 22 : 34 + r() * 18}%, 0.55)`;
       ctx.fillRect(x, y, 1, 2 + r() * 3);
+    }
+  });
+}
+
+/** Pool mosaic: 3 cm glass tiles in light blues, a metre square. */
+function mosaicTexture() {
+  return canvasTexture(512, 512, (ctx) => {
+    const r = rng(19);
+    const n = 32;
+    const s = 512 / n;
+    ctx.fillStyle = '#e6eef0';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        ctx.fillStyle = `hsl(${190 + r() * 16}, ${45 + r() * 25}%, ${52 + r() * 18}%)`;
+        ctx.fillRect(i * s + 1, j * s + 1, s - 2, s - 2);
+      }
     }
   });
 }
@@ -567,6 +589,24 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   }
 
   if (opts.patios?.length) group.add(buildPatios(opts.patios, mats, wallMaterial(finishes.outside), opts.ground ?? 0, opts.house ?? []));
+  // Railings round patios that have one: round a pool at the outside of its coping, at the
+  // ground; round a raised terrace at its edge, on its top.
+  for (const style of ['glass', 'iron', 'timber'] as const) {
+    const lines: RailLine[] = [];
+    for (const { patio, shapes } of opts.patios ?? []) {
+      if (patio.guard !== style) continue;
+      const pool = patio.surface === 'pool';
+      const z = pool || patio.height < (opts.ground ?? 0) ? (opts.ground ?? 0) + (pool ? 0.03 : 0) : patio.height;
+      for (const shape of shapes) {
+        let ring = shape[0];
+        if (polygonArea(ring) < 0) ring = [...ring].reverse();
+        if (pool) ring = outsetLoop(ring, ring.map(() => POOL_COPING - 0.05));
+        const pts = [...ring, ring[0]].map((p) => ({ p, z }));
+        lines.push({ points: pts, baseAt: () => z });
+      }
+    }
+    if (lines.length) group.add(buildRails(lines, [...fps.values(), ...(opts.nearWalls ?? [])], mats.door, mats.frame, style, mats.glass));
+  }
   for (const t of opts.trees ?? []) group.add(buildTree(t, mats, opts.season ?? { leaf: 1, autumn: false }, opts.north ?? 0));
   for (const { hedge, runs } of opts.hedges ?? []) group.add(buildHedge(hedge, runs, opts.season ?? { leaf: 1, autumn: false }));
   for (const f of opts.furniture ?? []) {
@@ -728,12 +768,33 @@ function buildPatios(
     const top = new THREE.Mesh(geo, mats[patio.surface]);
     top.receiveShadow = true;
     top.name = `patio:${patio.id}`;
+    const pool = patio.surface === 'pool';
     const side = new THREE.Mesh(
       edges.geometry(),
-      sunk || plinth ? outside : patio.surface === 'decking' ? mats.deckEdge : patio.surface === 'lawn' ? mats.lawnEdge : mats.paveEdge,
+      pool ? mats.pool : sunk || plinth ? outside : patio.surface === 'decking' ? mats.deckEdge : patio.surface === 'lawn' ? mats.lawnEdge : mats.paveEdge,
     );
     side.receiveShadow = side.castShadow = true;
     g.add(top, side);
+    if (pool) {
+      // The water, a little below the edge, and a stone coping round the edge.
+      const water = new Mesher();
+      const coping = new Mesher();
+      for (const shape of shapes) {
+        water.hshape(shape, ground - POOL_WATER, true);
+        let ring = shape[0];
+        if (polygonArea(ring) < 0) ring = [...ring].reverse();
+        const outer = outsetLoop(ring, ring.map(() => POOL_COPING));
+        const top = ground + 0.03;
+        coping.hshape([outer, ring], top, true);
+        outer.forEach((p, k) => coping.vface(p, outer[(k + 1) % outer.length], ground, top, n3({ x: outer[(k + 1) % outer.length].y - p.y, y: p.x - outer[(k + 1) % outer.length].x })));
+        ring.forEach((p, k) => coping.vface(p, ring[(k + 1) % ring.length], ground - 0.02, top, n3({ x: p.y - ring[(k + 1) % ring.length].y, y: ring[(k + 1) % ring.length].x - p.x })));
+      }
+      const waterMesh = new THREE.Mesh(water.geometry(), mats.water);
+      waterMesh.renderOrder = 1;
+      const copingMesh = new THREE.Mesh(coping.geometry(), wallMaterial('stone'));
+      copingMesh.castShadow = copingMesh.receiveShadow = true;
+      g.add(waterMesh, copingMesh);
+    }
   }
   return g;
 }
