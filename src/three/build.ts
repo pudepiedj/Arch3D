@@ -13,7 +13,7 @@ import { detectRooms } from '../model/rooms';
 import { ceilingHeight, levelBelow, levelElevation } from '../model/building';
 import { type Shape, intersectAll, subtract } from '../model/clip';
 import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs, outerFaces, planeOf } from '../model/roof';
-import { type StairGeometry, stairGeometry, stairSurfaceAt, stairwells } from '../model/stairs';
+import { type StairGeometry, reachesFloorAbove, stairGeometry, stairRise, stairSurfaceAt, stairwells } from '../model/stairs';
 import { type RailLine, againstWall, buildRails, onSegment } from './rails';
 import { pillarHeight } from '../model/pillars';
 import {
@@ -30,7 +30,7 @@ import { standingHeight } from '../model/furniture';
 import { buildFurniture } from './furniture3d';
 import { canvasTexture, floorMaterial, rng, roofMaterial, wallMaterial } from './finishes';
 import { DEFAULT_MATERIALS, faceSides } from '../model/materials';
-import type { Building, FloorFinish, FrameColour, Level, RoofCovering, WallFinish, Furniture, Hedge, Opening, Patio, Pillar, Plan, Tree } from '../model/types';
+import type { Building, FloorFinish, FrameColour, Level, RailStyle, RoofCovering, StairStyle, WallFinish, Furniture, Hedge, Opening, Patio, Pillar, Plan, Tree } from '../model/types';
 import { buildHedge } from './hedges3d';
 import { type HedgeRun, hedgeRuns } from '../model/hedges';
 
@@ -365,7 +365,7 @@ export interface LevelOptions {
   /** Where the stairs from below arrive (their walking line ends), to leave those edges open. */
   wellExits?: Vec2[];
   /** Stairs standing on this floor. */
-  stairs?: StairGeometry[];
+  stairs?: (StairGeometry & { style?: StairStyle; rail?: RailStyle })[];
   /** The roofs over this floor (none when it is cut away). */
   /** Roofs, each flagged if it is vaulted (open to the room below, lined with plaster). */
   roofs?: (RoofGeometry & { vaulted?: boolean; glazedGables?: boolean; covering?: RoofCovering })[];
@@ -385,6 +385,11 @@ export interface LevelOptions {
   furniture?: (Furniture & { base: number })[];
   /** How leafy the broad-leaved trees are: 1 summer, 0 bare; `autumn` colours them. */
   season?: Season;
+  /**
+   * Walls of other floors beside this one's stairs (a stair on the garden floor set into the
+   * wall of a house): a rail along one of them needs no balusters.
+   */
+  nearWalls?: Footprint[];
   /** The ground's height in this floor's terms (minus the floor's elevation), and the house's outline. */
   ground?: number;
   house?: Vec2[][];
@@ -425,10 +430,10 @@ export function buildBuildingObject(
     const obj = buildPlanObject(level, mats, {
       ceiling: isCut ? null : ceilingHeight(b, level),
       floorHoles: below ? stairwells(below) : [],
-      wellExits: below ? Object.values(below.stairs ?? {}).map((st) => stairGeometry(st, below.height).path.at(-1)!) : [],
+      wellExits: below ? Object.values(below.stairs ?? {}).filter((st) => reachesFloorAbove(st, below)).map((st) => stairGeometry(st, stairRise(st, below)).path.at(-1)!) : [],
       ceilingHoles: [...stairwells(level), ...kerbs.map((r) => [r.footprint]), ...vaults],
       slab: level.slab,
-      stairs: Object.values(level.stairs ?? {}).map((st) => stairGeometry(st, level.height)),
+      stairs: Object.values(level.stairs ?? {}).map((st) => ({ ...stairGeometry(st, stairRise(st, level)), style: st.style, rail: st.rail })),
       pillars: Object.values(level.pillars ?? {}).map((q) => ({ ...q, height: pillarHeight(b, level, q) })),
       chimneys: isCut ? [] : Object.values(level.chimneys ?? {}).map((c) => chimneyGeometry(b, level, c)),
       solar: isCut ? [] : Object.values(level.solar ?? {}).flatMap((sa) => solarGeometry(b, level, sa) ?? []),
@@ -441,6 +446,7 @@ export function buildBuildingObject(
       furniture: Object.values(level.furniture ?? {}).map((f) => ({ ...f, base: standingHeight(level, f) })),
       season,
       materials: { ...DEFAULT_MATERIALS, ...b.materials },
+      nearWalls: Object.keys(level.stairs ?? {}).length ? nearWalls(b, level) : [],
       ground: -levelElevation(b, level.id),
       house: Object.values(level.patios ?? {}).some((pt) => pt.height < -levelElevation(b, level.id)) ? outerFaces(level) : [],
     });
@@ -449,6 +455,19 @@ export function buildBuildingObject(
     group.add(obj);
   });
   return group;
+}
+
+/** The walls of the other floors that stand at the same heights as a floor's stairs. */
+function nearWalls(b: Building, level: Level): Footprint[] {
+  const z0 = levelElevation(b, level.id);
+  const z1 = z0 + Math.max(level.height, ...Object.values(level.stairs ?? {}).map((s) => stairRise(s, level)));
+  return b.levels
+    .filter((l) => l !== level)
+    .filter((l) => {
+      const e = levelElevation(b, l.id);
+      return e < z1 && e + l.height > z0;
+    })
+    .flatMap((l) => [...computeFootprints(l).values()]);
 }
 
 export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions = { ceiling: null }): THREE.Group {
@@ -568,20 +587,28 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   topMesh.castShadow = true;
   group.add(topMesh);
 
-  // Stairs: each step is solid down to the floor, with a timber tread on top.
+  // Stairs: each step solid down to the floor, with a timber tread on top; or all stone; or
+  // stone treads cantilevered from the wall, each a slab with nothing under it.
   if (opts.stairs?.length) {
     const treadTops = new Mesher();
     const stringers = new Mesher();
+    const stone = new Mesher();
+    const SLAB = 0.07;
     for (const g of opts.stairs) {
+      const isStone = g.style === 'stone' || g.style === 'cantilever';
+      const tops = isStone ? stone : treadTops;
+      const sides = isStone ? stone : stringers;
       for (const t of g.treads) {
-        treadTops.hpoly(t.poly, t.top, true);
+        tops.hpoly(t.poly, t.top, true);
+        const bottom = g.style === 'cantilever' ? t.top - SLAB : 0;
+        if (g.style === 'cantilever') stone.hpoly(t.poly, bottom, false);
         const c = t.poly.reduce((acc, p) => ({ x: acc.x + p.x / t.poly.length, y: acc.y + p.y / t.poly.length }), { x: 0, y: 0 });
         t.poly.forEach((p, k) => {
           const q = t.poly[(k + 1) % t.poly.length];
           const nrm = { x: q.y - p.y, y: p.x - q.x };
           const mid = { x: (p.x + q.x) / 2 - c.x, y: (p.y + q.y) / 2 - c.y };
           const out = dot(nrm, mid) >= 0 ? n3(nrm) : n3(nrm, -1);
-          stringers.vface(p, q, 0, t.top, out);
+          sides.vface(p, q, bottom, t.top, out);
         });
       }
     }
@@ -589,12 +616,18 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
     stairMesh.castShadow = stairMesh.receiveShadow = true;
     const treadMesh = new THREE.Mesh(treadTops.geometry(), mats.floor);
     treadMesh.castShadow = treadMesh.receiveShadow = true;
+    const stoneMesh = new THREE.Mesh(stone.geometry(), wallMaterial('stone'));
+    stoneMesh.castShadow = stoneMesh.receiveShadow = true;
     stairMesh.name = 'stairs';
-    group.add(stairMesh, treadMesh);
+    group.add(stairMesh, treadMesh, stoneMesh);
 
-    // Handrails up both sides of every stair (balusters only where the side is open).
-    const lines: RailLine[] = opts.stairs.flatMap((g) =>
-      g.rails.map((points) => ({
+    // Handrails up both sides of every stair (balusters only where the side is open), in
+    // each stair's style.
+    for (const style of ['timber', 'iron', 'glass'] as const) {
+      const ofStyle = opts.stairs.filter((g) => (g.rail ?? 'timber') === style);
+      if (!ofStyle.length) continue;
+      const lines: RailLine[] = ofStyle.flatMap((g) =>
+        g.rails.map((points) => ({
         points,
         baseAt: (p: Vec2, pitch: number) => {
           // The tread under the rail: look just either side of the stair's edge.
@@ -608,8 +641,9 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
           return top ?? pitch - g.rise;
         },
       })),
-    );
-    group.add(buildRails(lines, [...fps.values()], mats.door, mats.frame));
+      );
+      group.add(buildRails(lines, [...fps.values(), ...(opts.nearWalls ?? [])], mats.door, mats.frame, style, mats.glass));
+    }
   }
   if (opts.ceiling !== null) {
     const ceilingMesh = new THREE.Mesh(ceilings.geometry(), mats.ceiling);

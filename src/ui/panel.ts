@@ -14,12 +14,12 @@ import { GRAND_MODELS, TANK_STAND, catalogueItem, tankLitres } from '../model/fu
 import { stretchSummary } from '../model/stretch';
 import { DEFAULT_INVERT, DEFAULT_TANK, FITTING_NAMES, deleteDrainNode, pipeFall, pipeLength, tankVolume } from '../model/drains';
 import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
-import { stairGeometry } from '../model/stairs';
+import { reachesFloorAbove, stairGeometry, stairRise } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { FLOOR_FINISHES, ROOF_COVERINGS, WALL_FINISHES, faceSides, materialsOf } from '../model/materials';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
 import { deleteNode, deleteOpening, deleteWall, finishNodeMove, moveNode, normalize, setWallLength, splitWallAt } from '../model/plan';
-import { DEFAULTS, type OpeningKind, type DrainFitting, type DrainKind, type FloorFinish, type FrameColour, type GlazedStyle, type PatioSurface, type Pillar, type TreeKind, type HedgeKind, type Roof, type RoofCovering, type RoofKind, type Stair, type StairShape, type WallFinish } from '../model/types';
+import { DEFAULTS, type OpeningKind, type DrainFitting, type DrainKind, type FloorFinish, type FrameColour, type GlazedStyle, type PatioSurface, type Pillar, type RailStyle, type TreeKind, type HedgeKind, type Roof, type RoofCovering, type RoofKind, type Stair, type StairShape, type StairStyle, type WallFinish } from '../model/types';
 import type { Editor2D } from './editor2d';
 import type { Store } from './store';
 
@@ -374,8 +374,30 @@ export class Panel {
     const level = this.store.plan;
     const st = level.stairs?.[id];
     if (!st) return;
-    const g = stairGeometry(st, level.height);
-    this.title('Stair');
+    const rise = stairRise(st, level);
+    const g = stairGeometry(st, rise);
+    this.title(st.rise !== undefined && st.rise < level.height - 0.05 ? 'Steps' : 'Stair');
+    this.number('Rises', rise, 0.05, 0.1, 20, (v) => {
+      st.rise = Math.abs(v - level.height) < 1e-6 ? undefined : v;
+      this.done();
+    }, 'm', `How high it climbs: the ${level.height} m to the next floor, or less for steps up to a plinth or terrace, or more for an outside stair to an upper door`);
+    this.select('Style', st.style ?? 'solid', [
+      ['solid', 'Solid, timber treads'],
+      ['stone', 'Stone steps (solid)'],
+      ['cantilever', 'Stone treads cantilevered from the wall'],
+    ], (v) => {
+      st.style = v === 'solid' ? undefined : (v as StairStyle);
+      this.done();
+    });
+    this.select('Handrail', st.rail ?? 'timber', [
+      ['timber', 'Timber, with balusters'],
+      ['iron', 'Wrought iron'],
+      ['glass', 'Glass panels'],
+      ['none', 'None'],
+    ], (v) => {
+      st.rail = v === 'timber' ? undefined : (v as RailStyle);
+      this.done();
+    });
     this.select('Shape', st.shape, [
       ['straight', 'Straight'],
       ['L', 'L-shape (quarter turn)'],
@@ -402,9 +424,10 @@ export class Panel {
       this.done();
     }, 'm', 'How deep each step is (the "going")');
     this.note(
-      `${g.risers} risers of ${(g.rise * 100).toFixed(1)} cm climb the ${level.height} m to the next floor.` +
+      `${g.risers} risers of ${(g.rise * 100).toFixed(1)} cm climb ${rise.toFixed(2)} m${reachesFloorAbove(st, level) && st.rise === undefined ? ' to the next floor' : ''}.` +
         (st.shape === 'straight' ? ` Length ${(g.treads.length * st.going).toFixed(2)} m.` : '') +
-        (levelAbove(this.store.building, level.id) ? '' : ' There is no floor above yet: add one to use the stair.'),
+        (st.style === 'cantilever' ? ' Set one side against a wall: the treads are built into it, with nothing underneath.' : '') +
+        (reachesFloorAbove(st, level) && !levelAbove(this.store.building, level.id) ? ' There is no floor above yet: add one to use the stair.' : ''),
     );
     this.buttons([
       ['Rotate 90°', () => {

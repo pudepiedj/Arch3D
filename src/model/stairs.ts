@@ -140,15 +140,27 @@ export function stairGeometry(s: Stair, height: number): StairGeometry {
   };
 }
 
+/** How high a stair climbs: its own rise, or up to the next floor. */
+export function stairRise(s: Stair, level: Level): number {
+  return s.rise ?? level.height;
+}
+
+/** Does the stair go all the way up to the next floor (so it needs a hole in it)? */
+export function reachesFloorAbove(s: Stair, level: Level): boolean {
+  return stairRise(s, level) >= level.height - 0.05;
+}
+
 /** The holes the stairs of `level` need in the floor of the level above. */
 export function stairwells(level: Level): Shape[] {
-  const parts = Object.values(level.stairs ?? {}).flatMap((s) => stairGeometry(s, level.height).parts);
+  const parts = Object.values(level.stairs ?? {})
+    .filter((s) => reachesFloorAbove(s, level))
+    .flatMap((s) => stairGeometry(s, stairRise(s, level)).parts);
   return unionAll(parts);
 }
 
 export function stairAt(level: Level, p: Vec2): string | null {
   for (const s of Object.values(level.stairs ?? {})) {
-    if (stairGeometry(s, level.height).parts.some((poly) => pointInPolygon(p, poly))) return s.id;
+    if (stairGeometry(s, stairRise(s, level)).parts.some((poly) => pointInPolygon(p, poly))) return s.id;
   }
   return null;
 }

@@ -188,7 +188,16 @@ export interface Stair {
   shape: StairShape;
   /** Which way an L or U stair turns, as you walk up it. */
   turn: 'left' | 'right';
+  /** Height it climbs, if not up to the next floor: a few steps up to a plinth, or an outside stair. */
+  rise?: number;
+  /** Solid underneath (the default), solid stone steps, or stone treads cantilevered from a wall. */
+  style?: StairStyle;
+  /** Timber handrail and balusters (the default), wrought iron, glass panels, or none. */
+  rail?: RailStyle;
 }
+
+export type StairStyle = 'solid' | 'stone' | 'cantilever';
+export type RailStyle = 'timber' | 'iron' | 'glass' | 'none';
 
 export type RoofKind = 'gable' | 'hip' | 'flat' | 'none';
 
