@@ -7,6 +7,7 @@ import { Panel } from './ui/panel';
 import { SunPanel } from './ui/sunpanel';
 import { Sync, reachable } from './ui/sync';
 import { CATALOGUE, CATEGORIES } from './model/furniture';
+import { FLOOR_FINISHES, WALL_FINISHES } from './model/materials';
 import { SPECIES, TREE_ORDER } from './model/trees';
 import { HEDGE_NAMES } from './model/hedges';
 import type { HedgeKind, TreeKind } from './model/types';
@@ -130,6 +131,23 @@ $('#underground').addEventListener('click', () => {
   if (view.underground && layout === 'plan') setLayout('split');
   syncToolbar();
 });
+// What the Paint tool puts on: wall finishes, then floors.
+const paintSelect = $<HTMLSelectElement>('#paintSelect');
+{
+  const group = (label: string, what: 'wall' | 'floor', names: Record<string, { name: string }>) => {
+    const g = document.createElement('optgroup');
+    g.label = label;
+    g.append(...Object.entries(names).map(([k, v]) => new Option(v.name, `${what}:${k}`)), new Option(`${label}: back to the default`, `${what}:default`));
+    return g;
+  };
+  paintSelect.replaceChildren(group('Walls', 'wall', WALL_FINISHES), group('Floors', 'floor', FLOOR_FINISHES));
+}
+paintSelect.addEventListener('change', () => {
+  const [what, finish] = paintSelect.value.split(':');
+  editor.paintWith = { what, finish } as typeof editor.paintWith;
+  editor.setTool('paint');
+});
+
 // Trees and bushes to plant, and hedges, fences and ditches to draw, chosen from two lists
 // shown with either tool.
 const treeSelect = $<HTMLSelectElement>('#treeSelect');
@@ -535,6 +553,7 @@ const HINTS: Record<Tool, string> = {
   window: 'Click on a wall to place a window',
   split: 'Click on a wall to add a joint you can drag',
   paste: 'Click on walls to place exact copies · Esc when done',
+  paint: 'Walls: click one side of a wall to paint that face, or inside a room to paint all its walls · Floors: click inside a room · the panel sets the defaults',
   copyArea: 'Drag a box round what to copy (walls crossing the box are cut off at it) · Esc to cancel',
   pasteArea: 'Click where the copy goes (the pointer is its middle; joints landing on joints join up) · Esc to cancel',
   stair: 'Click where the stair starts (its bottom step), then click in the direction it goes up',
@@ -568,6 +587,8 @@ function syncToolbar() {
   $('#wallType').hidden = editor.tool !== 'wall';
   $('#ortho').hidden = editor.tool !== 'wall' && editor.tool !== 'stair' && editor.tool !== 'patio';
   $('#patioSurface').hidden = editor.tool !== 'patio';
+  $('#paintPick').hidden = editor.tool !== 'paint';
+  paintSelect.value = `${editor.paintWith.what}:${editor.paintWith.finish}`;
   $('#treeKind').hidden = editor.tool !== 'tree' && editor.tool !== 'hedge';
   treeSelect.value = editor.treeKind;
   hedgeSelect.value = editor.hedgeKind;

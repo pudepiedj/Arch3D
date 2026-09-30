@@ -13,6 +13,7 @@ import type { Building, Level } from '../model/types';
 import { type SunPosition, seasonAt, siteOf, sunDirection, sunPosition } from '../model/sun';
 import { type Season, buildBuildingObject, createMaterials, disposeObject } from './build';
 import { buildDrains } from './drains3d';
+import { setFloorsSeeThrough } from './finishes';
 
 export type ViewMode = 'orbit' | 'walk';
 
@@ -182,6 +183,7 @@ export class View3D {
     };
     see(this.groundMat, 0.25);
     for (const m of [this.mats.floor, this.mats.paving, this.mats.decking, this.mats.gravel, this.mats.rubber, this.mats.lawn, this.mats.lawnEdge, this.mats.paveEdge, this.mats.deckEdge]) see(m, 0.4);
+    setFloorsSeeThrough(on);
     if (this.drainsObj) this.drainsObj.below.visible = this.drainsObj.covers.visible = on;
     this.orbit.maxPolarAngle = on ? Math.PI - 0.05 : Math.PI / 2 - 0.02;
     if (!on && this.camera.position.y < 0.5) this.frame();

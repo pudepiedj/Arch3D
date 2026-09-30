@@ -30,7 +30,7 @@ After a `git pull`, run `npm install` again before `npm run dev`. If Vite says i
 
 **On an iPad (no keyboard):** while you draw something a point at a time (walls, a patio, a hedge or fence, a roof section, a drain run, a stair), a bar at the bottom of the plan has **Done** (finish it), **Back** (take back the last point) and **Cancel** (stop; walls and drain pipes already laid stay, and Undo takes them back). A **double tap** with a finger or the Pencil finishes too, like a double-click. To leave a tool, tap **Select**. In the panels, type a number and tap the keyboard's **done** key or anywhere else (the plan, the 3D view) and it is applied; or use the **−** and **+** beside each number. Every panel with fields has an **Apply** button (it says **Applied ✓** when it has), next to **Delete**.
 
-**The toolbar:** **Select** is always there; the other tools are grouped in drop-down menus: **Build** (wall, split, stretch, stair, pillar, copy area, paste area), **Openings** (door, window, glass door, garage door), **Roof** (roofs, rooflight, solar panels, chimney) and **Garden** (patio, tree, drain), then **Furniture**. A menu shows the name of the tool in use from it, highlighted. The keyboard shortcuts are listed in the menus and work as before. **View** has the on/off settings: dimensions, Underground and Cutaway. On a narrow screen (an iPad upright) the toolbar runs onto a second row rather than off the side.
+**The toolbar:** **Select** is always there; the other tools are grouped in drop-down menus: **Build** (wall, split, stretch, stair, pillar, paint materials, copy area, paste area), **Openings** (door, window, glass door, garage door), **Roof** (roofs, rooflight, solar panels, chimney) and **Garden** (patio, tree, drain), then **Furniture**. A menu shows the name of the tool in use from it, highlighted. The keyboard shortcuts are listed in the menus and work as before. **View** has the on/off settings: dimensions, Underground and Cutaway. On a narrow screen (an iPad upright) the toolbar runs onto a second row rather than off the side.
 
 | Tool | What it does |
 | --- | --- |
@@ -222,6 +222,21 @@ Everything visible is *derived* from that data on every change, so there is no s
   - That library occasionally leaves part of a slope out, where two lined-up edges merge (the walls either side of a bay). The gap is filled with the slope whose plane matches the heights already known around it. Tests check that every roof covers its whole outline, with no tears.
 - **Rooms** (`rooms.ts`) are the enclosed faces of the wall graph. They give the floors and the net floor area labels.
 
+## Materials
+
+**Build → Paint materials** sets what everything is made of, as it looks in 3D, on the elevations and in walk mode.
+
+- **Defaults for the whole drawing** (in the panel while the tool is on): **outside walls**, **inside walls** and **floors**. Every wall face looking into a room is an inside wall; every other face (the outside of the house, both sides of a garden wall) is an outside one. For an all-stone house, set both walls to stone and you are done.
+- **Painting**: choose a finish from the **Paint** list in the toolbar, then:
+  - a **wall finish**: click on one side of a wall to paint that face, or click inside a room to paint every wall face round it (a long wall bordering more than one room is painted along its whole length on that side);
+  - a **floor**: click inside a room.
+  Each list ends with *back to the default*, to take a painting off. While the tool is on, each wall face shows its finish as a coloured stripe along it; floors other than oak show in their colour on the plan all the time. **Clear painting on this floor** in the panel takes it all off.
+- **Wall finishes**: white plaster; render in white, cream, ochre or terracotta pink; sage or blue-grey paint; dressed stone (ashlar, in 30 cm courses); rubble stone; red brick. The window and door reveals and the exposed ends of a wall take its outside finish, so a stone wall is stone right through its openings.
+- **Floors**: oak boards, terracotta tiles, stone flags, pale porcelain tiles, grey carpet, polished concrete.
+- **Roof coverings** are in each roof's panel (Roof tool, or the floor's default roof in **Floor & roof…**): concrete tiles, terracotta Roman (barrel) tiles, clay plain tiles or slate.
+
+Textures are drawn to their real size (stone courses, bricks and tiles come out the same size on every wall), and a copied area brings its painted floors with it.
+
 ## Printing
 
 **File → Print plans and elevations…** (or Ctrl/⌘+P) makes to-scale drawings, one to a page, each with a frame and a title block (project, drawing, scale with a scale bar, date, drawn by, sheet number):
@@ -251,6 +266,5 @@ Choose the wall build, the roof covering, the foundation depth and underfloor he
 
 - Dormers.
 - A sun-hours map: how many hours of direct sun each part of a patio gets on a given day.
-- Textures and materials per room.
 - Curved walls.
 - Snapping openings to exact positions from a room's inside corner on either side.

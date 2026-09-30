@@ -16,7 +16,14 @@ export interface Wall {
   b: string;
   thickness: number;
   height: number;
+  /** Finishes painted on its faces (left of a->b, and right); unset follows the drawing's defaults. */
+  faces?: { left?: WallFinish; right?: WallFinish };
 }
+
+/** How a wall face looks: plaster, render, paint, stone or brick. */
+export type WallFinish = 'plaster' | 'render' | 'render-cream' | 'render-ochre' | 'render-pink' | 'paint-sage' | 'paint-blue' | 'stone' | 'rubble' | 'brick';
+export type FloorFinish = 'oak' | 'terracotta' | 'stone' | 'tiles' | 'carpet' | 'concrete';
+export type RoofCovering = 'tiles' | 'roman' | 'plain' | 'slate';
 
 /**
  * 'garage' is a roller door: slats that roll up into a casing above the opening.
@@ -203,6 +210,8 @@ export interface Roof {
    * midpoint of the edge (so they survive small edits to the walls).
    */
   edges?: RoofEdgeSetting[];
+  /** What the slopes are covered with (concrete tiles if unset). */
+  covering?: RoofCovering;
 }
 
 export interface RoofEdgeSetting {
@@ -272,6 +281,8 @@ export interface Level extends Plan {
   hedges?: Record<string, Hedge>;
   /** Furniture, indoors and out. */
   furniture?: Record<string, Furniture>;
+  /** Rooms' floors set differently from the drawing's default, each found by a point in the room. */
+  floorFinishes?: { x: number; y: number; finish: FloorFinish }[];
 }
 
 /**
@@ -351,6 +362,8 @@ export interface Building {
   site?: Site;
   /** Drains below ground (shown on the ground floor). */
   drains?: Drains;
+  /** Default finishes: outside wall faces, inside wall faces, and floors. */
+  materials?: { outside?: WallFinish; inside?: WallFinish; floor?: FloorFinish };
 }
 
 export const DEFAULTS = {

@@ -22,6 +22,7 @@
             <button data-tool="stretch" title="Move a whole part of the house, stretching the walls that cross into it (Q)">Stretch <kbd>Q</kbd></button>
             <button data-tool="stair" title="Place a stair up to the next floor (S)">Stair <kbd>S</kbd></button>
             <button data-tool="pillar" title="Place a pillar, e.g. under a veranda roof (P)">Pillar <kbd>P</kbd></button>
+            <button data-tool="paint" title="Materials: paint wall faces (stone, render, brick, paint colours) and room floors, and set the drawing's defaults">Paint materials</button>
             <hr />
             <button data-tool="copyArea" title="Drag a box round part of the plan to copy it, to paste here, on another floor or into another drawing">Copy area…</button>
             <button data-tool="pasteArea" id="pasteAreaBtn" title="Put down a copy of the area last copied (Ctrl/⌘+V)">Paste area <kbd>⌘V</kbd></button>
@@ -85,6 +86,9 @@
       <div class="group picks" id="treeKind" aria-label="Tree or hedge">
         <label title="Plant a tree or bush: choose which, then click the plan">Plant <select id="treeSelect"></select></label>
         <label title="Draw a hedge, fence or ditch: choose which, then click along its line">Line <select id="hedgeSelect"></select></label>
+      </div>
+      <div class="group picks" id="paintPick" aria-label="Material">
+        <label title="What to paint: a wall finish (click one side of a wall, or inside a room for all its walls) or a floor (click inside a room)">Paint <select id="paintSelect"></select></label>
       </div>
       <button id="ortho" class="toggle" title="Lock wall directions to 45° steps (O)">Ortho</button>
 

@@ -28,7 +28,9 @@ import { patioShapes } from '../model/patios';
 import { type Species, crownBase, leanDirection, speciesOf, trunkRadius } from '../model/trees';
 import { standingHeight } from '../model/furniture';
 import { buildFurniture } from './furniture3d';
-import type { Building, FrameColour, Furniture, Hedge, Opening, Patio, Pillar, Plan, Tree } from '../model/types';
+import { canvasTexture, floorMaterial, rng, roofMaterial, wallMaterial } from './finishes';
+import { DEFAULT_MATERIALS, faceSides } from '../model/materials';
+import type { Building, FloorFinish, FrameColour, Level, RoofCovering, WallFinish, Furniture, Hedge, Opening, Patio, Pillar, Plan, Tree } from '../model/types';
 import { buildHedge } from './hedges3d';
 import { type HedgeRun, hedgeRuns } from '../model/hedges';
 
@@ -107,27 +109,6 @@ export function createMaterials(): Materials {
 // Drawn on a canvas once, then repeated. Each texture covers one "period" of the pattern
 // (see patioPeriod), so the patio's texture coordinates are just its plan coordinates,
 // turned to the patio's direction and divided by the period.
-
-/** Pseudo-random numbers from a fixed seed, so the textures look the same every time. */
-function rng(seed: number) {
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-}
-
-function canvasTexture(w: number, h: number, draw: (ctx: CanvasRenderingContext2D) => void): THREE.Texture | null {
-  if (typeof document === 'undefined') return null;
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  draw(c.getContext('2d')!);
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
-  return t;
-}
 
 /** Slabs per texture period, each way. */
 const SLABS = 4;
@@ -294,13 +275,25 @@ const FRAME = 0.05;
 /** Collects triangles with an explicit outward normal so winding is always right. */
 class Mesher {
   pos: number[] = [];
+  /**
+   * Texture coordinates in metres, in the plane of each face: across it horizontally, and up
+   * it (up the slope of a roof, up a wall; across a floor, the plan's y).
+   */
+  uv: number[] = [];
 
   /** Plan point + height -> world (x, height, y). */
   tri(a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, outward: THREE.Vector3) {
     const n = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
     if (n.lengthSq() < 1e-14) return;
-    if (n.dot(outward) < 0) [b, c] = [c, b];
+    if (n.dot(outward) < 0) {
+      [b, c] = [c, b];
+      n.negate();
+    }
     this.pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+    n.normalize();
+    const t = Math.abs(n.y) > 0.999 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(-n.z, 0, n.x).normalize();
+    const up = new THREE.Vector3().crossVectors(t, n);
+    for (const p of [a, b, c]) this.uv.push(p.dot(t), p.dot(up));
   }
 
   quad(a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3, outward: THREE.Vector3) {
@@ -338,8 +331,22 @@ class Mesher {
   geometry(): THREE.BufferGeometry {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     g.computeVertexNormals();
     return g;
+  }
+}
+
+/** Meshers by material: one mesh each, built at the end. */
+class MeshSet<K extends string> {
+  private map = new Map<K, Mesher>();
+  get(k: K): Mesher {
+    let m = this.map.get(k);
+    if (!m) this.map.set(k, (m = new Mesher()));
+    return m;
+  }
+  entries() {
+    return [...this.map.entries()];
   }
 }
 
@@ -361,7 +368,7 @@ export interface LevelOptions {
   stairs?: StairGeometry[];
   /** The roofs over this floor (none when it is cut away). */
   /** Roofs, each flagged if it is vaulted (open to the room below, lined with plaster). */
-  roofs?: (RoofGeometry & { vaulted?: boolean; glazedGables?: boolean })[];
+  roofs?: (RoofGeometry & { vaulted?: boolean; glazedGables?: boolean; covering?: RoofCovering })[];
   /** Chimney stacks and solar arrays on this floor's roofs (none when cut away). */
   chimneys?: ChimneyGeometry[];
   solar?: SolarGeometry[];
@@ -378,6 +385,8 @@ export interface LevelOptions {
   furniture?: (Furniture & { base: number })[];
   /** How leafy the broad-leaved trees are: 1 summer, 0 bare; `autumn` colours them. */
   season?: Season;
+  /** The drawing's default finishes (walls outside and in, floors). */
+  materials?: { outside: WallFinish; inside: WallFinish; floor: FloorFinish };
 }
 
 export interface Season {
@@ -418,13 +427,14 @@ export function buildBuildingObject(
       chimneys: i === cut ? [] : Object.values(level.chimneys ?? {}).map((c) => chimneyGeometry(b, level, c)),
       solar: i === cut ? [] : Object.values(level.solar ?? {}).flatMap((sa) => solarGeometry(b, level, sa) ?? []),
       rooflights,
-      roofs: roofs.flatMap((r) => (r.geometry ? [{ ...r.geometry, vaulted: !!r.roof.vaulted && r.roof.kind !== 'flat', glazedGables: !!r.roof.glazedGables && r.roof.kind !== 'flat' }] : [])),
+      roofs: roofs.flatMap((r) => (r.geometry ? [{ ...r.geometry, vaulted: !!r.roof.vaulted && r.roof.kind !== 'flat', glazedGables: !!r.roof.glazedGables && r.roof.kind !== 'flat', covering: r.roof.covering }] : [])),
       patios: Object.values(level.patios ?? {}).map((patio) => ({ patio, shapes: patioShapes(level, patio) })),
       trees: Object.values(level.trees ?? {}),
       north: (b.site?.north ?? 0),
       hedges: Object.values(level.hedges ?? {}).map((hedge) => ({ hedge, runs: hedgeRuns(hedge, level) })),
       furniture: Object.values(level.furniture ?? {}).map((f) => ({ ...f, base: standingHeight(level, f) })),
       season,
+      materials: { ...DEFAULT_MATERIALS, ...b.materials },
     });
     obj.position.y = levelElevation(b, level.id);
     obj.name = `level:${level.id}`;
@@ -436,8 +446,11 @@ export function buildBuildingObject(
 export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions = { ceiling: null }): THREE.Group {
   const group = new THREE.Group();
   const fps = computeFootprints(plan);
-  const sides = new Mesher();
+  const finishes = opts.materials ?? DEFAULT_MATERIALS;
+  const faces = new MeshSet<WallFinish>();
   const tops = new Mesher();
+  // Which face of each wall looks into a room, for the default finishes.
+  const sidesOf = faceSides(plan as Level);
 
   // Heights of the other walls at each node, to cap a taller wall above a lower neighbour.
   const heightsAt = new Map<string, number[]>();
@@ -458,21 +471,29 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
     const fp = fps.get(w.id);
     if (!fp) continue;
     const ops = openingsOf(plan, w.id);
-    buildWall(sides, tops, fp, ops);
+    const where = sidesOf.get(w.id) ?? { left: 'outside', right: 'outside' };
+    const left = w.faces?.left ?? finishes[where.left];
+    const right = w.faces?.right ?? finishes[where.right];
+    // Reveals and exposed ends take the outside finish (stone through the thickness of a stone wall).
+    const edge = where.left === 'outside' ? left : where.right === 'outside' ? right : left;
+    buildWall(faces.get(left), faces.get(right), faces.get(edge), tops, fp, ops);
     const mid = wallPoint(fp, fp.length / 2, 0);
-    endCap(sides, fp, 'a', lowestNeighbour(w.a, w.height, fp.degA), mid);
-    endCap(sides, fp, 'b', lowestNeighbour(w.b, w.height, fp.degB), mid);
+    endCap(faces.get(edge), fp, 'a', lowestNeighbour(w.a, w.height, fp.degA), mid);
+    endCap(faces.get(edge), fp, 'b', lowestNeighbour(w.b, w.height, fp.degB), mid);
     for (const o of ops) group.add(buildOpeningObject(fp, o, mats));
   }
 
 
-  const floors = new Mesher();
+  const floors = new MeshSet<FloorFinish>();
   const ceilings = new Mesher();
   const floorHoles = opts.floorHoles ?? [];
   const ceilingHoles = opts.ceilingHoles ?? [];
+  const defaults = { ...DEFAULT_MATERIALS, ...finishes };
   for (const r of detectRooms(plan)) {
+    const set = ((plan as Level).floorFinishes ?? []).filter((f) => pointInPolygon(f, r.polygon)).at(-1);
+    const floor = floors.get(set?.finish ?? defaults.floor);
     // Slightly above the level's datum so it never fights with wall tops of the floor below.
-    for (const piece of subtract(r.polygon, floorHoles)) floors.hshape(piece, 0.005, true);
+    for (const piece of subtract(r.polygon, floorHoles)) floor.hshape(piece, 0.005, true);
     if (opts.ceiling !== null) {
       for (const piece of subtract(r.polygon, ceilingHoles)) ceilings.hshape(piece, opts.ceiling - 0.001, false);
     }
@@ -494,7 +515,7 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   const slab = opts.slab ?? 0;
   for (const well of floorHoles) {
     for (const ring of well) {
-      ring.forEach((p, k) => sides.vface(p, ring[(k + 1) % ring.length], -slab, 0.005, new THREE.Vector3(0, 0, 0)));
+      ring.forEach((p, k) => faces.get(finishes.inside).vface(p, ring[(k + 1) % ring.length], -slab, 0.005, new THREE.Vector3(0, 0, 0)));
     }
   }
 
@@ -502,7 +523,7 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   // Windows lying in a slope get their openings cut through the roof, so a vaulted room
   // (or the loft) sees the sky through them.
   const slopeHoles = (opts.rooflights ?? []).filter((r) => r.kind === 'slope').flatMap((r) => r.windows.map((w) => w.frame.map((p) => ({ x: p.x, y: p.y }))));
-  for (const r of opts.roofs ?? []) group.add(buildRoofObject(r, mats, wells, slopeHoles));
+  for (const r of opts.roofs ?? []) group.add(buildRoofObject(r, mats, wells, slopeHoles, wallMaterial(finishes.outside)));
   if (opts.rooflights?.length) group.add(buildRooflights(opts.rooflights, opts.ceiling ?? 0, mats));
   for (const c of opts.chimneys ?? []) group.add(buildChimney(c, mats));
   if (opts.solar?.length) group.add(buildSolar(opts.solar, mats));
@@ -529,12 +550,15 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
     group.add(obj);
   }
 
-  const wallMesh = new THREE.Mesh(sides.geometry(), mats.wall);
-  wallMesh.castShadow = wallMesh.receiveShadow = true;
-  wallMesh.name = 'walls';
+  for (const [finish, m] of faces.entries()) {
+    const wallMesh = new THREE.Mesh(m.geometry(), wallMaterial(finish));
+    wallMesh.castShadow = wallMesh.receiveShadow = true;
+    wallMesh.name = 'walls';
+    group.add(wallMesh);
+  }
   const topMesh = new THREE.Mesh(tops.geometry(), mats.wallTop);
   topMesh.castShadow = true;
-  group.add(wallMesh, topMesh);
+  group.add(topMesh);
 
   // Stairs: each step is solid down to the floor, with a timber tread on top.
   if (opts.stairs?.length) {
@@ -553,7 +577,7 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
         });
       }
     }
-    const stairMesh = new THREE.Mesh(stringers.geometry(), mats.wall);
+    const stairMesh = new THREE.Mesh(stringers.geometry(), wallMaterial(finishes.inside));
     stairMesh.castShadow = stairMesh.receiveShadow = true;
     const treadMesh = new THREE.Mesh(treadTops.geometry(), mats.floor);
     treadMesh.castShadow = treadMesh.receiveShadow = true;
@@ -585,10 +609,12 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
     ceilingMesh.name = 'ceilings';
     group.add(ceilingMesh);
   }
-  const floorMesh = new THREE.Mesh(floors.geometry(), mats.floor);
-  floorMesh.receiveShadow = floorMesh.castShadow = true;
-  floorMesh.name = 'floors';
-  group.add(floorMesh);
+  for (const [finish, m] of floors.entries()) {
+    const floorMesh = new THREE.Mesh(m.geometry(), floorMaterial(finish));
+    floorMesh.receiveShadow = floorMesh.castShadow = true;
+    floorMesh.name = 'floors';
+    group.add(floorMesh);
+  }
   return group;
 }
 
@@ -1172,10 +1198,11 @@ function buildSolar(arrays: SolarGeometry[], mats: Materials): THREE.Group {
 
 /** Roof slopes, gable walls, fascia boards along the eaves, or a flat slab. */
 function buildRoofObject(
-  r: RoofGeometry & { vaulted?: boolean; glazedGables?: boolean },
+  r: RoofGeometry & { vaulted?: boolean; glazedGables?: boolean; covering?: RoofCovering },
   mats: Materials,
   holes: Vec2[][] = [],
   slopeHoles: Vec2[][] = [],
+  outside: THREE.Material = mats.wall,
 ): THREE.Group {
   const g = new THREE.Group();
   g.name = 'roof';
@@ -1289,14 +1316,14 @@ function buildRoofObject(
     }
   }
   for (const [m, mat] of [
-    [covering, mats.roof],
+    [covering, roofMaterial(r.covering ?? 'tiles')],
     [flatTop, mats.flatRoof],
-    [gableWalls, mats.wall],
+    [gableWalls, outside],
     [trim, mats.frame],
     [lining, mats.ceiling],
     [gableFrames, mats.darkFrame],
     [gableGlass, mats.glass],
-    [parapet, mats.wall],
+    [parapet, outside],
     [coping, mats.wallTop],
   ] as const) {
     const mesh = new THREE.Mesh(m.geometry(), mat);
@@ -1306,16 +1333,16 @@ function buildRoofObject(
   return g;
 }
 
-function buildWall(sides: Mesher, tops: Mesher, fp: Footprint, ops: Opening[]) {
+function buildWall(leftFace: Mesher, rightFace: Mesher, reveals: Mesher, tops: Mesher, fp: Footprint, ops: Opening[]) {
   const H = fp.height;
   const half = fp.thickness / 2;
   const left = n3(fp.n);
   const right = n3(fp.n, -1);
 
   // Long faces, tiled around the openings.
-  for (const [v, u0, u1, out] of [
-    [half, fp.uL0, fp.uL1, left],
-    [-half, fp.uR0, fp.uR1, right],
+  for (const [v, u0, u1, out, sides] of [
+    [half, fp.uL0, fp.uL1, left, leftFace],
+    [-half, fp.uR0, fp.uR1, right, rightFace],
   ] as const) {
     let cursor = u0;
     for (const o of ops) {
@@ -1336,11 +1363,11 @@ function buildWall(sides: Mesher, tops: Mesher, fp: Footprint, ops: Opening[]) {
     const lo = o.offset - o.width / 2;
     const hi = o.offset + o.width / 2;
     const top = o.sill + o.height;
-    sides.vface(wallPoint(fp, lo, -half), wallPoint(fp, lo, half), o.sill, top, along);
-    sides.vface(wallPoint(fp, hi, -half), wallPoint(fp, hi, half), o.sill, top, back);
+    reveals.vface(wallPoint(fp, lo, -half), wallPoint(fp, lo, half), o.sill, top, along);
+    reveals.vface(wallPoint(fp, hi, -half), wallPoint(fp, hi, half), o.sill, top, back);
     const rect = [wallPoint(fp, lo, -half), wallPoint(fp, hi, -half), wallPoint(fp, hi, half), wallPoint(fp, lo, half)];
-    if (top < H - 1e-6) sides.hpoly(rect, top, false);
-    if (o.sill > 1e-6) sides.hpoly(rect, o.sill, true);
+    if (top < H - 1e-6) reveals.hpoly(rect, top, false);
+    if (o.sill > 1e-6) reveals.hpoly(rect, o.sill, true);
   }
 
   tops.hpoly(fp.polygon, H, true);

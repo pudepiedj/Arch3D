@@ -16,9 +16,10 @@ import { DEFAULT_INVERT, DEFAULT_TANK, FITTING_NAMES, deleteDrainNode, pipeFall,
 import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { stairGeometry } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
+import { FLOOR_FINISHES, ROOF_COVERINGS, WALL_FINISHES, faceSides, materialsOf } from '../model/materials';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
 import { deleteNode, deleteOpening, deleteWall, finishNodeMove, moveNode, normalize, setWallLength, splitWallAt } from '../model/plan';
-import { DEFAULTS, type OpeningKind, type DrainFitting, type DrainKind, type FrameColour, type GlazedStyle, type PatioSurface, type Pillar, type TreeKind, type HedgeKind, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
+import { DEFAULTS, type OpeningKind, type DrainFitting, type DrainKind, type FloorFinish, type FrameColour, type GlazedStyle, type PatioSurface, type Pillar, type TreeKind, type HedgeKind, type Roof, type RoofCovering, type RoofKind, type Stair, type StairShape, type WallFinish } from '../model/types';
 import type { Editor2D } from './editor2d';
 import type { Store } from './store';
 
@@ -83,7 +84,7 @@ export class Panel {
     const plan = this.store.plan;
     this.el.replaceChildren();
     // Only show the panel when there is something to edit, so it doesn't cover the plan.
-    this.el.hidden = !sel && this.editor.tool !== 'wall' && this.editor.tool !== 'stretch';
+    this.el.hidden = !sel && this.editor.tool !== 'wall' && this.editor.tool !== 'stretch' && this.editor.tool !== 'paint';
     if (!sel) return this.renderDefaults();
 
     if (sel.kind === 'wall') {
@@ -103,6 +104,15 @@ export class Panel {
         setWallLength(plan, w.id, v);
         this.store.commit();
       }, 'm', 'Moves the end joint along the wall');
+      {
+        const where = faceSides(plan).get(w.id);
+        const m = materialsOf(this.store.building);
+        if (where) {
+          const [a, c] = (['left', 'right'] as const).map((s) => ({ where: where[s], finish: w.faces?.[s] ?? m[where[s]], painted: !!w.faces?.[s] }));
+          const say = (f: typeof a) => `${WALL_FINISHES[f.finish].name.toLowerCase()} ${f.where}${f.painted ? ' (painted)' : ''}`;
+          this.note(`Faces: ${say(a)}; ${say(c)}. Change them with Build → Paint materials.`);
+        }
+      }
       this.buttons([
         ['Split in middle', () => {
           const id = splitWallAt(plan, w.id, (fp?.length ?? 0) / 2);
@@ -1073,6 +1083,7 @@ export class Panel {
         ['flat', 'Flat ceiling'],
         ['vaulted', 'Vaulted (open to the roof)'],
       ], (v) => set({ vaulted: v === 'vaulted' || undefined }));
+      this.select('Covering', roof.covering ?? 'tiles', Object.entries(ROOF_COVERINGS).map(([k, v]): [string, string] => [k, v.name]), (v) => set({ covering: v === 'tiles' ? undefined : (v as RoofCovering) }));
       this.select('Gable ends', roof.glazedGables ? 'glazed' : 'wall', [
         ['wall', 'Solid wall'],
         ['glazed', 'Glazed (triangular window)'],
@@ -1096,12 +1107,45 @@ export class Panel {
   private renderDefaults() {
     const ed = this.editor;
     if (ed.tool === 'stretch') return this.renderStretch();
+    if (ed.tool === 'paint') return this.renderMaterials();
     this.title('New wall');
     this.number('Thickness', ed.wallProps.thickness, 0.01, 0.05, 1, (v) => {
       ed.wallProps.thickness = v;
       ed.onToolChange?.();
     }, 'm');
     this.note(`Walls run the full ${this.store.plan.height} m floor-to-floor height of ${this.store.plan.name.toLowerCase()}.`);
+  }
+
+  /** The drawing's default finishes, and clearing what has been painted on this floor. */
+  private renderMaterials() {
+    const b = this.store.building;
+    const m = materialsOf(b);
+    const walls = Object.entries(WALL_FINISHES).map(([k, v]): [string, string] => [k, v.name]);
+    this.title('Materials');
+    this.select('Outside walls', m.outside, walls, (v) => {
+      b.materials = { ...b.materials, outside: v as WallFinish };
+      this.done();
+    });
+    this.select('Inside walls', m.inside, walls, (v) => {
+      b.materials = { ...b.materials, inside: v as WallFinish };
+      this.done();
+    });
+    this.select('Floors', m.floor, Object.entries(FLOOR_FINISHES).map(([k, v]): [string, string] => [k, v.name]), (v) => {
+      b.materials = { ...b.materials, floor: v as FloorFinish };
+      this.done();
+    });
+    this.note('These are the defaults for the whole drawing: every wall face looking into a room is an inside wall, every other face an outside one. Paint over them where something is different; roof coverings are in each roof\'s panel (Roof tool).');
+    const level = this.store.plan;
+    const painted = Object.values(level.walls).filter((w) => w.faces).length + (level.floorFinishes?.length ?? 0);
+    if (painted) {
+      this.buttons([
+        ['Clear painting on this floor', () => {
+          for (const w of Object.values(level.walls)) delete w.faces;
+          delete level.floorFinishes;
+          this.done();
+        }, true],
+      ]);
+    }
   }
 
   /** X and Y of a roof item's centre: type the same number as another to line them up. */

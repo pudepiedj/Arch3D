@@ -16,6 +16,7 @@ import {
   vec,
 } from '../model/geom';
 import { type Clip, copyArea, describeClip, pasteClip } from '../model/copyarea';
+import { FLOOR_FINISHES, WALL_FINISHES, clearFloorFinish, faceSides, materialsOf, paintRoomWalls, setFloorFinish } from '../model/materials';
 import { getLevel, levelBelow } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
 import { addPatio, patioShapes } from '../model/patios';
@@ -54,10 +55,10 @@ import {
 } from '../model/plan';
 import { detectRooms } from '../model/rooms';
 import { remembered } from './sizes';
-import type { DrainKind, Furniture, Hedge, HedgeKind, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind } from '../model/types';
+import type { DrainKind, FloorFinish, Furniture, Hedge, HedgeKind, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind, WallFinish } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain' | 'hedge' | 'copyArea' | 'pasteArea';
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain' | 'hedge' | 'copyArea' | 'pasteArea' | 'paint';
 export type Selection = {
   kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'drainNode' | 'drainPipe' | 'hedge';
   id: string;
@@ -117,6 +118,8 @@ export class Editor2D {
   private sectionPts: Vec2[] = [];
   /** Surface for new patios. */
   patioSurface: PatioSurface = 'paving';
+  /** What the Paint tool puts on: a wall finish or a floor finish ('default' takes a painting off). */
+  paintWith: { what: 'wall'; finish: WallFinish | 'default' } | { what: 'floor'; finish: FloorFinish | 'default' } = { what: 'wall', finish: 'stone' };
   /** Kind of tree the Tree tool plants. */
   treeKind: TreeKind = 'deciduous';
   /** Kind of hedge (or fence) the Hedge tool draws. */
@@ -1206,6 +1209,33 @@ export class Editor2D {
         this.select({ kind: 'solar', id: sa.id });
         break;
       }
+      case 'paint': {
+        const room = detectRooms(plan).find((r) => pointInPolygon(w, r.polygon));
+        const p = this.paintWith;
+        const name = p.finish === 'default' ? 'the default' : p.what === 'wall' ? WALL_FINISHES[p.finish].name : FLOOR_FINISHES[p.finish].name;
+        if (p.what === 'wall') {
+          // On (or right by) a wall: the face on the side clicked. Inside a room: all its walls.
+          const fp = this.wallAt(w, 8 / this.view.scale);
+          if (fp) {
+            const side = dot(sub(w, fp.a), fp.n) >= 0 ? 'left' : 'right';
+            const wall = plan.walls[fp.wallId];
+            wall.faces = { ...wall.faces, [side]: p.finish === 'default' ? undefined : p.finish };
+            if (!wall.faces.left && !wall.faces.right) delete wall.faces;
+            this.store.commit();
+            this.flash(`This face: ${name}`, w);
+          } else if (room) {
+            paintRoomWalls(plan, room.polygon, p.finish === 'default' ? undefined : p.finish);
+            this.store.commit();
+            this.flash(`The walls round this room: ${name}`, w);
+          } else this.flash('Click on one side of a wall, or inside a room for all its walls', w);
+        } else if (room) {
+          if (p.finish === 'default') clearFloorFinish(plan, room.polygon);
+          else setFloorFinish(plan, room.polygon, w, p.finish);
+          this.store.commit();
+          this.flash(`Floor: ${name}`, w);
+        } else this.flash('Click inside a room to set its floor', w);
+        break;
+      }
       case 'pasteArea': {
         const clip = this.areaClip;
         if (!clip) break;
@@ -1921,6 +1951,32 @@ export class Editor2D {
     ctx.restore();
   }
 
+  /** A stripe of colour along each face of each wall: the finish it has, painted or by default. */
+  private drawFaceFinishes() {
+    const ctx = this.ctx;
+    const k = this.view.scale;
+    const defaults = materialsOf(this.store.building);
+    const sides = faceSides(this.plan);
+    const w = Math.max(2, Math.min(5, 0.06 * k));
+    ctx.save();
+    ctx.lineCap = 'butt';
+    for (const fp of this.fps.values()) {
+      const wall = this.plan.walls[fp.wallId];
+      const where = sides.get(fp.wallId);
+      if (!wall || !where) continue;
+      for (const [side, s] of [['left', 1], ['right', -1]] as const) {
+        const finish = wall.faces?.[side] ?? defaults[where[side]];
+        const off = s * (fp.thickness / 2 - w / (2 * k));
+        const a = wallPoint(fp, s > 0 ? fp.uL0 : fp.uR0, off);
+        const b = wallPoint(fp, s > 0 ? fp.uL1 : fp.uR1, off);
+        ctx.strokeStyle = WALL_FINISHES[finish].colour;
+        ctx.lineWidth = w;
+        this.line(a, b);
+      }
+    }
+    ctx.restore();
+  }
+
   /** The area chosen for printing (or being dragged out to copy): a dashed box, labelled. */
   private drawPrintArea(C: Record<string, string>, b: Box, label: string) {
     const ctx = this.ctx;
@@ -2576,9 +2632,12 @@ export class Editor2D {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const rooms = detectRooms(plan);
+    const floorSet = plan.floorFinishes ?? [];
     for (const r of rooms) {
       this.path(r.polygon);
-      ctx.fillStyle = C.room;
+      // A floor set to something other than the default shows in its colour.
+      const f = floorSet.filter((s) => pointInPolygon(s, r.polygon)).at(-1)?.finish ?? materialsOf(this.store.building).floor;
+      ctx.fillStyle = f === 'oak' ? C.room : FLOOR_FINISHES[f].colour;
       ctx.fill();
     }
     // Patios after the rooms, so a floor covering drawn inside one (rubber tiles) shows.
@@ -2604,6 +2663,9 @@ export class Editor2D {
       ctx.fillStyle = sel ? C.accent : C.wall;
       ctx.fill();
     }
+
+    // With the Paint tool, each wall face shows its finish as a stripe along it.
+    if (this.tool === 'paint' && !this.printing) this.drawFaceFinishes();
 
     // Openings.
     for (const o of Object.values(plan.openings)) {
