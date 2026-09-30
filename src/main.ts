@@ -611,8 +611,16 @@ function syncToolbar() {
   ($('#redo') as HTMLButtonElement).disabled = !store.canRedo;
   for (const b of $$('#layout button')) b.classList.toggle('on', b.dataset.layout === layout);
   for (const b of $$('#mode button')) b.classList.toggle('on', b.dataset.mode === view.mode);
-  $('#cutaway').classList.toggle('on', view.cutaway);
-  $('#cutaway').hidden = store.building.levels.length < 2 || view.mode === 'walk';
+  // Always in the menu; greyed out, saying why, when it can't apply.
+  const cutaway = $<HTMLButtonElement>('#cutaway');
+  cutaway.classList.toggle('on', view.cutaway);
+  const single = store.building.levels.length < 2;
+  cutaway.disabled = single || view.mode === 'walk';
+  cutaway.title = single
+    ? 'Cutaway needs more than one floor: there is nothing above to hide'
+    : view.mode === 'walk'
+      ? 'Cutaway works in Orbit view (switch from Walk)'
+      : 'In orbit view, hide the floors above the one you are editing';
   const clip = editor.clipboard;
   $('#pasteTool').hidden = !clip;
   $<HTMLButtonElement>('#pasteAreaBtn').disabled = !editor.areaClip;
