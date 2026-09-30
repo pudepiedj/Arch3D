@@ -614,13 +614,11 @@ function syncToolbar() {
   // Always in the menu; greyed out, saying why, when it can't apply.
   const cutaway = $<HTMLButtonElement>('#cutaway');
   cutaway.classList.toggle('on', view.cutaway);
-  const single = store.building.levels.length < 2;
-  cutaway.disabled = single || view.mode === 'walk';
-  cutaway.title = single
-    ? 'Cutaway needs more than one floor: there is nothing above to hide'
-    : view.mode === 'walk'
+  cutaway.disabled = view.mode === 'walk';
+  cutaway.title =
+    view.mode === 'walk'
       ? 'Cutaway works in Orbit view (switch from Walk)'
-      : 'In orbit view, hide the floors above the one you are editing';
+      : 'Lift off the roof and ceilings of the floor you are editing, and hide the floors above it, to see into the rooms';
   const clip = editor.clipboard;
   $('#pasteTool').hidden = !clip;
   $<HTMLButtonElement>('#pasteAreaBtn').disabled = !editor.areaClip;
