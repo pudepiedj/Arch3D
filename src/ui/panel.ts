@@ -1001,6 +1001,23 @@ export class Panel {
       pt.guard = v === 'none' ? undefined : (v as NonNullable<typeof pt.guard>);
       this.done();
     });
+    if (pt.guard && !pool) {
+      // Each side, numbered on the plan: automatic, or the railing put on or left off by hand.
+      this.note('Railing sides (numbered on the plan): Auto leaves it off along a wall and puts it on the open edges; set a side to Railing or None to decide yourself.');
+      pt.points.forEach((a, k) => {
+        const b = pt.points[(k + 1) % pt.points.length];
+        this.select(`Side ${k + 1} (${Math.hypot(b.x - a.x, b.y - a.y).toFixed(2)} m)`, pt.railSides?.[k] ?? 'auto', [
+          ['auto', 'Auto'],
+          ['on', 'Railing'],
+          ['off', 'None'],
+        ], (v) => {
+          const sides = pt.points.map((_, i) => pt.railSides?.[i] ?? 'auto');
+          sides[k] = v as 'auto' | 'on' | 'off';
+          pt.railSides = sides.every((s) => s === 'auto') ? undefined : sides;
+          this.done();
+        });
+      });
+    }
     if (pool) {
       this.select('Cover', pt.cover ?? 'none', [
         ['none', 'None'],

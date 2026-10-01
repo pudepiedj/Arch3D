@@ -99,7 +99,29 @@ export function alongHouse(house: Vec2[][], a: Vec2, b: Vec2, tol = 0.05): boole
   );
 }
 
-/** Length of the patio's railing: round its open edges, not along the house. */
+/**
+ * The railing setting for the stretch a-b of the patio's outline: that of the drawn side it
+ * lies on ('on' or 'off'), or undefined to decide automatically.
+ */
+export function railSideOf(patio: Patio, a: Vec2, b: Vec2): 'on' | 'off' | undefined {
+  const sides = patio.railSides;
+  if (!sides?.length) return undefined;
+  const n = patio.points.length;
+  for (let k = 0; k < n; k++) {
+    const s = sides[k];
+    if (s !== 'on' && s !== 'off') continue;
+    const p = patio.points[k];
+    const q = patio.points[(k + 1) % n];
+    // On that side, or cut back from it a little by the wall it was drawn on, running the same way.
+    const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+    const run = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const sin = Math.abs(((q.x - p.x) * (b.y - a.y) - (q.y - p.y) * (b.x - a.x)) / (len * run));
+    if (sin < 0.05 && projectOnSegment(a, p, q).dist < 0.3 && projectOnSegment(b, p, q).dist < 0.3) return s;
+  }
+  return undefined;
+}
+
+/** Length of the patio's railing: round its open edges, not along the house (unless set otherwise). */
 export function guardLength(level: Level, patio: Patio): number {
   const house = outerFaces(level);
   let len = 0;
@@ -107,7 +129,8 @@ export function guardLength(level: Level, patio: Patio): number {
     const ring = shape[0];
     ring.forEach((p, k) => {
       const q = ring[(k + 1) % ring.length];
-      if (!alongHouse(house, p, q)) len += dist(p, q);
+      const set = railSideOf(patio, p, q);
+      if (set === 'on' || (set !== 'off' && !alongHouse(house, p, q))) len += dist(p, q);
     });
   }
   return len;

@@ -131,6 +131,11 @@ export interface Patio {
   module: number;
   /** A railing round its edge: glass panels (round a pool), wrought iron or timber. */
   guard?: Exclude<RailStyle, 'none'>;
+  /**
+   * Per side (side k runs from point k to the next), whether it has the railing: 'on' or
+   * 'off' overrides the automatic choice (none along a wall, railing on open edges).
+   */
+  railSides?: ('auto' | 'on' | 'off')[];
   /** A pool's slatted cover, on a roller at one end (the end the courses start from). */
   cover?: 'rolled' | 'covered';
   /** The cover's roller at the other short end. */

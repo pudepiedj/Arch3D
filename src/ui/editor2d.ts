@@ -248,6 +248,9 @@ export class Editor2D {
       const pts = this.selectedOutline();
       if (pts && pts.length > (this.selection?.kind === 'hedge' ? 2 : 3)) {
         pts.splice(h.index, 1);
+        // A patio's per-side railing settings: the two sides at the corner become one.
+        const rs = this.selection?.kind === 'patio' ? this.plan.patios?.[this.selection.id]?.railSides : undefined;
+        if (rs) rs.splice(h.index, 1);
         this.store.commit();
         return;
       }
@@ -845,6 +848,9 @@ export class Editor2D {
         if (cur.insert) {
           // First movement of a midpoint handle: it becomes a new corner.
           pts.splice(cur.index + 1, 0, { x: w.x, y: w.y });
+          // Both halves of a split side keep its railing setting.
+          const rs = this.selection?.kind === 'patio' ? this.plan.patios?.[this.selection.id]?.railSides : undefined;
+          if (rs) rs.splice(cur.index + 1, 0, rs[cur.index] ?? 'auto');
           cur.index += 1;
           cur.insert = false;
         }
@@ -1914,6 +1920,25 @@ export class Editor2D {
       for (const ring of shapes.flat()) {
         this.path(ring);
         ctx.stroke();
+      }
+      // Selected with a railing: number its sides, for the Railing sides in its panel.
+      if (sel && pt.guard && pt.surface !== 'pool') {
+        ctx.save();
+        ctx.font = '700 11px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        pt.points.forEach((a, k) => {
+          const b = pt.points[(k + 1) % pt.points.length];
+          const m = this.toScreen({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+          const set = pt.railSides?.[k];
+          ctx.fillStyle = set === 'on' ? '#1f6f3a' : set === 'off' ? '#9a2a2a' : C.accent;
+          ctx.beginPath();
+          ctx.arc(m.x, m.y, 9, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.fillText(String(k + 1), m.x, m.y + 0.5);
+        });
+        ctx.restore();
       }
     }
   }

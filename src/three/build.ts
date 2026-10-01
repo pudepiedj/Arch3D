@@ -25,7 +25,8 @@ import {
   solarGeometry,
 } from '../model/roofitems';
 import { allStairs, exitsAt, holesAt } from '../model/stairholes';
-import { BALCONY_SLAB, POOL_COPING, POOL_WATER, alongHouse, patioShapes } from '../model/patios';
+import { type TreeBlocker, fitTree, roofBlocker, wallBlocker } from './treefit';
+import { BALCONY_SLAB, POOL_COPING, POOL_WATER, alongHouse, patioShapes, railSideOf } from '../model/patios';
 import { type Species, crownBase, leanDirection, speciesOf, trunkRadius } from '../model/trees';
 import { standingHeight } from '../model/furniture';
 import { buildFurniture } from './furniture3d';
@@ -420,6 +421,8 @@ export interface LevelOptions {
   /** The ground's height in this floor's terms (minus the floor's elevation), and the house's outline. */
   ground?: number;
   house?: Vec2[][];
+  /** The walls and roofs of every floor, in this floor's heights: trees grow round them. */
+  treeBlockers?: TreeBlocker[];
   /** Where stairs (on any floor) arrive at the top, in this floor's heights: railings leave a gap there. */
   arrivals?: { a: Vec2; b: Vec2; z: number }[];
   /** The drawing's default finishes (walls outside and in, floors). */
@@ -454,6 +457,17 @@ export function buildBuildingObject(
     ),
   );
   const placed = allStairs(b);
+  // Every floor's walls, and its roofs, for the trees to grow round.
+  const anyTrees = b.levels.some((l) => Object.keys(l.trees ?? {}).length);
+  const blockers: TreeBlocker[] = anyTrees
+    ? b.levels.flatMap((l) => {
+        const e = levelElevation(b, l.id);
+        return [
+          ...outerFaces(l).map((ring) => wallBlocker(ring, e, e + l.height)),
+          ...levelRoofs(b, l).flatMap((r) => (r.geometry ? (roofBlocker(r.geometry, e) ?? []) : [])),
+        ];
+      })
+    : [];
   b.levels.forEach((level) => {
     const z = levelElevation(b, level.id);
     if (z > cutZ + 1e-6 && (!ownWalls || sameStack(level, cutLevel!))) return;
@@ -489,6 +503,9 @@ export function buildBuildingObject(
       ground: -levelElevation(b, level.id),
       house: Object.values(level.patios ?? {}).some((pt) => pt.height < -levelElevation(b, level.id) || pt.guard || pt.awning) ? outerFaces(level) : [],
       arrivals: arrivals.map((a) => ({ ...a, z: a.z - z })),
+      treeBlockers: Object.keys(level.trees ?? {}).length
+        ? blockers.map((k) => ({ ...k, bottom: k.bottom - z, eaves: k.eaves - z, peak: k.peak - z, top: (p: Vec2) => k.top(p) - z }))
+        : [],
     });
     obj.position.y = levelElevation(b, level.id);
     obj.name = `level:${level.id}`;
@@ -611,6 +628,8 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   // ground; round a raised terrace at its edge, on its top.
   for (const style of ['glass', 'iron', 'timber'] as const) {
     const lines: RailLine[] = [];
+    // Sides given a railing by hand: a full railing even against a wall, not just a handrail.
+    const forced: RailLine[] = [];
     for (const { patio, shapes } of opts.patios ?? []) {
       if (patio.guard !== style) continue;
       const pool = patio.surface === 'pool';
@@ -623,10 +642,15 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
         // ...nor along a wall of this floor (a landing indoors, between rooms) or of another
         // floor at these heights, even drawn a little short of it.
         const house = [...(opts.house ?? []), ...[...fps.values(), ...(opts.nearWalls ?? [])].map((f) => f.polygon)];
-        const along = (a: Vec2, b: Vec2) => alongHouse(house, a, b, 0.35);
+        // A side set by hand has the railing or not, whatever is beside it.
+        const along = (a: Vec2, b: Vec2) => {
+          const set = pool ? undefined : railSideOf(patio, a, b);
+          return set ? set === 'off' : alongHouse(house, a, b, 0.35);
+        };
         let run: Vec2[] = [];
+        let forcing = false;
         const flush = () => {
-          if (run.length > 1) lines.push({ points: run.map((p) => ({ p, z })), baseAt: () => z });
+          if (run.length > 1) (forcing ? forced : lines).push({ points: run.map((p) => ({ p, z })), baseAt: () => z });
           run = [];
         };
         // A gap where a stair arrives at this height (not round a pool).
@@ -670,6 +694,11 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
             flush();
             continue;
           }
+          const on = !pool && railSideOf(patio, a, b) === 'on';
+          if (on !== forcing) {
+            flush();
+            forcing = on;
+          }
           let t = 0;
           for (const [t0, t1] of gaps(a, b)) {
             if (t0 > t) {
@@ -685,8 +714,10 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
           }
         }
         flush();
+        forcing = false;
       }
     }
+    if (forced.length) group.add(buildRails(forced, [], mats.door, mats.frame, style, mats.glass));
     if (lines.length) group.add(buildRails(lines, [...fps.values(), ...(opts.nearWalls ?? [])], mats.door, mats.frame, style, mats.glass));
   }
   // Awnings, fixed to the wall along the patio's side against the house.
@@ -695,7 +726,12 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
     const walls = [...(opts.house ?? []), ...[...fps.values(), ...(opts.nearWalls ?? [])].map((f) => f.polygon)];
     group.add(buildAwning(patio, shapes[0][0], Math.max(patio.height, opts.ground ?? 0), walls));
   }
-  for (const t of opts.trees ?? []) group.add(buildTree(t, mats, opts.season ?? { leaf: 1, autumn: false }, opts.north ?? 0));
+  for (const t of opts.trees ?? []) {
+    const tree = buildTree(t, mats, opts.season ?? { leaf: 1, autumn: false }, opts.north ?? 0);
+    // Grown round the house, not through it.
+    if (opts.treeBlockers?.length) fitTree(tree, opts.treeBlockers, t.height + t.spread);
+    group.add(tree);
+  }
   for (const { hedge, runs } of opts.hedges ?? []) group.add(buildHedge(hedge, runs, opts.season ?? { leaf: 1, autumn: false }));
   for (const f of opts.furniture ?? []) {
     const obj = buildFurniture(f);
