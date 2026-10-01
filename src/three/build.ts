@@ -10,7 +10,7 @@ import { Vec2, dot, pointInPolygon, polygonArea, projectOnSegment, sub } from '.
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import { openingsOf } from '../model/openings';
 import { detectRooms } from '../model/rooms';
-import { ceilingHeight, levelBelow, levelElevation } from '../model/building';
+import { ceilingHeight, levelBelow, levelElevation, sameStack } from '../model/building';
 import { type Shape, intersectAll, subtract } from '../model/clip';
 import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs, outerFaces, outsetLoop, planeOf } from '../model/roof';
 import { type StairGeometry, reachesFloorAbove, stairGeometry, stairRise, stairSurfaceAt, stairwells } from '../model/stairs';
@@ -430,7 +430,8 @@ export interface Season {
 
 /**
  * The whole building: each level built in its own coordinates and lifted to its elevation.
- * `upTo` hides the levels above it (a doll's-house cutaway) and that level's ceilings.
+ * `upTo` hides the levels above it (a doll's-house cutaway) and that level's ceilings: only
+ * those of the same building, when it has walls, so the other houses and the garden stay.
  */
 export function buildBuildingObject(
   b: Building,
@@ -441,6 +442,8 @@ export function buildBuildingObject(
   const group = new THREE.Group();
   // Cut away: hide the floors higher than the one chosen (and its ceilings and roofs).
   const cutZ = upTo ? levelElevation(b, upTo) : Infinity;
+  const cutLevel = b.levels.find((l) => l.id === upTo);
+  const ownWalls = !!cutLevel && Object.keys(cutLevel.walls).length > 0;
   // The tops of all the stairs, so a balcony or terrace railing leaves a way in for them.
   const arrivals = b.levels.flatMap((l) =>
     Object.values(l.stairs ?? {}).map((st) => ({
@@ -451,7 +454,7 @@ export function buildBuildingObject(
   );
   b.levels.forEach((level) => {
     const z = levelElevation(b, level.id);
-    if (z > cutZ + 1e-6) return;
+    if (z > cutZ + 1e-6 && (!ownWalls || sameStack(level, cutLevel!))) return;
     const isCut = level.id === upTo;
     const below = levelBelow(b, level.id);
     // Rooflight boxes on flat roofs open a light well through the ceiling and the roof.

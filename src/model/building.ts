@@ -76,6 +76,16 @@ function wallExtent(l: Level) {
 }
 
 /**
+ * Do two floors stand over the same ground (their walls' extents overlap)? A floor with no
+ * walls overlaps nothing.
+ */
+export function sameStack(a: Level, c: Level): boolean {
+  const p = wallExtent(a);
+  const q = wallExtent(c);
+  return !!p && !!q && !(q.x0 >= p.x1 - 0.05 || p.x0 >= q.x1 - 0.05 || q.y0 >= p.y1 - 0.05 || p.y0 >= q.y1 - 0.05);
+}
+
+/**
  * The floor directly below or above one: the nearest one lower (or higher) standing over the
  * same ground, so two houses side by side at different heights (one on a plinth, one half
  * below ground) are separate stacks. A floor with no walls yet goes by the order of the list.

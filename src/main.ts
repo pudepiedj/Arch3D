@@ -250,7 +250,7 @@ function setLayout(l: Layout) {
   syncToolbar();
 }
 for (const b of $$('#layout button')) b.addEventListener('click', () => setLayout(b.dataset.layout as Layout));
-for (const b of $$('#mode button')) {
+for (const b of $$('#mode button[data-mode]')) {
   b.addEventListener('click', () => {
     const m = b.dataset.mode as ViewMode;
     if (layout === 'plan') setLayout(window.innerWidth < 700 ? '3d' : 'split');
@@ -269,15 +269,18 @@ try {
 } catch {
   // No storage (private browsing): it stays off.
 }
-$('#cutaway').addEventListener('click', () => {
-  view.setCutaway(!view.cutaway);
-  try {
-    localStorage.setItem('arch3d.cutaway', view.cutaway ? '1' : '0');
-  } catch {
-    // Not remembered; no matter.
-  }
-  syncToolbar();
-});
+// In the View menu, and as a toggle beside Orbit and Walk.
+for (const id of ['#cutaway', '#cutawayQuick']) {
+  $(id).addEventListener('click', () => {
+    view.setCutaway(!view.cutaway);
+    try {
+      localStorage.setItem('arch3d.cutaway', view.cutaway ? '1' : '0');
+    } catch {
+      // Not remembered; no matter.
+    }
+    syncToolbar();
+  });
+}
 
 // ---------------------------------------------------------------- floors
 
@@ -611,11 +614,14 @@ function syncToolbar() {
   ($('#undo') as HTMLButtonElement).disabled = !store.canUndo;
   ($('#redo') as HTMLButtonElement).disabled = !store.canRedo;
   for (const b of $$('#layout button')) b.classList.toggle('on', b.dataset.layout === layout);
-  for (const b of $$('#mode button')) b.classList.toggle('on', b.dataset.mode === view.mode);
+  for (const b of $$('#mode button[data-mode]')) b.classList.toggle('on', b.dataset.mode === view.mode);
   // Always in the menu; greyed out, saying why, when it can't apply.
   const cutaway = $<HTMLButtonElement>('#cutaway');
   cutaway.classList.toggle('on', view.cutaway);
   cutaway.disabled = view.mode === 'walk';
+  const quick = $<HTMLButtonElement>('#cutawayQuick');
+  quick.classList.toggle('on', view.cutaway);
+  quick.disabled = view.mode === 'walk';
   cutaway.title =
     view.mode === 'walk'
       ? 'Cutaway works in Orbit view (switch from Walk)'
