@@ -34,7 +34,13 @@ export interface StairGeometry {
    * pitch line above the stair's floor). Handrails run a fixed height above these.
    */
   rails: RailPoint[][];
+  /** A spiral stair's central column: where it stands, its radius, and how high it goes. */
+  post?: { x: number; y: number; r: number; top: number };
 }
+
+/** A spiral stair: each tread turns this far round the column, which is this thick. */
+export const SPIRAL_STEP = Math.PI / 6;
+export const SPIRAL_POST = 0.06;
 
 export interface RailPoint {
   p: Vec2;
@@ -64,7 +70,34 @@ export function stairGeometry(s: Stair, height: number): StairGeometry {
   // Screen y points down, so "left" as you walk up is the -v side.
   const side = s.turn === 'right' ? 1 : -1;
 
-  if (s.shape === 'straight') {
+  let post: { u: number; v: number; r: number } | undefined;
+  if (s.shape === 'spiral') {
+    // Round a central column: (x, y) is its centre, and the first tread points along the
+    // stair's direction; each tread is a wedge from the column out to the width, turning
+    // 30 degrees (anticlockwise on the plan, or clockwise if it turns right).
+    const k = n - 1;
+    const R = SPIRAL_POST + w;
+    const turn = -side;
+    const at = (rad: number, a: number) => vec(Math.cos(a) * rad, Math.sin(a) * rad);
+    for (let i = 0; i < k; i++) {
+      const a0 = turn * i * SPIRAL_STEP;
+      const a1 = turn * (i + 1) * SPIRAL_STEP;
+      const poly = [at(SPIRAL_POST, a0), at(R, a0), at(R, (a0 + a1) / 2), at(R, a1), at(SPIRAL_POST, a1)];
+      treads.push({ poly: turn > 0 ? poly : poly.reverse(), top: (i + 1) * r });
+    }
+    const circle = Array.from({ length: 24 }, (_, i) => at(R, (i / 24) * Math.PI * 2));
+    parts.push(circle);
+    const mid = SPIRAL_POST + w / 2;
+    for (let i = 0; i <= k; i++) path.push(at(mid, turn * i * SPIRAL_STEP));
+    // The handrail round the outside, rising with the treads.
+    const rail: { u: number; v: number; z: number }[] = [];
+    for (let i = 0; i <= k * 2; i++) {
+      const p = at(R - 0.03, (turn * i * SPIRAL_STEP) / 2);
+      rail.push(pt(p.x, p.y, ((i / 2) + 1) * r));
+    }
+    rails.push(rail);
+    post = { u: 0, v: 0, r: SPIRAL_POST };
+  } else if (s.shape === 'straight') {
     const k = n - 1;
     for (let i = 0; i < k; i++) treads.push({ poly: rect(i * g, (i + 1) * g, -w / 2, w / 2), top: (i + 1) * r });
     parts.push(rect(0, k * g, -w / 2, w / 2));
@@ -137,6 +170,7 @@ export function stairGeometry(s: Stair, height: number): StairGeometry {
     parts: parts.map((p) => p.map(place)),
     path: path.map(place),
     rails: rails.map((rail) => rail.map((q) => ({ p: place(vec(q.u, q.v)), z: q.z }))),
+    post: post && { ...place(vec(post.u, post.v)), r: post.r, top: height + 1 },
   };
 }
 

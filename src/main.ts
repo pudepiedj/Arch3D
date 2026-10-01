@@ -557,7 +557,7 @@ const HINTS: Record<Tool, string> = {
   moveArea: 'Drag a box round one whole building to give it a floor of its own (its own floor level, and its own floors on top); the garden stays · Esc to cancel',
   copyArea: 'Drag a box round what to copy (walls crossing the box are cut off at it) · Esc to cancel',
   pasteArea: 'Click where the copy goes (the pointer is its middle; joints landing on joints join up) · Esc to cancel',
-  stair: 'Click where the stair starts (its bottom step), then click in the direction it goes up',
+  stair: 'Click where the stair starts (its bottom step; for a spiral, its centre), then click in the direction it goes up',
   roof: 'Click a roof to select it · click an edge of the selected roof to switch eave / gable end, or (flat roof) to take its parapet off or put it back',
   garage: 'Click on a wall to place a garage roller door (2.5 m wide; change it in the panel)',
   open: 'Click on a wall to make an opening through it, with no door or window (square or arched: choose in the panel)',
@@ -571,7 +571,7 @@ const HINTS: Record<Tool, string> = {
   furniture: 'Click to place it (near a wall it backs onto the wall) · [ and ] turn it · Esc when done',
   tree: 'Click to plant a tree; drag it to move it, set its size in the panel',
   hedge: 'Click along the line of the hedge, fence or ditch · click its start to go all the way round · double-click, Enter or Esc to finish',
-  patio: 'Click the corners (snaps to walls; outside, the house is cut out; inside a room, it covers the floor) · click the first corner, double-click or Enter to finish',
+  patio: 'Click the corners (snaps to walls; outside, the house is cut out; inside a room, it covers the floor) · a Balcony goes on an upper floor, outside the wall · click the first corner, double-click or Enter to finish',
 };
 
 function syncToolbar() {

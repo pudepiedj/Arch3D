@@ -5,7 +5,7 @@ import { PLINTH, addLevelBelow, addLevelOnTop, ceilingHeight, deleteLevel, getLe
 import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, parapetHeight, roofAreaRings, setAreaRoof } from '../model/roof';
 import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
-import { PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
+import { BALCONY_SLAB, PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
 import { SPECIES, TREE_DEFAULTS, TREE_ORDER, speciesOf } from '../model/trees';
 import { forget, remember, remembered } from './sizes';
 import { MAX_LEAF, gateLeaves, isGate } from '../model/gates';
@@ -397,38 +397,41 @@ export class Panel {
     if (!st) return;
     const rise = stairRise(st, level);
     const g = stairGeometry(st, rise);
+    const spiral = st.shape === 'spiral';
     this.title(st.rise !== undefined && st.rise < level.height - 0.05 ? 'Steps' : 'Stair');
     this.number('Rises', rise, 0.05, 0.1, 20, (v) => {
       st.rise = Math.abs(v - level.height) < 1e-6 ? undefined : v;
       this.done();
     }, 'm', `How high it climbs: the ${level.height} m to the next floor, or less for steps up to a plinth or terrace, or more for an outside stair to an upper door`);
-    this.select('Style', st.style ?? 'solid', [
+    this.select('Style', st.style ?? (spiral ? 'metal' : 'solid'), [
       ['solid', 'Solid, timber treads'],
       ['stone', 'Stone steps (solid)'],
       ['cantilever', 'Stone treads cantilevered from the wall'],
+      ['metal', 'Steel treads, open (on a spiral, round a steel column)'],
     ], (v) => {
-      st.style = v === 'solid' ? undefined : (v as StairStyle);
+      st.style = v as StairStyle;
       this.done();
     });
-    this.select('Handrail', st.rail ?? 'timber', [
+    this.select('Handrail', st.rail ?? (spiral ? 'iron' : 'timber'), [
       ['timber', 'Timber, with balusters'],
       ['iron', 'Wrought iron'],
       ['glass', 'Glass panels'],
       ['none', 'None'],
     ], (v) => {
-      st.rail = v === 'timber' ? undefined : (v as RailStyle);
+      st.rail = v as RailStyle;
       this.done();
     });
     this.select('Shape', st.shape, [
       ['straight', 'Straight'],
       ['L', 'L-shape (quarter turn)'],
       ['U', 'U-shape (half turn)'],
+      ['spiral', 'Spiral, round a column'],
     ], (v) => {
       st.shape = v as StairShape;
       this.done();
     });
     if (st.shape !== 'straight') {
-      this.select('Turns', st.turn, [
+      this.select(spiral ? 'Winds' : 'Turns', st.turn, [
         ['left', 'Left'],
         ['right', 'Right'],
       ], (v) => {
@@ -448,6 +451,7 @@ export class Panel {
       `${g.risers} risers of ${(g.rise * 100).toFixed(1)} cm climb ${rise.toFixed(2)} m${reachesFloorAbove(st, level) && st.rise === undefined ? ' to the next floor' : ''}.` +
         (st.shape === 'straight' ? ` Length ${(g.treads.length * st.going).toFixed(2)} m.` : '') +
         (st.style === 'cantilever' ? ' Set one side against a wall: the treads are built into it, with nothing underneath.' : '') +
+        (spiral ? ` ${(((g.treads.length * 30) / 360) * 10) / 10 >= 1 ? `It winds ${Math.round(g.treads.length * 30)}° round its column` : 'A short spiral'}, ${((st.width + 0.06) * 2).toFixed(2)} m across; Width is the length of each tread. Its position is the column's centre.` : '') +
         (reachesFloorAbove(st, level) && !levelAbove(this.store.building, level.id) ? ' There is no floor above yet: add one to use the stair.' : ''),
     );
     this.buttons([
@@ -958,7 +962,7 @@ export class Panel {
     const level = this.store.plan;
     const pt = level.patios?.[id];
     if (!pt) return;
-    const names: Record<PatioSurface, string> = { paving: 'Patio', decking: 'Deck', gravel: 'Gravel', rubber: 'Rubber floor', lawn: 'Lawn', pool: 'Swimming pool' };
+    const names: Record<PatioSurface, string> = { paving: 'Patio', decking: 'Deck', gravel: 'Gravel', rubber: 'Rubber floor', lawn: 'Lawn', pool: 'Swimming pool', balcony: 'Balcony' };
     const pool = pt.surface === 'pool';
     this.title(names[pt.surface]);
     this.select('Surface', pt.surface, [
@@ -968,6 +972,7 @@ export class Panel {
       ['rubber', 'Rubber tiles'],
       ['lawn', 'Lawn'],
       ['pool', 'Swimming pool'],
+      ['balcony', 'Balcony (cantilevered)'],
     ], (v) => {
       setPatioSurface(pt, v as PatioSurface);
       this.done();
@@ -993,7 +998,7 @@ export class Panel {
       this.done();
     });
     if (pt.surface !== 'gravel' && !pool) {
-      const slab = pt.surface === 'paving' || pt.surface === 'rubber';
+      const slab = pt.surface === 'paving' || pt.surface === 'rubber' || pt.surface === 'balcony';
       const lawn = pt.surface === 'lawn';
       const [label, lo, hi] = lawn ? ['Stripe width', 0.3, 3] : slab ? [pt.surface === 'rubber' ? 'Tile size' : 'Slab size', 0.2, 1.2] : ['Board width', 0.08, 0.3];
       this.number(label, pt.module, 0.005, lo, hi, (v) => {
@@ -1010,6 +1015,8 @@ export class Panel {
       `${patioArea(level, pt).toFixed(1)} m². ` +
         (pool
           ? `About ${Math.round(patioArea(level, pt) * (-pt.height - 0.15))} m³ of water (${Math.round(patioArea(level, pt) * (-pt.height - 0.15) * 1000).toLocaleString('en-GB')} litres). Mosaic-lined, with a stone coping round the edge; a railing stands at the outside of the coping.`
+          : pt.surface === 'balcony'
+          ? `A ${BALCONY_SLAB * 100} cm stone slab cantilevered from the wall on steel brackets, nothing under it. Draw it outside the wall of an upper floor; the railing runs round its open edges, not along the house. An outside stair whose Rises reaches this floor's level climbs onto it.`
           : pt.height < 0
           ? `Sunken ${(-pt.height).toFixed(2)} m: the ground is dug away, with retaining walls round it in the outside wall finish.`
           : pt.height > std + 0.2

@@ -74,3 +74,20 @@ describe('stairwells', () => {
     expect(net).toBeCloseTo(24 - 15 * 0.25 * 0.9, 6);
   });
 });
+
+describe('spiral stairs', () => {
+  it('wind wedge treads round a central column', () => {
+    const g = stairGeometry({ ...base, shape: 'spiral', width: 0.8 }, 2.6);
+    expect(g.treads).toHaveLength(g.risers - 1);
+    expect(g.post).toMatchObject({ x: 0, y: 0 });
+    // Every tread runs from the column out to the width, and they climb a riser at a time.
+    for (const [i, t] of g.treads.entries()) {
+      const r = t.poly.map((p) => Math.hypot(p.x, p.y));
+      expect(Math.min(...r)).toBeCloseTo(0.06, 5);
+      expect(Math.max(...r)).toBeCloseTo(0.86, 5);
+      expect(t.top).toBeCloseTo((i + 1) * g.rise, 5);
+    }
+    // The stairwell is the circle the treads sweep.
+    expect(g.parts).toHaveLength(1);
+  });
+});

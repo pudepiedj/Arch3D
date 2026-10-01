@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createBuilding } from '../src/model/building';
 import { demoBuilding } from '../src/model/demo';
 import { detectRooms } from '../src/model/rooms';
-import { addPatio, patioArea, patioAt, patioShapes, setPatioSurface } from '../src/model/patios';
+import { addPatio, guardLength, patioArea, patioAt, patioShapes, setPatioSurface } from '../src/model/patios';
 import { addWall } from '../src/model/plan';
 import { WalkWorld } from '../src/model/walk';
 
@@ -80,5 +80,20 @@ describe('a lawn', () => {
     expect(patioArea(l, lawn)).toBeCloseTo(100);
     addPatio(l, [{ x: 2, y: 2 }, { x: 4, y: 2 }, { x: 4, y: 5 }, { x: 2, y: 5 }], 'paving');
     expect(patioArea(l, lawn)).toBeCloseTo(94);
+  });
+});
+
+describe('balconies', () => {
+  it('get an iron railing round their open edges, not along the house', () => {
+    const b = house();
+    const l = b.levels[0];
+    const pt = addPatio(l, [{ x: 1, y: 4 }, { x: 4, y: 4 }, { x: 4, y: 5.5 }, { x: 1, y: 5.5 }], 'balcony');
+    expect(pt.guard).toBe('iron');
+    expect(pt.height).toBe(0);
+    // The wall's outer face is at y = 4.15: two 1.35 m ends and the 3 m front.
+    expect(guardLength(l, pt)).toBeCloseTo(3 + 2 * 1.35, 5);
+    const p2 = addPatio(l, [{ x: 1, y: 8 }, { x: 2, y: 8 }, { x: 2, y: 9 }], 'paving');
+    setPatioSurface(p2, 'balcony');
+    expect(p2.guard).toBe('iron');
   });
 });

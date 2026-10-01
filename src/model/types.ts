@@ -116,7 +116,7 @@ export interface Rooflight {
   solarMotor: boolean;
 }
 
-export type PatioSurface = 'paving' | 'decking' | 'gravel' | 'rubber' | 'lawn' | 'pool';
+export type PatioSurface = 'paving' | 'decking' | 'gravel' | 'rubber' | 'lawn' | 'pool' | 'balcony';
 
 /** A paved, decked or gravelled area outside, drawn as a polygon on a floor's plan. */
 export interface Patio {
@@ -177,7 +177,7 @@ export interface Pillar {
   shape: 'square' | 'round';
 }
 
-export type StairShape = 'straight' | 'L' | 'U';
+export type StairShape = 'straight' | 'L' | 'U' | 'spiral';
 
 /** A stair rising from its level to the next one up. Steps are computed, not stored. */
 export interface Stair {
@@ -201,7 +201,7 @@ export interface Stair {
   rail?: RailStyle;
 }
 
-export type StairStyle = 'solid' | 'stone' | 'cantilever';
+export type StairStyle = 'solid' | 'stone' | 'cantilever' | 'metal';
 export type RailStyle = 'timber' | 'iron' | 'glass' | 'none';
 
 export type RoofKind = 'gable' | 'hip' | 'flat' | 'none';
