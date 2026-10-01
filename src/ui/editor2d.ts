@@ -18,7 +18,7 @@ import {
 import { type Clip, copyArea, describeClip, pasteClip } from '../model/copyarea';
 import { moveToOwnFloor } from '../model/separate';
 import { FLOOR_FINISHES, WALL_FINISHES, clearFloorFinish, faceSides, materialsOf, paintRoomWalls, setFloorFinish } from '../model/materials';
-import { getLevel, levelBelow } from '../model/building';
+import { addRoomOnTop, getLevel, levelBelow } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
 import { addPatio, patioShapes } from '../model/patios';
 import { addTree, crownCentre, speciesOf, treeAt, trunkRadius } from '../model/trees';
@@ -59,7 +59,7 @@ import { remembered } from './sizes';
 import type { DrainKind, FloorFinish, Furniture, Hedge, HedgeKind, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind, WallFinish } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'open' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain' | 'hedge' | 'copyArea' | 'pasteArea' | 'moveArea' | 'paint';
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'open' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain' | 'hedge' | 'copyArea' | 'pasteArea' | 'moveArea' | 'roomOnTop' | 'paint';
 export type Selection = {
   kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'drainNode' | 'drainPipe' | 'hedge';
   id: string;
@@ -144,7 +144,7 @@ export class Editor2D {
   showPrintArea = false;
   private areaPick: ((b: Box | null) => void) | null = null;
   /** What the box being dragged is for, and the box so far. */
-  private areaPurpose: 'print' | 'copy' | 'move' = 'print';
+  private areaPurpose: 'print' | 'copy' | 'move' | 'room' = 'print';
   private pickDraft: Box | null = null;
   /** Part of a plan copied with the Copy area tool, to paste (kept on this device). */
   areaClip: Clip | null = loadClip();
@@ -306,7 +306,7 @@ export class Editor2D {
 
   setTool(t: Tool) {
     if (this.tool === 'wall' && t !== 'wall') this.finishChain();
-    if ((this.tool === 'copyArea' || this.tool === 'moveArea') && t !== this.tool && this.areaPick) {
+    if ((this.tool === 'copyArea' || this.tool === 'moveArea' || this.tool === 'roomOnTop') && t !== this.tool && this.areaPick) {
       this.areaPick = null;
       this.pickDraft = null;
     }
@@ -317,6 +317,7 @@ export class Editor2D {
     this.tool = t;
     if (t === 'copyArea') this.pickArea((b) => this.copyBox(b), 'copy');
     if (t === 'moveArea') this.pickArea((b) => this.moveBox(b), 'move');
+    if (t === 'roomOnTop') this.pickArea((b) => this.roomBox(b), 'room');
     if (t === 'pasteArea' && !this.areaClip) this.tool = 'select';
     this.onToolChange?.();
     this.requestRender();
@@ -336,6 +337,16 @@ export class Editor2D {
       this.flash('No walls wholly inside the box: drag it round the whole building', { x: b.x0, y: b.y0 });
       return;
     }
+    this.store.commit();
+    this.store.setActive(level.id);
+    this.select({ kind: 'level', id: level.id });
+  }
+
+  /** Build a small floor on top of this one, over the box (a stair-head onto the roof). */
+  private roomBox(b: Box | null) {
+    this.setTool('select');
+    if (!b) return;
+    const level = addRoomOnTop(this.store.building, this.plan, b);
     this.store.commit();
     this.store.setActive(level.id);
     this.select({ kind: 'level', id: level.id });
@@ -2022,7 +2033,7 @@ export class Editor2D {
    * Choose an area to print: the next box dragged on the plan (whatever the tool) is it.
    * `done` gets the box, or null if Esc was pressed.
    */
-  pickArea(done: (b: Box | null) => void, purpose: 'print' | 'copy' | 'move' = 'print') {
+  pickArea(done: (b: Box | null) => void, purpose: 'print' | 'copy' | 'move' | 'room' = 'print') {
     this.areaPick = done;
     this.areaPurpose = purpose;
     this.pickDraft = null;
@@ -2817,7 +2828,7 @@ export class Editor2D {
     this.drawToolPreview(C);
     if (this.tool === 'stretch') this.drawStretch(C);
     const picking = this.areaPick ? (this.pickDraft ?? (this.areaPurpose === 'print' ? this.printArea : null)) : null;
-    if (picking) this.drawPrintArea(C, picking, this.areaPurpose === 'copy' ? 'Copy' : this.areaPurpose === 'move' ? 'Move to its own floor' : 'Print area');
+    if (picking) this.drawPrintArea(C, picking, this.areaPurpose === 'copy' ? 'Copy' : this.areaPurpose === 'move' ? 'Move to its own floor' : this.areaPurpose === 'room' ? 'Room on top' : 'Print area');
     else if (this.printArea && this.showPrintArea) this.drawPrintArea(C, this.printArea, 'Print area');
 
     for (const g of this.lastGuides) this.guide(g.from, g.to, C.accent);

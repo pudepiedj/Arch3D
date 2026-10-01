@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addLevelBelow, addLevelOnTop, createBuilding, fitStoreys, createLevel, levelAbove, levelBelow, levelElevation, levelsTopDown } from '../src/model/building';
+import { addLevelBelow, addLevelOnTop, addRoomOnTop, createBuilding, fitStoreys, createLevel, levelAbove, levelBelow, levelElevation, levelsTopDown } from '../src/model/building';
 import { addWall } from '../src/model/plan';
 import { defaultRoof } from '../src/model/roof';
 import type { Building, Level } from '../src/model/types';
@@ -129,5 +129,18 @@ describe('walls following floor levels', () => {
     expect(lower.height).toBeCloseTo(3);
     expect(levelElevation(b, upper.id)).toBeCloseTo(1);
     expect(deep.height).toBeCloseTo(2.8);
+  });
+});
+
+describe('a room on top', () => {
+  it('stands on the floor it is drawn on, walled round the box, and flattens that roof', () => {
+    const { b, upper } = twoHouses();
+    upper.roof = { kind: 'hip', pitch: 22, overhang: 0.4 };
+    const room = addRoomOnTop(b, upper, { x0: 18, y0: 2, x1: 21, y1: 5 });
+    expect(levelElevation(b, room.id)).toBeCloseTo(levelElevation(b, upper.id) + upper.height);
+    expect(Object.keys(room.walls)).toHaveLength(4);
+    expect(room.roof?.kind).toBe('flat');
+    expect(upper.roof?.kind).toBe('flat');
+    expect(levelAbove(b, upper.id)).toBe(room);
   });
 });

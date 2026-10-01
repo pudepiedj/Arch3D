@@ -201,6 +201,28 @@ export function addLevelOnTop(b: Building, copyOutline: boolean, onto?: Level): 
 }
 
 /**
+ * A small floor on top of part of one (a stair-head with a door out onto a roof terrace, a
+ * roof room): walls round the box, a flat roof on it, standing on the top of `under`. The
+ * roof of `under` is made flat, to walk on, if it wasn't.
+ */
+export function addRoomOnTop(b: Building, under: Level, box: { x0: number; y0: number; x1: number; y1: number }, height = 2.7): Level {
+  const level = createLevel(b, `${under.name}, roof room`, height);
+  level.base = levelElevation(b, under.id) + under.height;
+  const pts = [
+    { x: box.x0, y: box.y0 },
+    { x: box.x1, y: box.y0 },
+    { x: box.x1, y: box.y1 },
+    { x: box.x0, y: box.y1 },
+  ];
+  pts.forEach((p, i) => addWall(level, p, pts[(i + 1) % 4], { thickness: 0.2, height }));
+  normalize(level);
+  level.roof = { kind: 'flat', pitch: 0, overhang: 0 };
+  if (under.roof?.kind !== 'flat') under.roof = { ...(under.roof ?? { pitch: 0, overhang: 0 }), kind: 'flat', overhang: 0 };
+  b.levels.push(level);
+  return level;
+}
+
+/**
  * Add a storey below one (a basement, or the lower floor of a house half in the ground),
  * starting with a copy of its outside walls.
  */
