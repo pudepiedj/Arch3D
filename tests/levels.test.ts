@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { addLevelBelow, addLevelOnTop, addRoomOnTop, createBuilding, fitStoreys, createLevel, levelAbove, levelBelow, levelElevation, levelsTopDown } from '../src/model/building';
+import { addLevelBelow, addLevelOnTop, addRoomOnTop, createBuilding, fitStoreys, createLevel, levelAbove, levelBelow, levelElevation, levelsTopDown, levelsUnder } from '../src/model/building';
 import { addWall } from '../src/model/plan';
-import { defaultRoof } from '../src/model/roof';
+import { defaultRoof, levelRoofs } from '../src/model/roof';
 import type { Building, Level } from '../src/model/types';
 
 function box(l: Level, x0: number, y0: number, x1: number, y1: number) {
@@ -142,5 +142,49 @@ describe('a room on top', () => {
     expect(room.roof?.kind).toBe('flat');
     expect(upper.roof?.kind).toBe('flat');
     expect(levelAbove(b, upper.id)).toBe(room);
+  });
+});
+
+describe('split levels', () => {
+  it('treat a part set a little lower as beside the floor, not under it', () => {
+    const b = createBuilding();
+    const a = createLevel(b, 'Dropped 0.8', 3);
+    a.base = -0.8;
+    box(a, 0, 0, 10, 8);
+    b.levels.push(a);
+    const c = createLevel(b, 'Dropped 1.1', 3);
+    c.base = -1.1;
+    box(c, 5, 2, 9, 6);
+    b.levels.push(c);
+    const first = createLevel(b, 'First floor', 2.9);
+    first.base = 2.2;
+    box(first, 0, 0, 10, 8);
+    b.levels.push(first);
+    fitStoreys(b);
+    expect(levelAbove(b, c.id)).toBe(first);
+    expect(levelBelow(b, c.id)).toBeUndefined();
+    expect(c.height).toBeCloseTo(3.3);
+    // Covered by the first floor: no roof (and no parapet) in the middle of it.
+    expect(levelRoofs(b, c)).toHaveLength(0);
+    expect(levelRoofs(b, a)).toHaveLength(0);
+  });
+});
+
+describe('stairs from a split level', () => {
+  it('come up through the floor above both parts', () => {
+    const b = createBuilding();
+    const a = createLevel(b, 'Dropped 0.8', 3);
+    a.base = -0.8;
+    box(a, 0, 0, 10, 8);
+    b.levels.push(a);
+    const c = createLevel(b, 'Dropped 1.1', 3.3);
+    c.base = -1.1;
+    box(c, 12, 0, 16, 8);
+    b.levels.push(c);
+    const first = createLevel(b, 'First floor', 2.9);
+    first.base = 2.2;
+    box(first, 0, 0, 16, 8);
+    b.levels.push(first);
+    expect(levelsUnder(b, first.id).map((l) => l.id).sort()).toEqual([a.id, c.id].sort());
   });
 });

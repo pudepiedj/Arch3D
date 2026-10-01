@@ -10,7 +10,7 @@ import { Vec2, dot, pointInPolygon, polygonArea, projectOnSegment, sub } from '.
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import { openingsOf } from '../model/openings';
 import { detectRooms } from '../model/rooms';
-import { ceilingHeight, levelBelow, levelElevation, sameStack } from '../model/building';
+import { ceilingHeight, levelElevation, levelsUnder, sameStack } from '../model/building';
 import { type Shape, intersectAll, subtract } from '../model/clip';
 import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs, outerFaces, outsetLoop, planeOf } from '../model/roof';
 import { type StairGeometry, reachesFloorAbove, stairGeometry, stairRise, stairSurfaceAt, stairwells } from '../model/stairs';
@@ -456,7 +456,8 @@ export function buildBuildingObject(
     const z = levelElevation(b, level.id);
     if (z > cutZ + 1e-6 && (!ownWalls || sameStack(level, cutLevel!))) return;
     const isCut = level.id === upTo;
-    const below = levelBelow(b, level.id);
+    // The floors under this one (the parts of a split level), whose stairs come up through it.
+    const under = levelsUnder(b, level.id);
     // Rooflight boxes on flat roofs open a light well through the ceiling and the roof.
     const rooflights =
       isCut ? [] : Object.values(level.rooflights ?? {}).flatMap((r) => rooflightGeometry(b, level, r) ?? []);
@@ -466,8 +467,8 @@ export function buildBuildingObject(
     const vaults = roofs.filter((r) => r.roof.vaulted && r.roof.kind !== 'flat' && r.geometry).map((r) => [r.ring]);
     const obj = buildPlanObject(level, mats, {
       ceiling: isCut ? null : ceilingHeight(b, level),
-      floorHoles: below ? stairwells(below) : [],
-      wellExits: below ? Object.values(below.stairs ?? {}).filter((st) => reachesFloorAbove(st, below)).map((st) => stairGeometry(st, stairRise(st, below)).path.at(-1)!) : [],
+      floorHoles: under.flatMap((l) => stairwells(l)),
+      wellExits: under.flatMap((l) => Object.values(l.stairs ?? {}).filter((st) => reachesFloorAbove(st, l)).map((st) => stairGeometry(st, stairRise(st, l)).path.at(-1)!)),
       ceilingHoles: [...stairwells(level), ...kerbs.map((r) => [r.footprint]), ...vaults],
       slab: level.slab,
       stairs: Object.values(level.stairs ?? {}).map((st) => ({ ...stairGeometry(st, stairRise(st, level)), style: st.style, rail: st.rail })),

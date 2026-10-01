@@ -6,7 +6,7 @@
 // and walking off the top lands on the next floor. Walls of the storey the walker is on,
 // and stair steps too high to step onto, block movement.
 
-import { levelBelow, levelElevation } from './building';
+import { levelsUnder, levelElevation } from './building';
 import { Vec2, pointInPolygon } from './geom';
 import { computeFootprints, type Footprint } from './joints';
 import { openingsOf } from './openings';
@@ -81,8 +81,7 @@ export class WalkWorld {
       }
       this.levels.push({ id: level.id, elevation, colliders: buildColliders(level), posts });
       this.heights.push(level.height);
-      const below = levelBelow(b, level.id);
-      const holes = below ? stairwells(below).map((shape) => shape[0]) : [];
+      const holes = levelsUnder(b, level.id).flatMap((l) => stairwells(l).map((shape) => shape[0]));
       for (const r of detectRooms(level)) this.surfaces.push({ poly: r.polygon, holes, z: elevation + 0.005 });
       for (const pt of Object.values(level.patios ?? {})) {
         for (const [poly, ...holes] of patioShapes(level, pt)) {

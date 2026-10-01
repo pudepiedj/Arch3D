@@ -127,6 +127,7 @@ export function sameStack(a: Level, c: Level): boolean {
  * The floor directly below or above one: the nearest one lower (or higher) standing over the
  * same ground, so two houses side by side at different heights (one on a plinth, one half
  * below ground) are separate stacks. A floor with no walls yet goes by the order of the list.
+ * A part of a floor set a little lower (a split level) is beside it, not under it.
  */
 function neighbour(b: Building, id: string, dir: 1 | -1): Level | undefined {
   const i = b.levels.findIndex((l) => l.id === id);
@@ -142,7 +143,8 @@ function neighbour(b: Building, id: string, dir: 1 | -1): Level | undefined {
     const e = wallExtent(other);
     if (!e || e.x0 >= own.x1 - 0.05 || own.x0 >= e.x1 - 0.05 || e.y0 >= own.y1 - 0.05 || own.y0 >= e.y1 - 0.05) continue;
     const oz = levelElevation(b, other.id);
-    if (dir > 0 ? oz <= z + 1e-6 : oz >= z - 1e-6) continue;
+    // A storey up or down, not a split-level part of the same floor a little higher or lower.
+    if (dir > 0 ? oz < z + Math.min(1.5, level.height / 2) : oz > z - Math.min(1.5, other.height / 2)) continue;
     if (!best || (dir > 0 ? oz < bestZ : oz > bestZ)) {
       best = other;
       bestZ = oz;
@@ -157,6 +159,11 @@ export function levelBelow(b: Building, id: string): Level | undefined {
 
 export function levelAbove(b: Building, id: string): Level | undefined {
   return neighbour(b, id, 1);
+}
+
+/** Every floor with this one directly above it: one, or the parts of a split level. */
+export function levelsUnder(b: Building, id: string): Level[] {
+  return b.levels.filter((l) => l.id !== id && levelAbove(b, l.id)?.id === id);
 }
 
 /** The floors from the top down, as the floor list shows them. */
