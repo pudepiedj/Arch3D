@@ -13,7 +13,7 @@ import { detectRooms } from '../model/rooms';
 import { ceilingHeight, levelElevation, levelsUnder, sameStack } from '../model/building';
 import { type Shape, intersectAll, subtract } from '../model/clip';
 import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs, outerFaces, outsetLoop, planeOf } from '../model/roof';
-import { type StairGeometry, reachesFloorAbove, stairEnds, stairGeometry, stairRise, stairSurfaceAt, stairwells } from '../model/stairs';
+import { type StairGeometry, reachesFloorAbove, stairEnds, placedStair, stairRise, stairSurfaceAt, stairwells } from '../model/stairs';
 import { type RailLine, againstWall, buildRails, onSegment } from './rails';
 import { pillarHeight } from '../model/pillars';
 import {
@@ -449,7 +449,7 @@ export function buildBuildingObject(
   // The tops of all the stairs, so a balcony or terrace railing leaves a way in for them.
   const arrivals = b.levels.flatMap((l) =>
     Object.values(l.stairs ?? {}).flatMap((st) =>
-      stairEnds(stairGeometry(st, stairRise(st, l)), st.width, stairRise(st, l)).map((e) => ({ ...e, z: e.z + levelElevation(b, l.id) })),
+      stairEnds(placedStair(st, l), st.width, stairRise(st, l)).map((e) => ({ ...e, z: e.z + levelElevation(b, l.id) })),
     ),
   );
   b.levels.forEach((level) => {
@@ -468,10 +468,10 @@ export function buildBuildingObject(
     const obj = buildPlanObject(level, mats, {
       ceiling: isCut ? null : ceilingHeight(b, level),
       floorHoles: under.flatMap((l) => stairwells(l)),
-      wellExits: under.flatMap((l) => Object.values(l.stairs ?? {}).filter((st) => reachesFloorAbove(st, l)).map((st) => stairGeometry(st, stairRise(st, l)).path.at(-1)!)),
+      wellExits: under.flatMap((l) => Object.values(l.stairs ?? {}).filter((st) => reachesFloorAbove(st, l)).map((st) => placedStair(st, l).path.at(-1)!)),
       ceilingHoles: [...stairwells(level), ...kerbs.map((r) => [r.footprint]), ...vaults],
       slab: level.slab,
-      stairs: Object.values(level.stairs ?? {}).map((st) => ({ ...stairGeometry(st, stairRise(st, level)), style: st.style, rail: st.rail })),
+      stairs: Object.values(level.stairs ?? {}).map((st) => ({ ...placedStair(st, level), style: st.style, rail: st.rail })),
       pillars: Object.values(level.pillars ?? {}).map((q) => ({ ...q, height: pillarHeight(b, level, q) })),
       chimneys: isCut ? [] : Object.values(level.chimneys ?? {}).map((c) => chimneyGeometry(b, level, c)),
       solar: isCut ? [] : Object.values(level.solar ?? {}).flatMap((sa) => solarGeometry(b, level, sa) ?? []),

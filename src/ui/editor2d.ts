@@ -32,7 +32,7 @@ import { drawFurnitureSymbol } from './furniture2d';
 import { addChimney, addRooflight, addSolarArray, chimneyFootprint, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { roofSurfaceAt } from '../model/roof';
 import { DEFAULT_ROOF, type LevelRoof, levelRoofs, parapetHeight, roofAreaRings, setAreaRoof, toggleEdge, toggleParapet } from '../model/roof';
-import { DEFAULT_GOING, DEFAULT_STAIR_WIDTH, type StairGeometry, addStair, reachesFloorAbove, stairAt, stairGeometry, stairRise } from '../model/stairs';
+import { DEFAULT_GOING, DEFAULT_STAIR_WIDTH, type StairGeometry, addStair, reachesFloorAbove, stairAt, placedStair, stairGeometry } from '../model/stairs';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import {
   type OpeningTemplate,
@@ -2711,12 +2711,12 @@ export class Editor2D {
     if (below) {
       const lower = levelBelowOf(this.store);
       for (const st of Object.values(lower.stairs ?? {})) {
-        if (reachesFloorAbove(st, lower)) this.drawStair(stairGeometry(st, stairRise(st, lower)), false, true, C);
+        if (reachesFloorAbove(st, lower)) this.drawStair(placedStair(st, lower), false, true, C);
       }
     }
     for (const st of Object.values(plan.stairs ?? {})) {
       const sel = this.selection?.kind === 'stair' && this.selection.id === st.id;
-      this.drawStair(stairGeometry(st, stairRise(st, plan)), sel, false, C);
+      this.drawStair(placedStair(st, plan), sel, false, C);
     }
 
     this.drawRoofs(C);

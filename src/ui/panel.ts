@@ -15,7 +15,7 @@ import { stretchSummary } from '../model/stretch';
 import { DEFAULT_INVERT, DEFAULT_TANK, FITTING_NAMES, deleteDrainNode, pipeFall, pipeLength, tankVolume } from '../model/drains';
 import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { moveToOwnFloor } from '../model/separate';
-import { reachesFloorAbove, stairGeometry, stairRise } from '../model/stairs';
+import { placedStair, reachesFloorAbove, stairBase, stairRise } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { FLOOR_FINISHES, ROOF_COVERINGS, WALL_FINISHES, faceSides, materialsOf } from '../model/materials';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
@@ -397,13 +397,14 @@ export class Panel {
     const st = level.stairs?.[id];
     if (!st) return;
     const rise = stairRise(st, level);
-    const g = stairGeometry(st, rise);
+    const foot = stairBase(st, level);
+    const g = placedStair(st, level);
     const spiral = st.shape === 'spiral';
     this.title(st.rise !== undefined && st.rise < level.height - 0.05 ? 'Steps' : 'Stair');
     this.number('Rises', rise, 0.05, 0.1, 20, (v) => {
-      st.rise = Math.abs(v - level.height) < 1e-6 ? undefined : v;
+      st.rise = Math.abs(v - (level.height - foot)) < 1e-6 ? undefined : v;
       this.done();
-    }, 'm', `How high it climbs: the ${level.height} m to the next floor, or less for steps up to a plinth or terrace, or more for an outside stair to an upper door`);
+    }, 'm', `How high it climbs from its foot: the ${(level.height - foot).toFixed(2)} m to the next floor, or less for steps up to a plinth or terrace, or more for an outside stair to an upper door`);
     this.select('Style', st.style ?? (spiral ? 'metal' : 'solid'), [
       ['solid', 'Solid, timber treads'],
       ['stone', 'Stone steps (solid)'],
@@ -450,6 +451,7 @@ export class Panel {
     }, 'm', 'How deep each step is (the "going")');
     this.note(
       `${g.risers} risers of ${(g.rise * 100).toFixed(1)} cm climb ${rise.toFixed(2)} m${reachesFloorAbove(st, level) && st.rise === undefined ? ' to the next floor' : ''}.` +
+        (Math.abs(foot) > 0.05 ? ` Its foot is on the ${foot > 0 ? 'raised' : 'sunken'} patio, at ${foot > 0 ? '+' : '−'}${Math.abs(foot).toFixed(2)} m.` : '') +
         (st.shape === 'straight' ? ` Length ${(g.treads.length * st.going).toFixed(2)} m.` : '') +
         (st.style === 'cantilever' ? ' Set one side against a wall: the treads are built into it, with nothing underneath.' : '') +
         (spiral ? ` ${(((g.treads.length * 30) / 360) * 10) / 10 >= 1 ? `It winds ${Math.round(g.treads.length * 30)}° round its column` : 'A short spiral'}, ${((st.width + 0.06) * 2).toFixed(2)} m across; Width is the length of each tread. Its position is the column's centre.` : '') +

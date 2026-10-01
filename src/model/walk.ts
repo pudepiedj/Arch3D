@@ -16,7 +16,7 @@ import { hedgeFootprints } from './hedges';
 import { isGate } from './gates';
 import { catalogueItem, footprint, standingHeight } from './furniture';
 import { detectRooms } from './rooms';
-import { stairGeometry, stairRise, stairwells } from './stairs';
+import { placedStair, stairwells } from './stairs';
 import type { Building, Plan } from './types';
 
 export const RADIUS = 0.25;
@@ -91,7 +91,7 @@ export class WalkWorld {
         }
       }
       for (const s of Object.values(level.stairs ?? {})) {
-        for (const t of stairGeometry(s, stairRise(s, level)).treads) {
+        for (const t of placedStair(s, level).treads) {
           this.surfaces.push({ poly: t.poly, holes: [], z: elevation + t.top });
           this.blocks.push({ poly: t.poly, bottom: elevation, top: elevation + t.top });
         }

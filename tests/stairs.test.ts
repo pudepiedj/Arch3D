@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createBuilding } from '../src/model/building';
 import { subtract, unionAll } from '../src/model/clip';
 import { polygonArea } from '../src/model/geom';
-import { addStair, riserCount, stairAt, stairEnds, stairGeometry, stairwells } from '../src/model/stairs';
+import { addStair, placedStair, riserCount, stairAt, stairBase, stairEnds, stairGeometry, stairRise, stairwells } from '../src/model/stairs';
+import { addPatio } from '../src/model/patios';
 import type { Stair } from '../src/model/types';
 
 const base: Stair = { id: 's', x: 0, y: 0, angle: 0, width: 1, going: 0.25, shape: 'straight', turn: 'left' };
@@ -103,5 +104,23 @@ describe('stair ends', () => {
     expect(top.a.x).toBeCloseTo(g.path[1].x);
     expect(top.b.x).toBeCloseTo(g.path[1].x);
     expect(Math.abs(top.b.y - top.a.y)).toBeCloseTo(1);
+  });
+});
+
+describe('stairs on a raised patio', () => {
+  it('start on its top, not inside it', () => {
+    const b = createBuilding();
+    const l = b.levels[0];
+    addPatio(l, [{ x: -2, y: -2 }, { x: 6, y: -2 }, { x: 6, y: 4 }, { x: -2, y: 4 }], 'paving').height = 0.6;
+    // Foot on the plinth, climbing away from its middle.
+    const s = addStair(l, 1, 0, 0, 'straight');
+    expect(stairBase(s, l)).toBeCloseTo(0.6);
+    expect(stairRise(s, l)).toBeCloseTo(l.height - 0.6);
+    const g = placedStair(s, l);
+    expect(g.treads[0].top).toBeCloseTo(0.6 + g.rise);
+    expect(g.treads.at(-1)!.top + g.rise).toBeCloseTo(l.height);
+    // Steps up onto the plinth from the ground start on the ground.
+    const steps = addStair(l, 1, 6.5, -Math.PI / 2, 'straight');
+    expect(stairBase(steps, l)).toBe(0);
   });
 });
