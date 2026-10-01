@@ -4,7 +4,7 @@
 // floor) is a floor covering instead, and stops at the walls round it.
 
 import { type Shape, subtract } from './clip';
-import { type Vec2, pointInPolygon, polygonArea } from './geom';
+import { type Vec2, dist, pointInPolygon, polygonArea, projectOnSegment } from './geom';
 import { computeFootprints } from './joints';
 import { outerFaces } from './roof';
 import type { Level, Patio, PatioSurface } from './types';
@@ -19,7 +19,21 @@ export const PATIO_DEFAULTS: Record<PatioSurface, { height: number; module: numb
   rubber: { height: 0.02, module: 0.5 },
   // Mown grass, level with the ground: the module is the width of the mowing stripes.
   lawn: { height: 0.01, module: 0.8 },
+  // A swimming pool: its floor this far below the ground (the water a little below the edge).
+  pool: { height: -1.5, module: 0 },
+  // A stone balcony slab, cantilevered from the wall at the level of the floor it is drawn on.
+  balcony: { height: 0, module: 0.6 },
+  // A landing indoors (a gallery over a double-height space, or at the head of a stair):
+  // boarded, at this floor's level, with a balustrade round its open edges.
+  landing: { height: 0.02, module: 0.145 },
 };
+
+/** How thick a balcony's slab is. */
+export const BALCONY_SLAB = 0.15;
+
+/** The stone coping round a pool's edge, and how far the water lies below it. */
+export const POOL_COPING = 0.3;
+export const POOL_WATER = 0.15;
 
 /** Patios higher than this are raised decks (e.g. on a flat roof) and are not cut by the walls. */
 const CUT_BELOW = 1;
@@ -31,6 +45,8 @@ export function addPatio(level: Level, points: Vec2[], surface: PatioSurface): P
   const patio: Patio = { id, points: pts, surface, angle: 0, ...PATIO_DEFAULTS[surface] };
   level.patios ??= {};
   level.patios[id] = patio;
+  // A balcony comes with a wrought-iron railing.
+  if (surface === 'balcony' || surface === 'landing') patio.guard = 'iron';
   return patio;
 }
 
@@ -38,6 +54,7 @@ export function addPatio(level: Level, points: Vec2[], surface: PatioSurface): P
 export function setPatioSurface(patio: Patio, surface: PatioSurface) {
   patio.surface = surface;
   Object.assign(patio, PATIO_DEFAULTS[surface]);
+  if ((surface === 'balcony' || surface === 'landing') && !patio.guard) patio.guard = 'iron';
 }
 
 /** The patio's actual extent: its outline minus the house (outer ring first, then holes). */
@@ -65,6 +82,35 @@ export function patioArea(level: Level, patio: Patio): number {
     shape.forEach((ring, i) => (a += Math.abs(polygonArea(ring)) * (i ? -1 : 1)));
   }
   return a;
+}
+
+/** Is the edge a–b against the house (where a railing isn't needed)? */
+export function alongHouse(house: Vec2[][], a: Vec2, b: Vec2, tol = 0.05): boolean {
+  const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  return house.some((h) =>
+    h.some((p, k) => {
+      const q = h[(k + 1) % h.length];
+      if (projectOnSegment(m, p, q).dist >= tol) return false;
+      // Further off than touching, it must at least run alongside the wall.
+      const wl = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+      return tol <= 0.05 || Math.abs(((b.x - a.x) * (q.y - p.y) - (b.y - a.y) * (q.x - p.x)) / (len * wl)) < 0.1;
+    }),
+  );
+}
+
+/** Length of the patio's railing: round its open edges, not along the house. */
+export function guardLength(level: Level, patio: Patio): number {
+  const house = outerFaces(level);
+  let len = 0;
+  for (const shape of patioShapes(level, patio)) {
+    const ring = shape[0];
+    ring.forEach((p, k) => {
+      const q = ring[(k + 1) % ring.length];
+      if (!alongHouse(house, p, q)) len += dist(p, q);
+    });
+  }
+  return len;
 }
 
 /** The topmost patio at p, if any. */

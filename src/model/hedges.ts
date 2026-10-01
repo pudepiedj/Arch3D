@@ -10,6 +10,7 @@ export const HEDGE_DEFAULTS: Record<HedgeKind, { height: number; width: number }
   beech: { height: 1.8, width: 0.6 },
   fence: { height: 1.8, width: 0.1 },
   ditch: { height: 0.9, width: 1.8 },
+  wall: { height: 2.0, width: 0.3 },
 };
 
 export const HEDGE_NAMES: Record<HedgeKind, string> = {
@@ -18,6 +19,7 @@ export const HEDGE_NAMES: Record<HedgeKind, string> = {
   beech: 'Beech hedge',
   fence: 'Close-board fence',
   ditch: 'Drainage ditch',
+  wall: 'Garden wall (stone)',
 };
 
 /** Fence posts are no further apart than this. */

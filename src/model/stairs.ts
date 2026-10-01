@@ -34,7 +34,15 @@ export interface StairGeometry {
    * pitch line above the stair's floor). Handrails run a fixed height above these.
    */
   rails: RailPoint[][];
+  /** Height of the stair's foot above its floor: the top of the patio or plinth it starts on. */
+  base: number;
+  /** A spiral stair's central column: where it stands, its radius, and how high it goes. */
+  post?: { x: number; y: number; r: number; top: number };
 }
+
+/** A spiral stair: each tread turns this far round the column, which is this thick. */
+export const SPIRAL_STEP = Math.PI / 6;
+export const SPIRAL_POST = 0.06;
 
 export interface RailPoint {
   p: Vec2;
@@ -49,7 +57,7 @@ export function riserCount(floorToFloor: number): number {
  * Lay out a stair rising `height`. In the stair's local frame u runs up the first flight
  * and v across it; everything is then placed at (x, y) turned by `angle`.
  */
-export function stairGeometry(s: Stair, height: number): StairGeometry {
+export function stairGeometry(s: Stair, height: number, base = 0): StairGeometry {
   const n = riserCount(height);
   const r = height / n;
   const g = s.going;
@@ -64,7 +72,34 @@ export function stairGeometry(s: Stair, height: number): StairGeometry {
   // Screen y points down, so "left" as you walk up is the -v side.
   const side = s.turn === 'right' ? 1 : -1;
 
-  if (s.shape === 'straight') {
+  let post: { u: number; v: number; r: number } | undefined;
+  if (s.shape === 'spiral') {
+    // Round a central column: (x, y) is its centre, and the first tread points along the
+    // stair's direction; each tread is a wedge from the column out to the width, turning
+    // 30 degrees (anticlockwise on the plan, or clockwise if it turns right).
+    const k = n - 1;
+    const R = SPIRAL_POST + w;
+    const turn = -side;
+    const at = (rad: number, a: number) => vec(Math.cos(a) * rad, Math.sin(a) * rad);
+    for (let i = 0; i < k; i++) {
+      const a0 = turn * i * SPIRAL_STEP;
+      const a1 = turn * (i + 1) * SPIRAL_STEP;
+      const poly = [at(SPIRAL_POST, a0), at(R, a0), at(R, (a0 + a1) / 2), at(R, a1), at(SPIRAL_POST, a1)];
+      treads.push({ poly: turn > 0 ? poly : poly.reverse(), top: (i + 1) * r });
+    }
+    const circle = Array.from({ length: 24 }, (_, i) => at(R, (i / 24) * Math.PI * 2));
+    parts.push(circle);
+    const mid = SPIRAL_POST + w / 2;
+    for (let i = 0; i <= k; i++) path.push(at(mid, turn * i * SPIRAL_STEP));
+    // The handrail round the outside, rising with the treads.
+    const rail: { u: number; v: number; z: number }[] = [];
+    for (let i = 0; i <= k * 2; i++) {
+      const p = at(R - 0.03, (turn * i * SPIRAL_STEP) / 2);
+      rail.push(pt(p.x, p.y, ((i / 2) + 1) * r));
+    }
+    rails.push(rail);
+    post = { u: 0, v: 0, r: SPIRAL_POST };
+  } else if (s.shape === 'straight') {
     const k = n - 1;
     for (let i = 0; i < k; i++) treads.push({ poly: rect(i * g, (i + 1) * g, -w / 2, w / 2), top: (i + 1) * r });
     parts.push(rect(0, k * g, -w / 2, w / 2));
@@ -133,22 +168,74 @@ export function stairGeometry(s: Stair, height: number): StairGeometry {
   return {
     risers: n,
     rise: r,
-    treads: treads.map((t) => ({ ...t, poly: t.poly.map(place) })),
+    treads: treads.map((t) => ({ ...t, poly: t.poly.map(place), top: t.top + base })),
     parts: parts.map((p) => p.map(place)),
     path: path.map(place),
-    rails: rails.map((rail) => rail.map((q) => ({ p: place(vec(q.u, q.v)), z: q.z }))),
+    rails: rails.map((rail) => rail.map((q) => ({ p: place(vec(q.u, q.v)), z: q.z + base }))),
+    base,
+    post: post && { ...place(vec(post.u, post.v)), r: post.r, top: base + height + 1 },
   };
+}
+
+/**
+ * The two ends of a stair as lines across it, where you step on and off: the bottom (at the
+ * stair's floor) and the top (`rise` above it). A railing meeting either leaves a gap.
+ */
+export function stairEnds(g: StairGeometry, width: number, rise: number): { a: Vec2; b: Vec2; z: number }[] {
+  const z0 = g.base;
+  const across = (p: Vec2, q: Vec2, z: number) => {
+    const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+    const n = { x: (-(q.y - p.y) / len) * (width / 2), y: ((q.x - p.x) / len) * (width / 2) };
+    return { a: { x: p.x - n.x, y: p.y - n.y }, b: { x: p.x + n.x, y: p.y + n.y }, z };
+  };
+  const path = g.path;
+  if (path.length < 2) return [];
+  return [across(path[0], path[1], z0), across(path[path.length - 1], path[path.length - 2], z0 + rise)];
+}
+
+/**
+ * Where a stair's foot stands, above its floor: on a raised patio or plinth (or down in a
+ * sunken one) if the spot just in front of its first step is on one, else on the floor.
+ */
+export function stairBase(s: Stair, level: Level): number {
+  const g = stairGeometry(s, level.height);
+  if (g.path.length < 2) return 0;
+  const [p, q] = g.path;
+  const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+  const foot = { x: p.x - ((q.x - p.x) / len) * 0.15, y: p.y - ((q.y - p.y) / len) * 0.15 };
+  const on = Object.values(level.patios ?? {}).filter(
+    (pt) => pt.surface !== 'pool' && pt.points.length >= 3 && Math.abs(pt.height) > 0.05 && pointInPolygon(foot, pt.points),
+  );
+  on.sort((a, b) => b.height - a.height);
+  return on[0]?.height ?? 0;
+}
+
+/** How high a stair climbs: its own rise, or from its foot up to the next floor. */
+export function stairRise(s: Stair, level: Level): number {
+  return s.rise ?? level.height - stairBase(s, level);
+}
+
+/** The stair as built on its floor: climbing its rise from its foot. */
+export function placedStair(s: Stair, level: Level): StairGeometry {
+  return stairGeometry(s, stairRise(s, level), stairBase(s, level));
+}
+
+/** Does the stair go all the way up to the next floor (so it needs a hole in it)? */
+export function reachesFloorAbove(s: Stair, level: Level): boolean {
+  return stairBase(s, level) + stairRise(s, level) >= level.height - 0.05;
 }
 
 /** The holes the stairs of `level` need in the floor of the level above. */
 export function stairwells(level: Level): Shape[] {
-  const parts = Object.values(level.stairs ?? {}).flatMap((s) => stairGeometry(s, level.height).parts);
+  const parts = Object.values(level.stairs ?? {})
+    .filter((s) => reachesFloorAbove(s, level))
+    .flatMap((s) => placedStair(s, level).parts);
   return unionAll(parts);
 }
 
 export function stairAt(level: Level, p: Vec2): string | null {
   for (const s of Object.values(level.stairs ?? {})) {
-    if (stairGeometry(s, level.height).parts.some((poly) => pointInPolygon(p, poly))) return s.id;
+    if (placedStair(s, level).parts.some((poly) => pointInPolygon(p, poly))) return s.id;
   }
   return null;
 }

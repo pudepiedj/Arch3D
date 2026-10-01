@@ -6,13 +6,13 @@
 // true areas of the roof slopes, rooms' floor areas, and so on. Where the drawing doesn't say
 // (how the walls are built, what the roof is covered with) the assumptions say.
 
-import { levelAbove } from './building';
+import { levelAbove, levelBelow } from './building';
 import { type Vec2, dist, projectOnSegment } from './geom';
 import { computeFootprints, wallPoint } from './joints';
 import { levelRoofs, type Point3 } from './roof';
 import { rooflightGeometry } from './roofitems';
 import { pillarHeight } from './pillars';
-import { patioArea } from './patios';
+import { guardLength, patioArea } from './patios';
 import { detectRooms } from './rooms';
 import { hedgeLength } from './hedges';
 import { isGate } from './gates';
@@ -104,6 +104,15 @@ export const DEFAULT_PRICES: Record<string, number> = {
   gravel: 12,
   lawn: 7, // turf, with a little topsoil, £/m²
   rubber: 30, // interlocking rubber tiles, 20 mm, £/m²
+  pool: 900, // a built pool: shell, mosaic lining, coping, filtration; £/m² of water
+  'glass-balustrade': 350, // £/m
+  'pool-cover': 220, // slatted cover with a manual roller and stands, £/m² of water
+  awning: 160, // fixed awning: fabric, cassette, front bar and posts, £/m² covered
+  balcony: 450, // a cantilevered stone balcony slab on steel brackets, £/m²
+  landing: 220, // a boarded landing on timber joists, £/m²
+  'iron-railing': 180, // wrought-iron railing, made and fixed, £/m
+  'timber-railing': 90, // £/m
+  'garden-wall': 140, // stone walling, coping and footing, materials, £/m² of wall face
   'sub-base': 45,
   fence: 45,
   hedge: 4,
@@ -220,7 +229,10 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
   };
 
   b.levels.forEach((level, li) => {
-    const ground = li === 0;
+    // Foundations and ground-floor slabs under whichever floor has nothing below it (the
+    // ground floor, or the lowest floor of each house); the garden on the first floor.
+    const ground = !levelBelow(b, level.id);
+    const garden = li === 0;
     const fps = computeFootprints(level);
     const roofs = levelRoofs(b, level);
     // For an area, only the floors that have a room or a roof in it (not the upper floor of
@@ -389,6 +401,8 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
         add({ id: `glazed:${level.id}:${o.id}`, price: `glazed-${style}`, group: 'Glazing, doors and windows', item: `${{ french: 'French', sliding: 'Sliding', bifold: 'Bi-fold' }[style]} doors ${size}`, detail: 'Floor-to-ceiling glass doors, supply', qty: o.width * o.height, unit: 'm²', key: true });
       } else if (o.kind === 'window') {
         add({ id: `window:${level.id}:${o.id}`, price: 'window', group: 'Glazing, doors and windows', item: `Window ${size}`, qty: o.width * o.height, unit: 'm²' });
+      } else if (o.kind === 'open') {
+        // Nothing to supply: just the lintel (or the arch, built in the wall).
       } else if (o.kind === 'garage') {
         add({ id: `garage:${level.id}:${o.id}`, price: 'garage', group: 'Glazing, doors and windows', item: `Garage roller door ${size}`, qty: 1, unit: 'no.' });
       } else {
@@ -613,18 +627,33 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
     }
 
     // ---- Garden and drains (the ground floor's).
-    if (ground) {
+    // ---- Balconies and railings (on any floor).
+    for (const pt of Object.values(level.patios ?? {})) {
+      if (!inside(centroid(pt.points.map((p) => ({ ...p, z: 0 }))))) continue;
+      if (pt.surface === 'landing') add({ id: `patio:${pt.id}`, price: 'landing', group: 'Structure', item: 'Landing: boards on timber joists', qty: patioArea(level, pt), unit: 'm²' });
+      if (pt.surface === 'balcony') add({ id: `patio:${pt.id}`, price: 'balcony', group: 'Garden and drains', item: 'Balcony: cantilevered stone slab on steel brackets', qty: patioArea(level, pt), unit: 'm²' });
+      if (pt.cover) add({ id: `cover:${pt.id}`, price: 'pool-cover', group: 'Garden and drains', item: 'Slatted pool cover on a roller', qty: patioArea(level, pt), unit: 'm²' });
+      if (pt.awning) add({ id: `awning:${pt.id}`, price: 'awning', group: 'Garden and drains', item: 'Awning: fabric on a wall cassette, with front posts', qty: patioArea(level, pt), unit: 'm²' });
+      if (pt.guard) {
+        const what = pt.surface === 'pool' ? ' round the pool' : pt.surface === 'balcony' ? ' round the balcony' : pt.surface === 'landing' ? ' round the landing' : '';
+        const kind = { glass: ['glass-balustrade', 'Glass balustrade'], iron: ['iron-railing', 'Wrought-iron railing'], timber: ['timber-railing', 'Timber railing'] }[pt.guard];
+        add({ id: `balustrade:${pt.id}`, price: kind[0], group: 'Garden and drains', item: kind[1] + what, qty: guardLength(level, pt), unit: 'm' });
+      }
+    }
+    if (garden) {
       for (const pt of Object.values(level.patios ?? {})) {
+        if (pt.surface === 'balcony' || pt.surface === 'landing') continue;
         if (!inside(centroid(pt.points.map((p) => ({ ...p, z: 0 }))))) continue;
         const m2 = patioArea(level, pt);
-        add({ id: `patio:${pt.id}`, price: pt.surface, group: 'Garden and drains', item: `${{ paving: 'Paving', decking: 'Decking', gravel: 'Gravel', rubber: 'Rubber floor tiles', lawn: 'Lawn: turf and topsoil' }[pt.surface]}`, detail: pt.surface === 'paving' || pt.surface === 'rubber' ? `${m2.toFixed(1)} m²: about ${Math.ceil((m2 / (pt.module * pt.module)) * 1.05)} ${pt.surface === 'rubber' ? 'tiles' : 'slabs'} of ${Math.round(pt.module * 100)} cm` : undefined, qty: m2, unit: 'm²' });
+        add({ id: `patio:${pt.id}`, price: pt.surface, group: 'Garden and drains', item: `${{ paving: 'Paving', decking: 'Decking', gravel: 'Gravel', rubber: 'Rubber floor tiles', lawn: 'Lawn: turf and topsoil', pool: 'Swimming pool: shell, lining, coping and filtration', balcony: 'Balcony', landing: 'Landing' }[pt.surface]}`, detail: pt.surface === 'paving' || pt.surface === 'rubber' ? `${m2.toFixed(1)} m²: about ${Math.ceil((m2 / (pt.module * pt.module)) * 1.05)} ${pt.surface === 'rubber' ? 'tiles' : 'slabs'} of ${Math.round(pt.module * 100)} cm` : undefined, qty: m2, unit: 'm²' });
         if (pt.surface === 'paving' || pt.surface === 'gravel') add({ id: `subbase:${pt.id}`, price: 'sub-base', group: 'Garden and drains', item: 'Sub-base (MOT type 1, 100 mm)', qty: m2 * 0.1, unit: 'm³' });
       }
       for (const h of Object.values(level.hedges ?? {})) {
         const mid = h.points[Math.floor(h.points.length / 2)];
         if (!mid || !inside(mid) || h.kind === 'ditch') continue;
         const L = hedgeLength(h);
-        if (h.kind === 'fence') add({ id: `fence:${h.id}`, price: 'fence', group: 'Garden and drains', item: 'Close-board fence', detail: `${L.toFixed(1)} m, ${h.height} m high`, qty: L, unit: 'm' });
+        if (h.kind === 'wall') add({ id: `gardenwall:${h.id}`, price: 'garden-wall', group: 'Garden and drains', item: `Garden wall, ${h.finish && h.finish !== 'stone' ? h.finish.replace('-', ' ') : 'stone'}`, detail: `${L.toFixed(1)} m long, ${h.height} m high, ${Math.round(h.width * 100)} cm thick, with coping and footing`, qty: L * h.height, unit: 'm²' });
+        else if (h.kind === 'fence') add({ id: `fence:${h.id}`, price: 'fence', group: 'Garden and drains', item: 'Close-board fence', detail: `${L.toFixed(1)} m, ${h.height} m high`, qty: L, unit: 'm' });
         else add({ id: `hedge:${h.id}`, price: 'hedge', group: 'Garden and drains', item: `${h.kind[0].toUpperCase()}${h.kind.slice(1)} hedge plants`, detail: `${L.toFixed(1)} m, 5 a metre in a double row`, qty: Math.ceil(L * 5), unit: 'no.' });
       }
       for (const f of Object.values(level.furniture ?? {})) {

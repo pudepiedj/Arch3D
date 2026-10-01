@@ -16,13 +16,21 @@ export interface Wall {
   b: string;
   thickness: number;
   height: number;
+  /** Finishes painted on its faces (left of a->b, and right); unset follows the drawing's defaults. */
+  faces?: { left?: WallFinish; right?: WallFinish };
 }
+
+/** How a wall face looks: plaster, render, paint, stone or brick. */
+export type WallFinish = 'plaster' | 'render' | 'render-cream' | 'render-ochre' | 'render-pink' | 'paint-sage' | 'paint-blue' | 'stone' | 'rubble' | 'brick';
+export type FloorFinish = 'oak' | 'terracotta' | 'stone' | 'tiles' | 'carpet' | 'concrete';
+export type RoofCovering = 'tiles' | 'roman' | 'plain' | 'slate';
 
 /**
  * 'garage' is a roller door: slats that roll up into a casing above the opening.
  * 'glazed' is a floor-to-ceiling glass door: French doors, sliding doors or bi-folds.
+ * 'open' is just an opening through the wall, with nothing in it (square or arched).
  */
-export type OpeningKind = 'door' | 'window' | 'garage' | 'glazed';
+export type OpeningKind = 'door' | 'window' | 'garage' | 'glazed' | 'open';
 
 export type GlazedStyle = 'french' | 'sliding' | 'bifold';
 
@@ -50,6 +58,8 @@ export interface Opening {
   frameColour?: FrameColour;
   /** Door shown shut (doors are shown open unless this is set). In walk mode it opens as you reach it. */
   shut?: boolean;
+  /** A plain opening with a round (semicircular) head: `height` is to the top of the arch. */
+  arched?: boolean;
 }
 
 /** A chimney stack rising through the roof, with 1-3 pots. */
@@ -106,7 +116,7 @@ export interface Rooflight {
   solarMotor: boolean;
 }
 
-export type PatioSurface = 'paving' | 'decking' | 'gravel' | 'rubber' | 'lawn';
+export type PatioSurface = 'paving' | 'decking' | 'gravel' | 'rubber' | 'lawn' | 'pool' | 'balcony' | 'landing';
 
 /** A paved, decked or gravelled area outside, drawn as a polygon on a floor's plan. */
 export interface Patio {
@@ -119,6 +129,23 @@ export interface Patio {
   angle: number;
   /** Paving slab size (square), or deck board width. */
   module: number;
+  /** A railing round its edge: glass panels (round a pool), wrought iron or timber. */
+  guard?: Exclude<RailStyle, 'none'>;
+  /** A pool's slatted cover, on a roller at one end (the end the courses start from). */
+  cover?: 'rolled' | 'covered';
+  /** The cover's roller at the other short end. */
+  coverFlip?: boolean;
+  /** A fabric awning over it, fixed to the house wall along one side, on posts at the front. */
+  awning?: Awning;
+}
+
+export type AwningColour = 'cream' | 'stripe' | 'terracotta' | 'green' | 'grey';
+
+export interface Awning {
+  colour: AwningColour;
+  /** Height at the wall and at the front, above the patio's top. */
+  back: number;
+  front: number;
 }
 
 /** 'deciduous' and 'conifer' are the generic kinds; the rest are species, plus a bush. */
@@ -138,7 +165,7 @@ export interface Tree {
   leanTo?: number;
 }
 
-export type HedgeKind = 'privet' | 'hawthorn' | 'beech' | 'fence' | 'ditch';
+export type HedgeKind = 'privet' | 'hawthorn' | 'beech' | 'fence' | 'ditch' | 'wall';
 
 /**
  * A hedge, fence or open drainage ditch along a line of points (closed if its last point is
@@ -151,6 +178,8 @@ export interface Hedge {
   height: number;
   /** Thickness through the hedge (a fence is always a board's thickness; a ditch's width at the top). */
   width: number;
+  /** A garden wall's finish (dressed stone if unset). */
+  finish?: WallFinish;
 }
 
 /** A free-standing post, e.g. holding up a veranda or carport roof. */
@@ -163,7 +192,7 @@ export interface Pillar {
   shape: 'square' | 'round';
 }
 
-export type StairShape = 'straight' | 'L' | 'U';
+export type StairShape = 'straight' | 'L' | 'U' | 'spiral';
 
 /** A stair rising from its level to the next one up. Steps are computed, not stored. */
 export interface Stair {
@@ -179,7 +208,16 @@ export interface Stair {
   shape: StairShape;
   /** Which way an L or U stair turns, as you walk up it. */
   turn: 'left' | 'right';
+  /** Height it climbs, if not up to the next floor: a few steps up to a plinth, or an outside stair. */
+  rise?: number;
+  /** Solid underneath (the default), solid stone steps, or stone treads cantilevered from a wall. */
+  style?: StairStyle;
+  /** Timber handrail and balusters (the default), wrought iron, glass panels, or none. */
+  rail?: RailStyle;
 }
+
+export type StairStyle = 'solid' | 'stone' | 'cantilever' | 'metal';
+export type RailStyle = 'timber' | 'iron' | 'glass' | 'none';
 
 export type RoofKind = 'gable' | 'hip' | 'flat' | 'none';
 
@@ -203,6 +241,8 @@ export interface Roof {
    * midpoint of the edge (so they survive small edits to the walls).
    */
   edges?: RoofEdgeSetting[];
+  /** What the slopes are covered with (concrete tiles if unset). */
+  covering?: RoofCovering;
 }
 
 export interface RoofEdgeSetting {
@@ -243,6 +283,12 @@ export interface Level extends Plan {
   name: string;
   /** Floor-to-floor height. Walls normally run this full height, up to the next floor. */
   height: number;
+  /**
+   * Height of this floor above the ground, when it is not simply on top of the floor before
+   * it in the list: a house on a plinth (+0.6), or half below ground (-1.5). The first floor
+   * in the list (the garden's) is always at 0.
+   */
+  base?: number;
   /** Thickness of this floor's structure (the slab above the storey below). */
   slab: number;
   /** Stairs going up from this level. */
@@ -272,6 +318,8 @@ export interface Level extends Plan {
   hedges?: Record<string, Hedge>;
   /** Furniture, indoors and out. */
   furniture?: Record<string, Furniture>;
+  /** Rooms' floors set differently from the drawing's default, each found by a point in the room. */
+  floorFinishes?: { x: number; y: number; finish: FloorFinish }[];
 }
 
 /**
@@ -351,6 +399,8 @@ export interface Building {
   site?: Site;
   /** Drains below ground (shown on the ground floor). */
   drains?: Drains;
+  /** Default finishes: outside wall faces, inside wall faces, and floors. */
+  materials?: { outside?: WallFinish; inside?: WallFinish; floor?: FloorFinish };
 }
 
 export const DEFAULTS = {
@@ -363,5 +413,6 @@ export const DEFAULTS = {
   window: { width: 1.2, height: 1.2, sill: 0.9 },
   garage: { width: 2.5, height: 2.1, sill: 0 },
   glazed: { width: 2.4, height: 2.4, sill: 0 },
+  open: { width: 1.2, height: 2.2, sill: 0 },
   pillar: 0.25,
 };

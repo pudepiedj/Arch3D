@@ -1,6 +1,7 @@
 // A building is a stack of levels. Each level is an independent floor plan (so all the
 // wall-joint and opening logic works per floor unchanged) plus its vertical dimensions.
 
+import { pointInPolygon } from './geom';
 import { addWall, createPlan, healNode, normalize } from './plan';
 import { outlineWallIds } from './rooms';
 import { DEFAULTS, type Building, type Level, type Plan } from './types';
@@ -28,24 +29,153 @@ export function getLevel(b: Building, id: string): Level | undefined {
   return b.levels.find((l) => l.id === id);
 }
 
-/** Height of a level's floor above the ground floor. */
+/**
+ * Height of a level's floor above the ground: its own `base` if it has one, else on top of
+ * the floor before it in the list. The first floor is at the ground. A floor standing on a
+ * plinth (a raised patio drawn on the first floor, under the middle of its walls) sits on
+ * top of it, whichever was drawn first.
+ */
 export function levelElevation(b: Building, id: string): number {
   let z = 0;
-  for (const l of b.levels) {
+  for (const [i, l] of b.levels.entries()) {
+    if (i > 0 && l.base !== undefined) z = l.base;
+    const plinth = i > 0 ? plinthUnder(b, l) : 0;
+    if (plinth > 0) z = Math.max(z, plinth);
     if (l.id === id) return z;
     z += l.height;
   }
   return z;
 }
 
-export function levelBelow(b: Building, id: string): Level | undefined {
+/** Does where `upper` stands depend on `lower`'s height (it is stacked on it in the list)? */
+function stackedOn(b: Building, upper: Level, lower: Level): boolean {
+  const i = b.levels.indexOf(upper);
+  const j = b.levels.indexOf(lower);
+  if (j >= i || i < 1 || upper.base !== undefined) return false;
+  // Back down the list to the floor that sets the height (the first, or one with a base).
+  for (let k = i - 1; k >= 0; k--) {
+    if (k === j) return true;
+    if (k === 0 || b.levels[k].base !== undefined) return false;
+  }
+  return false;
+}
+
+/**
+ * After a floor's level has changed, make each floor's walls reach the floor above it again
+ * (and stop at it): the storey height, and every wall that ran the full storey, become the
+ * distance up to the next floor, where that floor doesn't simply sit on top of this one.
+ */
+export function fitStoreys(b: Building) {
+  for (let pass = 0; pass < 2; pass++) {
+    for (const level of b.levels) {
+      // The nearest floor over the same ground at least a storey up: not a split-level part
+      // of the same floor a little higher.
+      const z = levelElevation(b, level.id);
+      let above: Level | undefined;
+      for (const other of b.levels) {
+        const oz = levelElevation(b, other.id);
+        if (other === level || oz < z + 1.5 || !sameStack(level, other)) continue;
+        if (!above || oz < levelElevation(b, above.id)) above = other;
+      }
+      if (!above || stackedOn(b, above, level)) continue;
+      const h = levelElevation(b, above.id) - z;
+      if (h < 0.5 || Math.abs(h - level.height) < 0.005) continue;
+      setLevelHeight(level, h);
+    }
+  }
+}
+
+/** Raised patios higher than this are plinths: a building on one stands on its top. */
+export const PLINTH = 0.25;
+
+/** The top of the plinth under the middle of a floor's walls (0 if there is none). */
+function plinthUnder(b: Building, l: Level): number {
+  const e = wallExtent(l);
+  if (!e) return 0;
+  const c = { x: (e.x0 + e.x1) / 2, y: (e.y0 + e.y1) / 2 };
+  let top = 0;
+  for (const pt of Object.values(b.levels[0]?.patios ?? {})) {
+    if (pt.surface === 'pool' || pt.height <= PLINTH) continue;
+    if (pointInPolygon(c, pt.points)) top = Math.max(top, pt.height);
+  }
+  return top;
+}
+
+/** The extent of a floor's walls on plan, or null if it has none yet. */
+function wallExtent(l: Level) {
+  const ps = Object.values(l.nodes);
+  if (!ps.length || !Object.keys(l.walls).length) return null;
+  return {
+    x0: Math.min(...ps.map((p) => p.x)),
+    y0: Math.min(...ps.map((p) => p.y)),
+    x1: Math.max(...ps.map((p) => p.x)),
+    y1: Math.max(...ps.map((p) => p.y)),
+  };
+}
+
+/**
+ * Do two floors stand over the same ground (their walls' extents overlap)? A floor with no
+ * walls overlaps nothing.
+ */
+export function sameStack(a: Level, c: Level): boolean {
+  const p = wallExtent(a);
+  const q = wallExtent(c);
+  return !!p && !!q && !(q.x0 >= p.x1 - 0.05 || p.x0 >= q.x1 - 0.05 || q.y0 >= p.y1 - 0.05 || p.y0 >= q.y1 - 0.05);
+}
+
+/**
+ * The floor directly below or above one: the nearest one lower (or higher) standing over the
+ * same ground, so two houses side by side at different heights (one on a plinth, one half
+ * below ground) are separate stacks. A floor with no walls yet goes by the order of the list.
+ * A part of a floor set a little lower (a split level) is beside it, not under it.
+ */
+function neighbour(b: Building, id: string, dir: 1 | -1): Level | undefined {
   const i = b.levels.findIndex((l) => l.id === id);
-  return i > 0 ? b.levels[i - 1] : undefined;
+  if (i < 0) return undefined;
+  const level = b.levels[i];
+  const own = wallExtent(level);
+  if (!own) return b.levels[i + dir];
+  const z = levelElevation(b, id);
+  let best: Level | undefined;
+  let bestZ = 0;
+  for (const other of b.levels) {
+    if (other === level) continue;
+    const e = wallExtent(other);
+    if (!e || e.x0 >= own.x1 - 0.05 || own.x0 >= e.x1 - 0.05 || e.y0 >= own.y1 - 0.05 || own.y0 >= e.y1 - 0.05) continue;
+    const oz = levelElevation(b, other.id);
+    // A storey up or down, not a split-level part of the same floor a little higher or lower.
+    if (dir > 0 ? oz < z + Math.min(1.5, level.height / 2) : oz > z - Math.min(1.5, other.height / 2)) continue;
+    if (!best || (dir > 0 ? oz < bestZ : oz > bestZ)) {
+      best = other;
+      bestZ = oz;
+    }
+  }
+  return best;
+}
+
+export function levelBelow(b: Building, id: string): Level | undefined {
+  return neighbour(b, id, -1);
 }
 
 export function levelAbove(b: Building, id: string): Level | undefined {
-  const i = b.levels.findIndex((l) => l.id === id);
-  return i >= 0 ? b.levels[i + 1] : undefined;
+  return neighbour(b, id, 1);
+}
+
+/** Every floor with this one directly above it: one, or the parts of a split level. */
+export function levelsUnder(b: Building, id: string): Level[] {
+  const level = getLevel(b, id);
+  const below = levelBelow(b, id);
+  return b.levels.filter(
+    (l) => l === below || (!!level && l !== level && levelAbove(b, l.id) === level && sameStack(l, level)),
+  );
+}
+
+/** The floors from the top down, as the floor list shows them. */
+export function levelsTopDown(b: Building): Level[] {
+  return b.levels
+    .map((l, i) => ({ l, i, z: levelElevation(b, l.id) }))
+    .sort((p, q) => q.z - p.z || q.i - p.i)
+    .map((p) => p.l);
 }
 
 /** Clear room height of a level: up to the underside of the floor above. */
@@ -57,9 +187,17 @@ export function ceilingHeight(b: Building, level: Level): number {
  * Add a storey on top of the building. With `copyOutline`, the outside walls of the
  * current top floor are copied up so you can start drawing inside them.
  */
-export function addLevelOnTop(b: Building, copyOutline: boolean): Level {
-  const top = b.levels[b.levels.length - 1];
-  const level = createLevel(b, undefined, top?.height ?? DEFAULTS.levelHeight);
+export function addLevelOnTop(b: Building, copyOutline: boolean, onto?: Level): Level {
+  const last = b.levels[b.levels.length - 1];
+  const top = onto ?? last;
+  // Named for the floor it goes on: "First floor" on "Ground floor"; on a building's own
+  // floor ("Small house"), "Small house, upper floor".
+  const i = top ? LEVEL_NAMES.indexOf(top.name) : -1;
+  const name = !top || b.levels.length < 2 ? undefined : i >= 0 ? (LEVEL_NAMES[i + 1] ?? `${top.name}, upper floor`) : `${top.name}, upper floor`;
+  const level = createLevel(b, name, top?.height ?? DEFAULTS.levelHeight);
+  // On top of a floor that isn't the last in the list: say where it goes, so the floors
+  // after it keep their places.
+  if (top && top !== last) level.base = levelElevation(b, top.id) + top.height;
   if (copyOutline && top) {
     for (const id of outlineWallIds(top)) {
       const w = top.walls[id];
@@ -69,6 +207,45 @@ export function addLevelOnTop(b: Building, copyOutline: boolean): Level {
     for (const id of Object.keys(level.nodes)) if (level.nodes[id]) healNode(level, id);
     normalize(level);
   }
+  b.levels.push(level);
+  return level;
+}
+
+/**
+ * A small floor on top of part of one (a stair-head with a door out onto a roof terrace, a
+ * roof room): walls round the box, a flat roof on it, standing on the top of `under`. The
+ * roof of `under` is made flat, to walk on, if it wasn't.
+ */
+export function addRoomOnTop(b: Building, under: Level, box: { x0: number; y0: number; x1: number; y1: number }, height = 2.7): Level {
+  const level = createLevel(b, `${under.name}, roof room`, height);
+  level.base = levelElevation(b, under.id) + under.height;
+  const pts = [
+    { x: box.x0, y: box.y0 },
+    { x: box.x1, y: box.y0 },
+    { x: box.x1, y: box.y1 },
+    { x: box.x0, y: box.y1 },
+  ];
+  pts.forEach((p, i) => addWall(level, p, pts[(i + 1) % 4], { thickness: 0.2, height }));
+  normalize(level);
+  level.roof = { kind: 'flat', pitch: 0, overhang: 0 };
+  if (under.roof?.kind !== 'flat') under.roof = { ...(under.roof ?? { pitch: 0, overhang: 0 }), kind: 'flat', overhang: 0 };
+  b.levels.push(level);
+  return level;
+}
+
+/**
+ * Add a storey below one (a basement, or the lower floor of a house half in the ground),
+ * starting with a copy of its outside walls.
+ */
+export function addLevelBelow(b: Building, under: Level): Level {
+  const level = createLevel(b, 'Lower ground floor', under.height);
+  level.base = levelElevation(b, under.id) - level.height;
+  for (const id of outlineWallIds(under)) {
+    const w = under.walls[id];
+    addWall(level, under.nodes[w.a], under.nodes[w.b], { thickness: w.thickness, height: level.height });
+  }
+  for (const id of Object.keys(level.nodes)) if (level.nodes[id]) healNode(level, id);
+  normalize(level);
   b.levels.push(level);
   return level;
 }

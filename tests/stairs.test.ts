@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createBuilding } from '../src/model/building';
 import { subtract, unionAll } from '../src/model/clip';
 import { polygonArea } from '../src/model/geom';
-import { addStair, riserCount, stairAt, stairGeometry, stairwells } from '../src/model/stairs';
+import { addStair, placedStair, riserCount, stairAt, stairBase, stairEnds, stairGeometry, stairRise, stairwells } from '../src/model/stairs';
+import { addPatio } from '../src/model/patios';
 import type { Stair } from '../src/model/types';
 
 const base: Stair = { id: 's', x: 0, y: 0, angle: 0, width: 1, going: 0.25, shape: 'straight', turn: 'left' };
@@ -72,5 +73,54 @@ describe('stairwells', () => {
     const floor = subtract(room, wells);
     const net = floor.reduce((s, shape) => s + Math.abs(polygonArea(shape[0])) - shape.slice(1).reduce((h, r) => h + Math.abs(polygonArea(r)), 0), 0);
     expect(net).toBeCloseTo(24 - 15 * 0.25 * 0.9, 6);
+  });
+});
+
+describe('spiral stairs', () => {
+  it('wind wedge treads round a central column', () => {
+    const g = stairGeometry({ ...base, shape: 'spiral', width: 0.8 }, 2.6);
+    expect(g.treads).toHaveLength(g.risers - 1);
+    expect(g.post).toMatchObject({ x: 0, y: 0 });
+    // Every tread runs from the column out to the width, and they climb a riser at a time.
+    for (const [i, t] of g.treads.entries()) {
+      const r = t.poly.map((p) => Math.hypot(p.x, p.y));
+      expect(Math.min(...r)).toBeCloseTo(0.06, 5);
+      expect(Math.max(...r)).toBeCloseTo(0.86, 5);
+      expect(t.top).toBeCloseTo((i + 1) * g.rise, 5);
+    }
+    // The stairwell is the circle the treads sweep.
+    expect(g.parts).toHaveLength(1);
+  });
+});
+
+describe('stair ends', () => {
+  it('are lines across the stair at the bottom and the top', () => {
+    const g = stairGeometry(base, 2.6);
+    const [bottom, top] = stairEnds(g, base.width, 2.6);
+    expect(bottom.z).toBe(0);
+    expect(top.z).toBe(2.6);
+    expect(Math.hypot(bottom.b.x - bottom.a.x, bottom.b.y - bottom.a.y)).toBeCloseTo(1);
+    // The top runs across the stair (along y) at the end of the last tread.
+    expect(top.a.x).toBeCloseTo(g.path[1].x);
+    expect(top.b.x).toBeCloseTo(g.path[1].x);
+    expect(Math.abs(top.b.y - top.a.y)).toBeCloseTo(1);
+  });
+});
+
+describe('stairs on a raised patio', () => {
+  it('start on its top, not inside it', () => {
+    const b = createBuilding();
+    const l = b.levels[0];
+    addPatio(l, [{ x: -2, y: -2 }, { x: 6, y: -2 }, { x: 6, y: 4 }, { x: -2, y: 4 }], 'paving').height = 0.6;
+    // Foot on the plinth, climbing away from its middle.
+    const s = addStair(l, 1, 0, 0, 'straight');
+    expect(stairBase(s, l)).toBeCloseTo(0.6);
+    expect(stairRise(s, l)).toBeCloseTo(l.height - 0.6);
+    const g = placedStair(s, l);
+    expect(g.treads[0].top).toBeCloseTo(0.6 + g.rise);
+    expect(g.treads.at(-1)!.top + g.rise).toBeCloseTo(l.height);
+    // Steps up onto the plinth from the ground start on the ground.
+    const steps = addStair(l, 1, 6.5, -Math.PI / 2, 'straight');
+    expect(stairBase(steps, l)).toBe(0);
   });
 });

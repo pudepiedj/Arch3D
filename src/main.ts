@@ -1,4 +1,4 @@
-import { addLevelOnTop, migrate } from './model/building';
+import { addLevelOnTop, getLevel, levelsTopDown, migrate } from './model/building';
 import { demoBuilding } from './model/demo';
 import type { Building } from './model/types';
 import { View3D, type ViewMode } from './three/view3d';
@@ -7,6 +7,7 @@ import { Panel } from './ui/panel';
 import { SunPanel } from './ui/sunpanel';
 import { Sync, reachable } from './ui/sync';
 import { CATALOGUE, CATEGORIES } from './model/furniture';
+import { FLOOR_FINISHES, WALL_FINISHES } from './model/materials';
 import { SPECIES, TREE_ORDER } from './model/trees';
 import { HEDGE_NAMES } from './model/hedges';
 import type { HedgeKind, TreeKind } from './model/types';
@@ -130,6 +131,23 @@ $('#underground').addEventListener('click', () => {
   if (view.underground && layout === 'plan') setLayout('split');
   syncToolbar();
 });
+// What the Paint tool puts on: wall finishes, then floors.
+const paintSelect = $<HTMLSelectElement>('#paintSelect');
+{
+  const group = (label: string, what: 'wall' | 'floor', names: Record<string, { name: string }>) => {
+    const g = document.createElement('optgroup');
+    g.label = label;
+    g.append(...Object.entries(names).map(([k, v]) => new Option(v.name, `${what}:${k}`)), new Option(`${label}: back to the default`, `${what}:default`));
+    return g;
+  };
+  paintSelect.replaceChildren(group('Walls', 'wall', WALL_FINISHES), group('Floors', 'floor', FLOOR_FINISHES));
+}
+paintSelect.addEventListener('change', () => {
+  const [what, finish] = paintSelect.value.split(':');
+  editor.paintWith = { what, finish } as typeof editor.paintWith;
+  editor.setTool('paint');
+});
+
 // Trees and bushes to plant, and hedges, fences and ditches to draw, chosen from two lists
 // shown with either tool.
 const treeSelect = $<HTMLSelectElement>('#treeSelect');
@@ -232,7 +250,7 @@ function setLayout(l: Layout) {
   syncToolbar();
 }
 for (const b of $$('#layout button')) b.addEventListener('click', () => setLayout(b.dataset.layout as Layout));
-for (const b of $$('#mode button')) {
+for (const b of $$('#mode button[data-mode]')) {
   b.addEventListener('click', () => {
     const m = b.dataset.mode as ViewMode;
     if (layout === 'plan') setLayout(window.innerWidth < 700 ? '3d' : 'split');
@@ -251,15 +269,18 @@ try {
 } catch {
   // No storage (private browsing): it stays off.
 }
-$('#cutaway').addEventListener('click', () => {
-  view.setCutaway(!view.cutaway);
-  try {
-    localStorage.setItem('arch3d.cutaway', view.cutaway ? '1' : '0');
-  } catch {
-    // Not remembered; no matter.
-  }
-  syncToolbar();
-});
+// In the View menu, and as a toggle beside Orbit and Walk.
+for (const id of ['#cutaway', '#cutawayQuick']) {
+  $(id).addEventListener('click', () => {
+    view.setCutaway(!view.cutaway);
+    try {
+      localStorage.setItem('arch3d.cutaway', view.cutaway ? '1' : '0');
+    } catch {
+      // Not remembered; no matter.
+    }
+    syncToolbar();
+  });
+}
 
 // ---------------------------------------------------------------- floors
 
@@ -274,14 +295,14 @@ function renderLevels() {
   nav.replaceChildren();
   const add = document.createElement('button');
   add.textContent = '+ Floor';
-  add.title = 'Add a floor on top, starting with a copy of the outside walls below';
+  add.title = 'Add a floor on top of this one, starting with a copy of its outside walls';
   add.addEventListener('click', () => {
-    const level = addLevelOnTop(store.building, true);
+    const level = addLevelOnTop(store.building, true, getLevel(store.building, store.activeId));
     store.commit();
     setLevel(level.id);
   });
   nav.append(add);
-  for (const level of [...store.building.levels].reverse()) {
+  for (const level of levelsTopDown(store.building)) {
     const b = document.createElement('button');
     b.textContent = level.name;
     const active = level.id === store.activeId;
@@ -306,7 +327,7 @@ renderLevels();
 // Page Up / Page Down move between floors.
 window.addEventListener('keydown', (e) => {
   if (e.key !== 'PageUp' && e.key !== 'PageDown') return;
-  const levels = store.building.levels;
+  const levels = levelsTopDown(store.building).reverse();
   const i = levels.findIndex((l) => l.id === store.activeId) + (e.key === 'PageUp' ? 1 : -1);
   if (levels[i]) {
     e.preventDefault();
@@ -535,11 +556,15 @@ const HINTS: Record<Tool, string> = {
   window: 'Click on a wall to place a window',
   split: 'Click on a wall to add a joint you can drag',
   paste: 'Click on walls to place exact copies · Esc when done',
+  paint: 'Walls: click one side of a wall to paint that face, or inside a room to paint all its walls · Floors: click inside a room · the panel sets the defaults',
+  roomOnTop: 'Drag a box on this floor where the room goes (round the top of a stair, say): it gets walls and a flat roof, on top of this floor, and this floor\'s roof turns flat to walk on · Esc to cancel',
+  moveArea: 'Drag a box round one whole building to give it a floor of its own (its own floor level, and its own floors on top); the garden stays · Esc to cancel',
   copyArea: 'Drag a box round what to copy (walls crossing the box are cut off at it) · Esc to cancel',
   pasteArea: 'Click where the copy goes (the pointer is its middle; joints landing on joints join up) · Esc to cancel',
-  stair: 'Click where the stair starts (its bottom step), then click in the direction it goes up',
+  stair: 'Click where the stair starts (its bottom step; for a spiral, its centre), then click in the direction it goes up',
   roof: 'Click a roof to select it · click an edge of the selected roof to switch eave / gable end, or (flat roof) to take its parapet off or put it back',
   garage: 'Click on a wall to place a garage roller door (2.5 m wide; change it in the panel)',
+  open: 'Click on a wall to make an opening through it, with no door or window (square or arched: choose in the panel)',
   glazed: 'Click on a wall to place floor-to-ceiling glass doors (French, sliding or bi-fold: choose in the panel)',
   pillar: 'Click to place a pillar; it rises to the roof above it',
   chimney: 'Click on the roof to place a chimney stack (on the floor whose roof it goes through)',
@@ -550,7 +575,7 @@ const HINTS: Record<Tool, string> = {
   furniture: 'Click to place it (near a wall it backs onto the wall) · [ and ] turn it · Esc when done',
   tree: 'Click to plant a tree; drag it to move it, set its size in the panel',
   hedge: 'Click along the line of the hedge, fence or ditch · click its start to go all the way round · double-click, Enter or Esc to finish',
-  patio: 'Click the corners (snaps to walls; outside, the house is cut out; inside a room, it covers the floor) · click the first corner, double-click or Enter to finish',
+  patio: 'Click the corners (snaps to walls; outside, the house is cut out; inside a room, it covers the floor) · a Balcony goes on an upper floor, outside the wall · click the first corner, double-click or Enter to finish',
 };
 
 function syncToolbar() {
@@ -568,6 +593,8 @@ function syncToolbar() {
   $('#wallType').hidden = editor.tool !== 'wall';
   $('#ortho').hidden = editor.tool !== 'wall' && editor.tool !== 'stair' && editor.tool !== 'patio';
   $('#patioSurface').hidden = editor.tool !== 'patio';
+  $('#paintPick').hidden = editor.tool !== 'paint';
+  paintSelect.value = `${editor.paintWith.what}:${editor.paintWith.finish}`;
   $('#treeKind').hidden = editor.tool !== 'tree' && editor.tool !== 'hedge';
   treeSelect.value = editor.treeKind;
   hedgeSelect.value = editor.hedgeKind;
@@ -588,9 +615,18 @@ function syncToolbar() {
   ($('#undo') as HTMLButtonElement).disabled = !store.canUndo;
   ($('#redo') as HTMLButtonElement).disabled = !store.canRedo;
   for (const b of $$('#layout button')) b.classList.toggle('on', b.dataset.layout === layout);
-  for (const b of $$('#mode button')) b.classList.toggle('on', b.dataset.mode === view.mode);
-  $('#cutaway').classList.toggle('on', view.cutaway);
-  $('#cutaway').hidden = store.building.levels.length < 2 || view.mode === 'walk';
+  for (const b of $$('#mode button[data-mode]')) b.classList.toggle('on', b.dataset.mode === view.mode);
+  // Always in the menu; greyed out, saying why, when it can't apply.
+  const cutaway = $<HTMLButtonElement>('#cutaway');
+  cutaway.classList.toggle('on', view.cutaway);
+  cutaway.disabled = view.mode === 'walk';
+  const quick = $<HTMLButtonElement>('#cutawayQuick');
+  quick.classList.toggle('on', view.cutaway);
+  quick.disabled = view.mode === 'walk';
+  cutaway.title =
+    view.mode === 'walk'
+      ? 'Cutaway works in Orbit view (switch from Walk)'
+      : 'Lift off the roof and ceilings of the floor you are editing, and hide the floors above it, to see into the rooms';
   const clip = editor.clipboard;
   $('#pasteTool').hidden = !clip;
   $<HTMLButtonElement>('#pasteAreaBtn').disabled = !editor.areaClip;

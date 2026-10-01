@@ -16,7 +16,9 @@ import {
   vec,
 } from '../model/geom';
 import { type Clip, copyArea, describeClip, pasteClip } from '../model/copyarea';
-import { getLevel, levelBelow } from '../model/building';
+import { moveToOwnFloor } from '../model/separate';
+import { FLOOR_FINISHES, WALL_FINISHES, clearFloorFinish, faceSides, materialsOf, paintRoomWalls, setFloorFinish } from '../model/materials';
+import { addRoomOnTop, getLevel, levelBelow } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
 import { addPatio, patioShapes } from '../model/patios';
 import { addTree, crownCentre, speciesOf, treeAt, trunkRadius } from '../model/trees';
@@ -30,7 +32,7 @@ import { drawFurnitureSymbol } from './furniture2d';
 import { addChimney, addRooflight, addSolarArray, chimneyFootprint, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { roofSurfaceAt } from '../model/roof';
 import { DEFAULT_ROOF, type LevelRoof, levelRoofs, parapetHeight, roofAreaRings, setAreaRoof, toggleEdge, toggleParapet } from '../model/roof';
-import { DEFAULT_GOING, DEFAULT_STAIR_WIDTH, type StairGeometry, addStair, stairAt, stairGeometry } from '../model/stairs';
+import { DEFAULT_GOING, DEFAULT_STAIR_WIDTH, type StairGeometry, addStair, reachesFloorAbove, stairAt, placedStair, stairGeometry } from '../model/stairs';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import {
   type OpeningTemplate,
@@ -54,10 +56,10 @@ import {
 } from '../model/plan';
 import { detectRooms } from '../model/rooms';
 import { remembered } from './sizes';
-import type { DrainKind, Furniture, Hedge, HedgeKind, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind } from '../model/types';
+import type { DrainKind, FloorFinish, Furniture, Hedge, HedgeKind, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind, WallFinish } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain' | 'hedge' | 'copyArea' | 'pasteArea';
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'open' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain' | 'hedge' | 'copyArea' | 'pasteArea' | 'moveArea' | 'roomOnTop' | 'paint';
 export type Selection = {
   kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'drainNode' | 'drainPipe' | 'hedge';
   id: string;
@@ -117,6 +119,8 @@ export class Editor2D {
   private sectionPts: Vec2[] = [];
   /** Surface for new patios. */
   patioSurface: PatioSurface = 'paving';
+  /** What the Paint tool puts on: a wall finish or a floor finish ('default' takes a painting off). */
+  paintWith: { what: 'wall'; finish: WallFinish | 'default' } | { what: 'floor'; finish: FloorFinish | 'default' } = { what: 'wall', finish: 'stone' };
   /** Kind of tree the Tree tool plants. */
   treeKind: TreeKind = 'deciduous';
   /** Kind of hedge (or fence) the Hedge tool draws. */
@@ -140,7 +144,7 @@ export class Editor2D {
   showPrintArea = false;
   private areaPick: ((b: Box | null) => void) | null = null;
   /** What the box being dragged is for, and the box so far. */
-  private areaPurpose: 'print' | 'copy' = 'print';
+  private areaPurpose: 'print' | 'copy' | 'move' | 'room' = 'print';
   private pickDraft: Box | null = null;
   /** Part of a plan copied with the Copy area tool, to paste (kept on this device). */
   areaClip: Clip | null = loadClip();
@@ -302,7 +306,7 @@ export class Editor2D {
 
   setTool(t: Tool) {
     if (this.tool === 'wall' && t !== 'wall') this.finishChain();
-    if (this.tool === 'copyArea' && t !== 'copyArea' && this.areaPick) {
+    if ((this.tool === 'copyArea' || this.tool === 'moveArea' || this.tool === 'roomOnTop') && t !== this.tool && this.areaPick) {
       this.areaPick = null;
       this.pickDraft = null;
     }
@@ -312,9 +316,40 @@ export class Editor2D {
     this.drainLast = null;
     this.tool = t;
     if (t === 'copyArea') this.pickArea((b) => this.copyBox(b), 'copy');
+    if (t === 'moveArea') this.pickArea((b) => this.moveBox(b), 'move');
+    if (t === 'roomOnTop') this.pickArea((b) => this.roomBox(b), 'room');
     if (t === 'pasteArea' && !this.areaClip) this.tool = 'select';
     this.onToolChange?.();
     this.requestRender();
+  }
+
+  /**
+   * Move the building in the box onto a floor of its own (so it can have its own floor level
+   * and its own floors on top), and switch to that floor with its settings open.
+   */
+  private moveBox(b: Box | null) {
+    this.setTool('select');
+    if (!b) return;
+    const name = prompt('A name for the building\'s own floor (you can change it later):', 'Second building');
+    if (name === null) return;
+    const level = moveToOwnFloor(this.store.building, this.plan, b, name.trim() || 'Second building');
+    if (!level) {
+      this.flash('No walls wholly inside the box: drag it round the whole building', { x: b.x0, y: b.y0 });
+      return;
+    }
+    this.store.commit();
+    this.store.setActive(level.id);
+    this.select({ kind: 'level', id: level.id });
+  }
+
+  /** Build a small floor on top of this one, over the box (a stair-head onto the roof). */
+  private roomBox(b: Box | null) {
+    this.setTool('select');
+    if (!b) return;
+    const level = addRoomOnTop(this.store.building, this.plan, b);
+    this.store.commit();
+    this.store.setActive(level.id);
+    this.select({ kind: 'level', id: level.id });
   }
 
   /** Copy everything in the box on this floor, ready to paste here or into another drawing. */
@@ -1206,6 +1241,33 @@ export class Editor2D {
         this.select({ kind: 'solar', id: sa.id });
         break;
       }
+      case 'paint': {
+        const room = detectRooms(plan).find((r) => pointInPolygon(w, r.polygon));
+        const p = this.paintWith;
+        const name = p.finish === 'default' ? 'the default' : p.what === 'wall' ? WALL_FINISHES[p.finish].name : FLOOR_FINISHES[p.finish].name;
+        if (p.what === 'wall') {
+          // On (or right by) a wall: the face on the side clicked. Inside a room: all its walls.
+          const fp = this.wallAt(w, 8 / this.view.scale);
+          if (fp) {
+            const side = dot(sub(w, fp.a), fp.n) >= 0 ? 'left' : 'right';
+            const wall = plan.walls[fp.wallId];
+            wall.faces = { ...wall.faces, [side]: p.finish === 'default' ? undefined : p.finish };
+            if (!wall.faces.left && !wall.faces.right) delete wall.faces;
+            this.store.commit();
+            this.flash(`This face: ${name}`, w);
+          } else if (room) {
+            paintRoomWalls(plan, room.polygon, p.finish === 'default' ? undefined : p.finish);
+            this.store.commit();
+            this.flash(`The walls round this room: ${name}`, w);
+          } else this.flash('Click on one side of a wall, or inside a room for all its walls', w);
+        } else if (room) {
+          if (p.finish === 'default') clearFloorFinish(plan, room.polygon);
+          else setFloorFinish(plan, room.polygon, w, p.finish);
+          this.store.commit();
+          this.flash(`Floor: ${name}`, w);
+        } else this.flash('Click inside a room to set its floor', w);
+        break;
+      }
       case 'pasteArea': {
         const clip = this.areaClip;
         if (!clip) break;
@@ -1225,6 +1287,7 @@ export class Editor2D {
       case 'door':
       case 'window':
       case 'garage':
+      case 'open':
       case 'glazed':
       case 'paste': {
         const fp = this.wallAt(w, 10 / this.view.scale);
@@ -1492,7 +1555,7 @@ export class Editor2D {
 
   /** What a click with the current tool places: a default door/window, or the copied one. */
   private openingSpec(): OpeningKind | OpeningTemplate | null {
-    if (this.tool === 'door' || this.tool === 'window' || this.tool === 'garage' || this.tool === 'glazed') return this.tool;
+    if (this.tool === 'door' || this.tool === 'window' || this.tool === 'garage' || this.tool === 'glazed' || this.tool === 'open') return this.tool;
     if (this.tool === 'paste') return this.clipboard;
     return null;
   }
@@ -1777,7 +1840,7 @@ export class Editor2D {
   private drawPatios(C: Record<string, string>) {
     const ctx = this.ctx;
     const plan = this.plan;
-    const fills = { paving: 'rgba(196, 184, 164, 0.55)', decking: 'rgba(170, 118, 76, 0.45)', gravel: 'rgba(170, 162, 148, 0.5)', rubber: 'rgba(58, 60, 64, 0.75)', lawn: 'rgba(96, 146, 74, 0.55)' };
+    const fills = { paving: 'rgba(196, 184, 164, 0.55)', decking: 'rgba(170, 118, 76, 0.45)', gravel: 'rgba(170, 162, 148, 0.5)', rubber: 'rgba(58, 60, 64, 0.75)', lawn: 'rgba(96, 146, 74, 0.55)', pool: 'rgba(92, 170, 210, 0.7)', balcony: 'rgba(214, 196, 160, 0.75)', landing: 'rgba(196, 150, 100, 0.6)' };
     const list = Object.values(plan.patios ?? {}).sort((a, b) => a.height - b.height);
     for (const pt of list) {
       const shapes = patioShapes(plan, pt);
@@ -1921,6 +1984,32 @@ export class Editor2D {
     ctx.restore();
   }
 
+  /** A stripe of colour along each face of each wall: the finish it has, painted or by default. */
+  private drawFaceFinishes() {
+    const ctx = this.ctx;
+    const k = this.view.scale;
+    const defaults = materialsOf(this.store.building);
+    const sides = faceSides(this.plan);
+    const w = Math.max(2, Math.min(5, 0.06 * k));
+    ctx.save();
+    ctx.lineCap = 'butt';
+    for (const fp of this.fps.values()) {
+      const wall = this.plan.walls[fp.wallId];
+      const where = sides.get(fp.wallId);
+      if (!wall || !where) continue;
+      for (const [side, s] of [['left', 1], ['right', -1]] as const) {
+        const finish = wall.faces?.[side] ?? defaults[where[side]];
+        const off = s * (fp.thickness / 2 - w / (2 * k));
+        const a = wallPoint(fp, s > 0 ? fp.uL0 : fp.uR0, off);
+        const b = wallPoint(fp, s > 0 ? fp.uL1 : fp.uR1, off);
+        ctx.strokeStyle = WALL_FINISHES[finish].colour;
+        ctx.lineWidth = w;
+        this.line(a, b);
+      }
+    }
+    ctx.restore();
+  }
+
   /** The area chosen for printing (or being dragged out to copy): a dashed box, labelled. */
   private drawPrintArea(C: Record<string, string>, b: Box, label: string) {
     const ctx = this.ctx;
@@ -1944,7 +2033,7 @@ export class Editor2D {
    * Choose an area to print: the next box dragged on the plan (whatever the tool) is it.
    * `done` gets the box, or null if Esc was pressed.
    */
-  pickArea(done: (b: Box | null) => void, purpose: 'print' | 'copy' = 'print') {
+  pickArea(done: (b: Box | null) => void, purpose: 'print' | 'copy' | 'move' | 'room' = 'print') {
     this.areaPick = done;
     this.areaPurpose = purpose;
     this.pickDraft = null;
@@ -2172,6 +2261,7 @@ export class Editor2D {
       beech: ['#aab06a', '#6d6a34'],
       fence: ['#9b7550', '#6f5237'],
       ditch: ['#b9a77e', '#7a6644'],
+      wall: ['#d8c6a0', '#8a7a5c'],
     };
     const plan = this.plan;
     // Ditches first, under everything: the banks, and the water down the middle.
@@ -2576,9 +2666,12 @@ export class Editor2D {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const rooms = detectRooms(plan);
+    const floorSet = plan.floorFinishes ?? [];
     for (const r of rooms) {
       this.path(r.polygon);
-      ctx.fillStyle = C.room;
+      // A floor set to something other than the default shows in its colour.
+      const f = floorSet.filter((s) => pointInPolygon(s, r.polygon)).at(-1)?.finish ?? materialsOf(this.store.building).floor;
+      ctx.fillStyle = f === 'oak' ? C.room : FLOOR_FINISHES[f].colour;
       ctx.fill();
     }
     // Patios after the rooms, so a floor covering drawn inside one (rubber tiles) shows.
@@ -2605,6 +2698,9 @@ export class Editor2D {
       ctx.fill();
     }
 
+    // With the Paint tool, each wall face shows its finish as a stripe along it.
+    if (this.tool === 'paint' && !this.printing) this.drawFaceFinishes();
+
     // Openings.
     for (const o of Object.values(plan.openings)) {
       const fp = this.fps.get(o.wallId);
@@ -2613,13 +2709,14 @@ export class Editor2D {
 
     // Stairs going up from here, and the stairwells of the stairs coming up from below.
     if (below) {
-      for (const st of Object.values(levelBelowOf(this.store).stairs ?? {})) {
-        this.drawStair(stairGeometry(st, levelBelowOf(this.store).height), false, true, C);
+      const lower = levelBelowOf(this.store);
+      for (const st of Object.values(lower.stairs ?? {})) {
+        if (reachesFloorAbove(st, lower)) this.drawStair(placedStair(st, lower), false, true, C);
       }
     }
     for (const st of Object.values(plan.stairs ?? {})) {
       const sel = this.selection?.kind === 'stair' && this.selection.id === st.id;
-      this.drawStair(stairGeometry(st, plan.height), sel, false, C);
+      this.drawStair(placedStair(st, plan), sel, false, C);
     }
 
     this.drawRoofs(C);
@@ -2731,7 +2828,7 @@ export class Editor2D {
     this.drawToolPreview(C);
     if (this.tool === 'stretch') this.drawStretch(C);
     const picking = this.areaPick ? (this.pickDraft ?? (this.areaPurpose === 'print' ? this.printArea : null)) : null;
-    if (picking) this.drawPrintArea(C, picking, this.areaPurpose === 'copy' ? 'Copy' : 'Print area');
+    if (picking) this.drawPrintArea(C, picking, this.areaPurpose === 'copy' ? 'Copy' : this.areaPurpose === 'move' ? 'Move to its own floor' : this.areaPurpose === 'room' ? 'Room on top' : 'Print area');
     else if (this.printArea && this.showPrintArea) this.drawPrintArea(C, this.printArea, 'Print area');
 
     for (const g of this.lastGuides) this.guide(g.from, g.to, C.accent);
@@ -2823,7 +2920,7 @@ export class Editor2D {
         ctx.lineWidth = 2;
         ctx.stroke();
       }
-    } else if ((this.tool === 'door' || this.tool === 'window' || this.tool === 'garage' || this.tool === 'glazed' || this.tool === 'paste') && h) {
+    } else if ((this.tool === 'door' || this.tool === 'window' || this.tool === 'garage' || this.tool === 'glazed' || this.tool === 'open' || this.tool === 'paste') && h) {
       const fp = this.wallAt(h, 10 / this.view.scale);
       const spec = this.openingSpec();
       if (fp && spec) {
@@ -2957,6 +3054,12 @@ export class Editor2D {
       ctx.setLineDash([]);
     } else if (o.kind === 'glazed') {
       this.drawGlazed(fp, o, half);
+    } else if (o.kind === 'open') {
+      // Nothing in it: the head (or the arch) shown dashed across the gap, as on a drawing.
+      ctx.setLineDash([4, 3]);
+      ctx.lineWidth = 1;
+      this.line(wallPoint(fp, lo, 0), wallPoint(fp, hi, 0));
+      ctx.setLineDash([]);
     } else if (o.kind === 'window') {
       this.line(wallPoint(fp, lo, half * 0.25), wallPoint(fp, hi, half * 0.25));
       this.line(wallPoint(fp, lo, -half * 0.25), wallPoint(fp, hi, -half * 0.25));

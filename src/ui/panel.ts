@@ -1,11 +1,11 @@
 // Properties panel for the current selection. Every change goes through the model's
 // clean-up (normalize), so e.g. thickening a wall re-mitres its corners and re-fits its openings.
 
-import { addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
+import { PLINTH, addLevelBelow, addLevelOnTop, ceilingHeight, deleteLevel, fitStoreys, getLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
 import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, parapetHeight, roofAreaRings, setAreaRoof } from '../model/roof';
 import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
-import { PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
+import { BALCONY_SLAB, PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
 import { SPECIES, TREE_DEFAULTS, TREE_ORDER, speciesOf } from '../model/trees';
 import { forget, remember, remembered } from './sizes';
 import { MAX_LEAF, gateLeaves, isGate } from '../model/gates';
@@ -14,11 +14,13 @@ import { GRAND_MODELS, TANK_STAND, catalogueItem, tankLitres } from '../model/fu
 import { stretchSummary } from '../model/stretch';
 import { DEFAULT_INVERT, DEFAULT_TANK, FITTING_NAMES, deleteDrainNode, pipeFall, pipeLength, tankVolume } from '../model/drains';
 import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
-import { stairGeometry } from '../model/stairs';
+import { moveToOwnFloor } from '../model/separate';
+import { placedStair, reachesFloorAbove, stairBase, stairRise } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
+import { FLOOR_FINISHES, ROOF_COVERINGS, WALL_FINISHES, faceSides, materialsOf } from '../model/materials';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
 import { deleteNode, deleteOpening, deleteWall, finishNodeMove, moveNode, normalize, setWallLength, splitWallAt } from '../model/plan';
-import { DEFAULTS, type OpeningKind, type DrainFitting, type DrainKind, type FrameColour, type GlazedStyle, type PatioSurface, type Pillar, type TreeKind, type HedgeKind, type Roof, type RoofKind, type Stair, type StairShape } from '../model/types';
+import { type AwningColour, DEFAULTS, type OpeningKind, type DrainFitting, type DrainKind, type FloorFinish, type FrameColour, type GlazedStyle, type PatioSurface, type Pillar, type RailStyle, type TreeKind, type HedgeKind, type Roof, type RoofCovering, type RoofKind, type Stair, type StairShape, type StairStyle, type WallFinish } from '../model/types';
 import type { Editor2D } from './editor2d';
 import type { Store } from './store';
 
@@ -83,7 +85,7 @@ export class Panel {
     const plan = this.store.plan;
     this.el.replaceChildren();
     // Only show the panel when there is something to edit, so it doesn't cover the plan.
-    this.el.hidden = !sel && this.editor.tool !== 'wall' && this.editor.tool !== 'stretch';
+    this.el.hidden = !sel && this.editor.tool !== 'wall' && this.editor.tool !== 'stretch' && this.editor.tool !== 'paint';
     if (!sel) return this.renderDefaults();
 
     if (sel.kind === 'wall') {
@@ -103,6 +105,15 @@ export class Panel {
         setWallLength(plan, w.id, v);
         this.store.commit();
       }, 'm', 'Moves the end joint along the wall');
+      {
+        const where = faceSides(plan).get(w.id);
+        const m = materialsOf(this.store.building);
+        if (where) {
+          const [a, c] = (['left', 'right'] as const).map((s) => ({ where: where[s], finish: w.faces?.[s] ?? m[where[s]], painted: !!w.faces?.[s] }));
+          const say = (f: typeof a) => `${WALL_FINISHES[f.finish].name.toLowerCase()} ${f.where}${f.painted ? ' (painted)' : ''}`;
+          this.note(`Faces: ${say(a)}; ${say(c)}. Change them with Build → Paint materials.`);
+        }
+      }
       this.buttons([
         ['Split in middle', () => {
           const id = splitWallAt(plan, w.id, (fp?.length ?? 0) / 2);
@@ -158,12 +169,13 @@ export class Panel {
     if (!o) return;
     const fps = computeFootprints(plan);
     const fp = fps.get(o.wallId);
-    this.title(o.kind === 'door' ? 'Door' : o.kind === 'garage' ? 'Garage door' : o.kind === 'glazed' ? 'Glass doors' : 'Window');
+    this.title(o.kind === 'door' ? 'Door' : o.kind === 'garage' ? 'Garage door' : o.kind === 'glazed' ? 'Glass doors' : o.kind === 'open' ? (o.arched ? 'Arched opening' : 'Opening') : 'Window');
     this.select('Type', o.kind, [
       ['door', 'Door'],
       ['window', 'Window'],
       ['glazed', 'Glass doors'],
       ['garage', 'Garage roller door'],
+      ['open', 'Opening (nothing in it)'],
     ], (v) => {
       const k = v as OpeningKind;
       o.kind = k;
@@ -185,6 +197,20 @@ export class Panel {
       o.height = v;
       this.done();
     }, 'm');
+    if (o.kind === 'open') {
+      this.select('Head', o.arched ? 'arch' : 'square', [
+        ['square', 'Square'],
+        ['arch', 'Round arch'],
+      ], (v) => {
+        o.arched = v === 'arch' || undefined;
+        this.done();
+      });
+      this.number('Sill height', o.sill, 0.01, 0, 10, (v) => {
+        o.sill = v;
+        this.done();
+      }, 'm', '0 for a doorway you walk through; higher for an unglazed window opening');
+      if (o.arched) this.note(`Height is to the top of the arch; it springs ${(o.height - o.width / 2).toFixed(2)} m above the sill.`);
+    }
     if (o.kind === 'glazed') {
       this.select('Style', o.style ?? 'french', [
         ['french', 'French doors'],
@@ -322,7 +348,23 @@ export class Panel {
         this.done();
       }, 'm', 'Thickness of this floor, which is also the ceiling structure of the floor below');
     }
-    this.note(`Floor level +${levelElevation(b, id).toFixed(2)} m · ceiling height ${ceilingHeight(b, level).toFixed(2)} m`);
+    const z = levelElevation(b, id);
+    if (!isGround) {
+      this.number('Floor level', z, 0.05, -20, 100, (v) => {
+        level.base = v;
+        fitStoreys(b);
+        this.done();
+      }, 'm', 'Height of this floor above the ground: e.g. 0.6 for a house on a plinth, -1.5 for one half below ground. Floors on top of it follow; where one doesn\'t (it stands on another part too), the walls stretch or shrink to meet it.');
+    }
+    this.note(
+      `Floor level ${z >= 0 ? '+' : '−'}${Math.abs(z).toFixed(2)} m · ceiling height ${ceilingHeight(b, level).toFixed(2)} m` +
+        (!isGround && level.base !== undefined ? ' · set for this floor (floors on top of it follow it)' : ''),
+    );
+    if (isGround) {
+      this.note(
+        'The first floor is always at the ground, with the garden on it. To raise or sink one building (a plinth, half below ground), or to add floors on top of just one of two buildings, give it a floor of its own: Build → Move to its own floor…, and drag a box round it.',
+      );
+    }
 
     // Default roof for the parts of this floor with nothing above them.
     const roof = defaultRoof(b, level) ?? { ...DEFAULT_ROOF, kind: 'none' as const };
@@ -334,6 +376,12 @@ export class Panel {
     this.buttons([
       ['Add floor above', () => this.addFloor(true)],
       ['Add empty floor', () => this.addFloor(false)],
+      ['Add floor below', () => {
+        const below = addLevelBelow(b, level);
+        this.store.commit();
+        this.editor.select(null);
+        this.store.setActive(below.id);
+      }],
       ['Delete floor', () => {
         if (!confirm(`Delete ${level.name} and everything on it? (You can undo this.)`)) return;
         deleteLevel(b, id);
@@ -348,18 +396,44 @@ export class Panel {
     const level = this.store.plan;
     const st = level.stairs?.[id];
     if (!st) return;
-    const g = stairGeometry(st, level.height);
-    this.title('Stair');
+    const rise = stairRise(st, level);
+    const foot = stairBase(st, level);
+    const g = placedStair(st, level);
+    const spiral = st.shape === 'spiral';
+    this.title(st.rise !== undefined && st.rise < level.height - 0.05 ? 'Steps' : 'Stair');
+    this.number('Rises', rise, 0.05, 0.1, 20, (v) => {
+      st.rise = Math.abs(v - (level.height - foot)) < 1e-6 ? undefined : v;
+      this.done();
+    }, 'm', `How high it climbs from its foot: the ${(level.height - foot).toFixed(2)} m to the next floor, or less for steps up to a plinth or terrace, or more for an outside stair to an upper door`);
+    this.select('Style', st.style ?? (spiral ? 'metal' : 'solid'), [
+      ['solid', 'Solid, timber treads'],
+      ['stone', 'Stone steps (solid)'],
+      ['cantilever', 'Stone treads cantilevered from the wall'],
+      ['metal', 'Steel treads, open (on a spiral, round a steel column)'],
+    ], (v) => {
+      st.style = v as StairStyle;
+      this.done();
+    });
+    this.select('Handrail', st.rail ?? (spiral ? 'iron' : 'timber'), [
+      ['timber', 'Timber, with balusters'],
+      ['iron', 'Wrought iron'],
+      ['glass', 'Glass panels'],
+      ['none', 'None'],
+    ], (v) => {
+      st.rail = v as RailStyle;
+      this.done();
+    });
     this.select('Shape', st.shape, [
       ['straight', 'Straight'],
       ['L', 'L-shape (quarter turn)'],
       ['U', 'U-shape (half turn)'],
+      ['spiral', 'Spiral, round a column'],
     ], (v) => {
       st.shape = v as StairShape;
       this.done();
     });
     if (st.shape !== 'straight') {
-      this.select('Turns', st.turn, [
+      this.select(spiral ? 'Winds' : 'Turns', st.turn, [
         ['left', 'Left'],
         ['right', 'Right'],
       ], (v) => {
@@ -376,9 +450,12 @@ export class Panel {
       this.done();
     }, 'm', 'How deep each step is (the "going")');
     this.note(
-      `${g.risers} risers of ${(g.rise * 100).toFixed(1)} cm climb the ${level.height} m to the next floor.` +
+      `${g.risers} risers of ${(g.rise * 100).toFixed(1)} cm climb ${rise.toFixed(2)} m${reachesFloorAbove(st, level) && st.rise === undefined ? ' to the next floor' : ''}.` +
+        (Math.abs(foot) > 0.05 ? ` Its foot is on the ${foot > 0 ? 'raised' : 'sunken'} patio, at ${foot > 0 ? '+' : '−'}${Math.abs(foot).toFixed(2)} m.` : '') +
         (st.shape === 'straight' ? ` Length ${(g.treads.length * st.going).toFixed(2)} m.` : '') +
-        (levelAbove(this.store.building, level.id) ? '' : ' There is no floor above yet: add one to use the stair.'),
+        (st.style === 'cantilever' ? ' Set one side against a wall: the treads are built into it, with nothing underneath.' : '') +
+        (spiral ? ` ${(((g.treads.length * 30) / 360) * 10) / 10 >= 1 ? `It winds ${Math.round(g.treads.length * 30)}° round its column` : 'A short spiral'}, ${((st.width + 0.06) * 2).toFixed(2)} m across; Width is the length of each tread. Its position is the column's centre.` : '') +
+        (reachesFloorAbove(st, level) && !levelAbove(this.store.building, level.id) ? ' There is no floor above yet: add one to use the stair.' : ''),
     );
     this.buttons([
       ['Rotate 90°', () => {
@@ -843,11 +920,17 @@ export class Panel {
       Object.assign(h, HEDGE_DEFAULTS[h.kind], remembered(key()) ?? {});
       this.done();
     });
-    this.number(h.kind === 'ditch' ? 'Depth' : 'Height', h.height, 0.1, 0.2, 6, (v) => {
+    this.number(h.kind === 'ditch' ? 'Depth' : 'Height', h.height, 0.1, 0.2, 8, (v) => {
       h.height = v;
       keep();
       this.done();
     }, 'm');
+    if (h.kind === 'wall') {
+      this.select('Finish', h.finish ?? 'stone', Object.entries(WALL_FINISHES).map(([k, v]): [string, string] => [k, v.name]), (v) => {
+        h.finish = v === 'stone' ? undefined : (v as WallFinish);
+        this.done();
+      });
+    }
     if (h.kind !== 'fence') {
       this.number(h.kind === 'ditch' ? 'Width at top' : 'Thickness', h.width, 0.05, 0.2, 6, (v) => {
         h.width = v;
@@ -860,6 +943,7 @@ export class Panel {
       hawthorn: 'In leaf from May to October; twiggy and bare in winter.',
       beech: 'Fresh green in summer, copper in autumn, and it keeps its brown leaves through the winter.',
       fence: 'Timber posts at most 1.8 m apart, a gravel board, and featheredge boards.',
+      wall: 'A free-standing wall with a coping along the top, e.g. a boundary wall. Gates can stand in it.',
       ditch: 'An open drainage ditch dug into the ground, with water in the bottom. Run surface-water drains to it with an "Outfall into a ditch" fitting.',
     }[h.kind];
     this.note(`${hedgeLength(h).toFixed(1)} m long${hedgeClosed(h) ? ', all the way round' : ''}. ${season} Drag it to move it; drag a corner to reshape it, a circle to add a corner; double-click a corner to remove it.`);
@@ -881,7 +965,8 @@ export class Panel {
     const level = this.store.plan;
     const pt = level.patios?.[id];
     if (!pt) return;
-    const names: Record<PatioSurface, string> = { paving: 'Patio', decking: 'Deck', gravel: 'Gravel', rubber: 'Rubber floor', lawn: 'Lawn' };
+    const names: Record<PatioSurface, string> = { paving: 'Patio', decking: 'Deck', gravel: 'Gravel', rubber: 'Rubber floor', lawn: 'Lawn', pool: 'Swimming pool', balcony: 'Balcony', landing: 'Landing' };
+    const pool = pt.surface === 'pool';
     this.title(names[pt.surface]);
     this.select('Surface', pt.surface, [
       ['paving', 'Paving'],
@@ -889,16 +974,78 @@ export class Panel {
       ['gravel', 'Gravel'],
       ['rubber', 'Rubber tiles'],
       ['lawn', 'Lawn'],
+      ['pool', 'Swimming pool'],
+      ['balcony', 'Balcony (cantilevered)'],
+      ['landing', 'Landing (indoors)'],
     ], (v) => {
       setPatioSurface(pt, v as PatioSurface);
       this.done();
     });
-    this.number('Height', pt.height, 0.01, 0, 6, (v) => {
-      pt.height = v;
+    if (pool) {
+      this.number('Depth', -pt.height, 0.05, 0.3, 5, (v) => {
+        pt.height = -v;
+        this.done();
+      }, 'm', 'From the edge to the bottom of the pool');
+    } else {
+      this.number('Height', pt.height, 0.01, -10, 10, (v) => {
+        pt.height = v;
+        this.done();
+      }, 'm', 'Height of the top above this floor (the ground, for the ground floor): higher than a step for a plinth or terrace (stone sides), below 0 for a sunken area, dug out of the ground with retaining walls round it');
+    }
+    this.select('Railing', pt.guard ?? 'none', [
+      ['none', 'None'],
+      ['glass', 'Glass panels'],
+      ['iron', 'Wrought iron'],
+      ['timber', 'Timber'],
+    ], (v) => {
+      pt.guard = v === 'none' ? undefined : (v as NonNullable<typeof pt.guard>);
       this.done();
-    }, 'm', 'Height of the top above this floor (the ground, for the ground floor)');
-    if (pt.surface !== 'gravel') {
-      const slab = pt.surface === 'paving' || pt.surface === 'rubber';
+    });
+    if (pool) {
+      this.select('Cover', pt.cover ?? 'none', [
+        ['none', 'None'],
+        ['rolled', 'Rolled up on its roller'],
+        ['covered', 'Over the pool'],
+      ], (v) => {
+        pt.cover = v === 'none' ? undefined : (v as 'rolled' | 'covered');
+        this.done();
+      });
+      if (pt.cover) {
+        this.select('Roller', pt.coverFlip ? 'other' : 'one', [
+          ['one', 'At one end'],
+          ['other', 'At the other end'],
+        ], (v) => {
+          pt.coverFlip = v === 'other' ? true : undefined;
+          this.done();
+        });
+        this.note('A slatted blue cover on a roller across one of the short ends.');
+      }
+    }
+    this.select('Awning', pt.awning?.colour ?? 'none', [
+      ['none', 'None'],
+      ['cream', 'Cream'],
+      ['stripe', 'Blue and white stripes'],
+      ['terracotta', 'Terracotta'],
+      ['green', 'Green'],
+      ['grey', 'Grey'],
+    ], (v) => {
+      pt.awning = v === 'none' ? undefined : { back: 2.6, front: 2.2, ...pt.awning, colour: v as AwningColour };
+      this.done();
+    });
+    if (pt.awning) {
+      const aw = pt.awning;
+      this.number('Awning at the wall', aw.back, 0.05, 1.8, 6, (v) => {
+        aw.back = v;
+        this.done();
+      }, 'm', 'Height of the awning where it is fixed to the wall, above the patio');
+      this.number('Awning at the front', aw.front, 0.05, 1.8, 6, (v) => {
+        aw.front = v;
+        this.done();
+      }, 'm', 'Height of its front edge, on the posts');
+      this.note('Fixed to the wall along the patio\'s longest side against the house, with posts at the front corners. With no side against a wall it stands on posts at every corner, level at the wall height. Reshape the patio to change what it covers.');
+    }
+    if (pt.surface !== 'gravel' && !pool) {
+      const slab = pt.surface === 'paving' || pt.surface === 'rubber' || pt.surface === 'balcony';
       const lawn = pt.surface === 'lawn';
       const [label, lo, hi] = lawn ? ['Stripe width', 0.3, 3] : slab ? [pt.surface === 'rubber' ? 'Tile size' : 'Slab size', 0.2, 1.2] : ['Board width', 0.08, 0.3];
       this.number(label, pt.module, 0.005, lo, hi, (v) => {
@@ -913,10 +1060,41 @@ export class Panel {
     const std = PATIO_DEFAULTS[pt.surface].height;
     this.note(
       `${patioArea(level, pt).toFixed(1)} m². ` +
-        (pt.height > std + 0.2
-          ? 'Raised: more than a step up, so it needs steps to walk onto.'
+        (pool
+          ? `About ${Math.round(patioArea(level, pt) * (-pt.height - 0.15))} m³ of water (${Math.round(patioArea(level, pt) * (-pt.height - 0.15) * 1000).toLocaleString('en-GB')} litres). Mosaic-lined, with a stone coping round the edge; a railing stands at the outside of the coping.`
+          : pt.surface === 'landing'
+          ? 'A boarded landing with a balustrade round its open edges, none along walls, and a gap wherever a stair steps on or off it. Draw it over a space with no floor (a double-height hall, a gallery), at the head of a stair or between two flights; set its Height for a half landing.'
+          : pt.surface === 'balcony'
+          ? `A ${BALCONY_SLAB * 100} cm stone slab cantilevered from the wall on steel brackets, nothing under it. Draw it outside the wall of an upper floor; the railing runs round its open edges, not along the house. An outside stair whose Rises reaches this floor's level climbs onto it.`
+          : pt.height < 0
+          ? `Sunken ${(-pt.height).toFixed(2)} m: the ground is dug away, with retaining walls round it in the outside wall finish.`
+          : pt.height > std + 0.2
+          ? 'Raised: more than a step up, so it needs steps to walk onto; its sides are in the outside wall finish (stone for a plinth).'
           : 'Drag to move. Where it meets the house it stops at the walls; drawn inside a room, it covers the floor up to them.'),
     );
+    // A plinth with a building drawn on this (the garden's) floor standing in it: the floor
+    // can't rise, so the building needs a floor of its own to stand on top.
+    const b = this.store.building;
+    const onPlinth =
+      pt.height > PLINTH && !pool && b.levels[0] === level
+        ? Object.values(level.walls).filter((w) => pointInPolygon(level.nodes[w.a], pt.points) && pointInPolygon(level.nodes[w.b], pt.points))
+        : [];
+    if (onPlinth.length) {
+      this.note('There is a building drawn on this floor inside it, so it stands at the ground, inside the plinth. Stand it on top: it moves to a floor of its own, which sits on the plinth.');
+      this.buttons([
+        ['Stand the building on it', () => {
+          const xs = pt.points.map((p) => p.x);
+          const ys = pt.points.map((p) => p.y);
+          const name = prompt('A name for the building\'s own floor (you can change it later):', 'House on the plinth');
+          if (name === null) return;
+          const moved = moveToOwnFloor(b, level, { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) }, name.trim() || 'House on the plinth');
+          if (!moved) return;
+          this.store.commit();
+          this.store.setActive(moved.id);
+          this.editor.select({ kind: 'level', id: moved.id });
+        }],
+      ]);
+    }
     this.buttons([
       ['Turn 90°', () => {
         pt.angle += Math.PI / 2;
@@ -1073,6 +1251,7 @@ export class Panel {
         ['flat', 'Flat ceiling'],
         ['vaulted', 'Vaulted (open to the roof)'],
       ], (v) => set({ vaulted: v === 'vaulted' || undefined }));
+      this.select('Covering', roof.covering ?? 'tiles', Object.entries(ROOF_COVERINGS).map(([k, v]): [string, string] => [k, v.name]), (v) => set({ covering: v === 'tiles' ? undefined : (v as RoofCovering) }));
       this.select('Gable ends', roof.glazedGables ? 'glazed' : 'wall', [
         ['wall', 'Solid wall'],
         ['glazed', 'Glazed (triangular window)'],
@@ -1087,7 +1266,7 @@ export class Panel {
   }
 
   private addFloor(copyOutline: boolean) {
-    const level = addLevelOnTop(this.store.building, copyOutline);
+    const level = addLevelOnTop(this.store.building, copyOutline, this.store.plan);
     this.store.commit();
     this.editor.select(null);
     this.store.setActive(level.id);
@@ -1096,12 +1275,45 @@ export class Panel {
   private renderDefaults() {
     const ed = this.editor;
     if (ed.tool === 'stretch') return this.renderStretch();
+    if (ed.tool === 'paint') return this.renderMaterials();
     this.title('New wall');
     this.number('Thickness', ed.wallProps.thickness, 0.01, 0.05, 1, (v) => {
       ed.wallProps.thickness = v;
       ed.onToolChange?.();
     }, 'm');
     this.note(`Walls run the full ${this.store.plan.height} m floor-to-floor height of ${this.store.plan.name.toLowerCase()}.`);
+  }
+
+  /** The drawing's default finishes, and clearing what has been painted on this floor. */
+  private renderMaterials() {
+    const b = this.store.building;
+    const m = materialsOf(b);
+    const walls = Object.entries(WALL_FINISHES).map(([k, v]): [string, string] => [k, v.name]);
+    this.title('Materials');
+    this.select('Outside walls', m.outside, walls, (v) => {
+      b.materials = { ...b.materials, outside: v as WallFinish };
+      this.done();
+    });
+    this.select('Inside walls', m.inside, walls, (v) => {
+      b.materials = { ...b.materials, inside: v as WallFinish };
+      this.done();
+    });
+    this.select('Floors', m.floor, Object.entries(FLOOR_FINISHES).map(([k, v]): [string, string] => [k, v.name]), (v) => {
+      b.materials = { ...b.materials, floor: v as FloorFinish };
+      this.done();
+    });
+    this.note('These are the defaults for the whole drawing: every wall face looking into a room is an inside wall, every other face an outside one. Paint over them where something is different; roof coverings are in each roof\'s panel (Roof tool).');
+    const level = this.store.plan;
+    const painted = Object.values(level.walls).filter((w) => w.faces).length + (level.floorFinishes?.length ?? 0);
+    if (painted) {
+      this.buttons([
+        ['Clear painting on this floor', () => {
+          for (const w of Object.values(level.walls)) delete w.faces;
+          delete level.floorFinishes;
+          this.done();
+        }, true],
+      ]);
+    }
   }
 
   /** X and Y of a roof item's centre: type the same number as another to line them up. */

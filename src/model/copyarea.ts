@@ -51,6 +51,8 @@ export interface Clip {
   furniture: Furniture[];
   roofSections: RoofSection[];
   roofAreas: RoofAreaSetting[];
+  /** Rooms' floors painted differently from the default (optional: older copies lack it). */
+  floorFinishes?: NonNullable<Level['floorFinishes']>;
   /** The floor's own settings, for pasting into an empty floor. */
   level: { height: number; slab: number; roof?: Roof };
 }
@@ -148,6 +150,7 @@ export function copyArea(level: Level, box: Box): Clip | null {
     hedges: within(level.hedges),
     roofSections: within(level.roofSections).map((s) => ({ ...s, roof: shiftRoof(s.roof, o) })),
     roofAreas: (level.roofAreas ?? []).filter((r) => isIn(r, box)).map((r) => ({ ...shift(r, o), roof: shiftRoof(r.roof, o) })),
+    floorFinishes: (level.floorFinishes ?? []).filter((f) => isIn(f, box)).map((f) => shift(f, o)),
     level: {
       height: level.height,
       slab: level.slab,
@@ -251,6 +254,7 @@ export function pasteClip(level: Level, clip: Clip, at: Vec2): void {
   put('patios', 'pt', clip.patios, poly);
   put('hedges', 'hg', clip.hedges, poly);
   put('roofSections', 'rs', clip.roofSections, (s) => ({ ...poly(s), roof: shiftRoof(s.roof, at) }));
+  if (clip.floorFinishes?.length) (level.floorFinishes ??= []).push(...clip.floorFinishes.map((f) => shift(f, at)));
   if (clip.roofAreas.length) (level.roofAreas ??= []).push(...clip.roofAreas.map((r) => ({ ...shift(r, at), roof: shiftRoof(r.roof, at) })));
   const roof = clip.level.roof ? shiftRoof(clip.level.roof, at) : undefined;
   if (empty) {
