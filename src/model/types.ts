@@ -133,6 +133,8 @@ export interface Patio {
   guard?: Exclude<RailStyle, 'none'>;
   /** A pool's slatted cover, on a roller at one end (the end the courses start from). */
   cover?: 'rolled' | 'covered';
+  /** The cover's roller at the other short end. */
+  coverFlip?: boolean;
   /** A fabric awning over it, fixed to the house wall along one side, on posts at the front. */
   awning?: Awning;
 }

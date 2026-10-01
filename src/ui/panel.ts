@@ -1010,7 +1010,16 @@ export class Panel {
         pt.cover = v === 'none' ? undefined : (v as 'rolled' | 'covered');
         this.done();
       });
-      if (pt.cover) this.note('A slatted blue cover on a roller at one end. Turn 90° (below) moves the roller round to the next side.');
+      if (pt.cover) {
+        this.select('Roller', pt.coverFlip ? 'other' : 'one', [
+          ['one', 'At one end'],
+          ['other', 'At the other end'],
+        ], (v) => {
+          pt.coverFlip = v === 'other' ? true : undefined;
+          this.done();
+        });
+        this.note('A slatted blue cover on a roller across one of the short ends.');
+      }
     }
     this.select('Awning', pt.awning?.colour ?? 'none', [
       ['none', 'None'],

@@ -1070,17 +1070,25 @@ function buildAwning(patio: Patio, ring0: Vec2[], z: number, walls: Vec2[][]): T
 }
 
 /**
- * A pool's slatted cover and its roller, at the end the patio's direction starts from: rolled
+ * A pool's slatted cover and its roller, across one of its short ends: rolled
  * up into a drum on stands at the edge of the coping, or run out over the water in pale and
  * darker blue slats, leaving a thin roll on the drum.
  */
 function buildPoolCover(patio: Patio, shapes: Shape[], ground: number): THREE.Group {
   const g = new THREE.Group();
   g.name = `poolCover:${patio.id}`;
-  const along = { x: Math.cos(patio.angle), y: Math.sin(patio.angle) };
-  const across = { x: -along.y, y: along.x };
   const pts = shapes.flatMap((s) => s[0]);
   if (!pts.length) return g;
+  // Along the pool's length (its courses' direction or square to it, whichever is longer),
+  // so the roller lies across a short end; the other end if flipped.
+  const extent = (a: number) => {
+    const u = pts.map((p) => p.x * Math.cos(a) + p.y * Math.sin(a));
+    return Math.max(...u) - Math.min(...u);
+  };
+  let angle = extent(patio.angle) >= extent(patio.angle + Math.PI / 2) ? patio.angle : patio.angle + Math.PI / 2;
+  if (patio.coverFlip) angle += Math.PI;
+  const along = { x: Math.cos(angle), y: Math.sin(angle) };
+  const across = { x: -along.y, y: along.x };
   const au = pts.map((p) => dot(p, along));
   const cu = pts.map((p) => dot(p, across));
   const [a0, a1] = [Math.min(...au), Math.max(...au)];
