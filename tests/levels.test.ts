@@ -90,3 +90,23 @@ describe('moving a building onto its own floor', () => {
     expect(levelAbove(b, g.id)).toBeUndefined();
   });
 });
+
+describe('a building on a plinth', () => {
+  it('stands on top of it, whichever was drawn first, and floors on top follow', async () => {
+    const { moveToOwnFloor } = await import('../src/model/separate');
+    const { addPatio } = await import('../src/model/patios');
+    const b = createBuilding();
+    const g = b.levels[0];
+    box(g, 0, 0, 6, 5);
+    const house = moveToOwnFloor(b, g, { x0: -1, y0: -1, x1: 7, y1: 6 }, 'House')!;
+    expect(levelElevation(b, house.id)).toBeCloseTo(0);
+    // The plinth drawn afterwards, under the house.
+    addPatio(g, [{ x: -0.8, y: -0.8 }, { x: 6.8, y: -0.8 }, { x: 6.8, y: 5.8 }, { x: -0.8, y: 5.8 }], 'paving').height = 0.6;
+    expect(levelElevation(b, house.id)).toBeCloseTo(0.6);
+    const upstairs = addLevelOnTop(b, true, house);
+    expect(levelElevation(b, upstairs.id)).toBeCloseTo(0.6 + house.height);
+    // Set by hand to the same height: not doubled.
+    house.base = 0.6;
+    expect(levelElevation(b, house.id)).toBeCloseTo(0.6);
+  });
+});

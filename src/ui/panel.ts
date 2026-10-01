@@ -1,7 +1,7 @@
 // Properties panel for the current selection. Every change goes through the model's
 // clean-up (normalize), so e.g. thickening a wall re-mitres its corners and re-fits its openings.
 
-import { addLevelBelow, addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
+import { PLINTH, addLevelBelow, addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
 import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, parapetHeight, roofAreaRings, setAreaRoof } from '../model/roof';
 import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
@@ -14,6 +14,7 @@ import { GRAND_MODELS, TANK_STAND, catalogueItem, tankLitres } from '../model/fu
 import { stretchSummary } from '../model/stretch';
 import { DEFAULT_INVERT, DEFAULT_TANK, FITTING_NAMES, deleteDrainNode, pipeFall, pipeLength, tankVolume } from '../model/drains';
 import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
+import { moveToOwnFloor } from '../model/separate';
 import { reachesFloorAbove, stairGeometry, stairRise } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { FLOOR_FINISHES, ROOF_COVERINGS, WALL_FINISHES, faceSides, materialsOf } from '../model/materials';
@@ -1015,6 +1016,29 @@ export class Panel {
           ? 'Raised: more than a step up, so it needs steps to walk onto; its sides are in the outside wall finish (stone for a plinth).'
           : 'Drag to move. Where it meets the house it stops at the walls; drawn inside a room, it covers the floor up to them.'),
     );
+    // A plinth with a building drawn on this (the garden's) floor standing in it: the floor
+    // can't rise, so the building needs a floor of its own to stand on top.
+    const b = this.store.building;
+    const onPlinth =
+      pt.height > PLINTH && !pool && b.levels[0] === level
+        ? Object.values(level.walls).filter((w) => pointInPolygon(level.nodes[w.a], pt.points) && pointInPolygon(level.nodes[w.b], pt.points))
+        : [];
+    if (onPlinth.length) {
+      this.note('There is a building drawn on this floor inside it, so it stands at the ground, inside the plinth. Stand it on top: it moves to a floor of its own, which sits on the plinth.');
+      this.buttons([
+        ['Stand the building on it', () => {
+          const xs = pt.points.map((p) => p.x);
+          const ys = pt.points.map((p) => p.y);
+          const name = prompt('A name for the building\'s own floor (you can change it later):', 'House on the plinth');
+          if (name === null) return;
+          const moved = moveToOwnFloor(b, level, { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) }, name.trim() || 'House on the plinth');
+          if (!moved) return;
+          this.store.commit();
+          this.store.setActive(moved.id);
+          this.editor.select({ kind: 'level', id: moved.id });
+        }],
+      ]);
+    }
     this.buttons([
       ['Turn 90°', () => {
         pt.angle += Math.PI / 2;

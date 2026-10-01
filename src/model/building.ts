@@ -1,6 +1,7 @@
 // A building is a stack of levels. Each level is an independent floor plan (so all the
 // wall-joint and opening logic works per floor unchanged) plus its vertical dimensions.
 
+import { pointInPolygon } from './geom';
 import { addWall, createPlan, healNode, normalize } from './plan';
 import { outlineWallIds } from './rooms';
 import { DEFAULTS, type Building, type Level, type Plan } from './types';
@@ -30,16 +31,36 @@ export function getLevel(b: Building, id: string): Level | undefined {
 
 /**
  * Height of a level's floor above the ground: its own `base` if it has one, else on top of
- * the floor before it in the list. The first floor is at the ground.
+ * the floor before it in the list. The first floor is at the ground. A floor standing on a
+ * plinth (a raised patio drawn on the first floor, under the middle of its walls) sits on
+ * top of it, whichever was drawn first.
  */
 export function levelElevation(b: Building, id: string): number {
   let z = 0;
   for (const [i, l] of b.levels.entries()) {
     if (i > 0 && l.base !== undefined) z = l.base;
+    const plinth = i > 0 ? plinthUnder(b, l) : 0;
+    if (plinth > 0) z = Math.max(z, plinth);
     if (l.id === id) return z;
     z += l.height;
   }
   return z;
+}
+
+/** Raised patios higher than this are plinths: a building on one stands on its top. */
+export const PLINTH = 0.25;
+
+/** The top of the plinth under the middle of a floor's walls (0 if there is none). */
+function plinthUnder(b: Building, l: Level): number {
+  const e = wallExtent(l);
+  if (!e) return 0;
+  const c = { x: (e.x0 + e.x1) / 2, y: (e.y0 + e.y1) / 2 };
+  let top = 0;
+  for (const pt of Object.values(b.levels[0]?.patios ?? {})) {
+    if (pt.surface === 'pool' || pt.height <= PLINTH) continue;
+    if (pointInPolygon(c, pt.points)) top = Math.max(top, pt.height);
+  }
+  return top;
 }
 
 /** The extent of a floor's walls on plan, or null if it has none yet. */
