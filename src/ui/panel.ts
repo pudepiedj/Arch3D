@@ -1,7 +1,7 @@
 // Properties panel for the current selection. Every change goes through the model's
 // clean-up (normalize), so e.g. thickening a wall re-mitres its corners and re-fits its openings.
 
-import { PLINTH, addLevelBelow, addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
+import { PLINTH, addLevelBelow, addLevelOnTop, ceilingHeight, deleteLevel, fitStoreys, getLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
 import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, parapetHeight, roofAreaRings, setAreaRoof } from '../model/roof';
 import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
@@ -352,8 +352,9 @@ export class Panel {
     if (!isGround) {
       this.number('Floor level', z, 0.05, -20, 100, (v) => {
         level.base = v;
+        fitStoreys(b);
         this.done();
-      }, 'm', 'Height of this floor above the ground: e.g. 0.6 for a house on a plinth, -1.5 for one half below ground. Floors on top of it follow.');
+      }, 'm', 'Height of this floor above the ground: e.g. 0.6 for a house on a plinth, -1.5 for one half below ground. Floors on top of it follow; where one doesn\'t (it stands on another part too), the walls stretch or shrink to meet it.');
     }
     this.note(
       `Floor level ${z >= 0 ? '+' : '−'}${Math.abs(z).toFixed(2)} m · ceiling height ${ceilingHeight(b, level).toFixed(2)} m` +

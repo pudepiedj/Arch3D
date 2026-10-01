@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addLevelBelow, addLevelOnTop, createBuilding, createLevel, levelAbove, levelBelow, levelElevation, levelsTopDown } from '../src/model/building';
+import { addLevelBelow, addLevelOnTop, createBuilding, fitStoreys, createLevel, levelAbove, levelBelow, levelElevation, levelsTopDown } from '../src/model/building';
 import { addWall } from '../src/model/plan';
 import { defaultRoof } from '../src/model/roof';
 import type { Building, Level } from '../src/model/types';
@@ -108,5 +108,26 @@ describe('a building on a plinth', () => {
     // Set by hand to the same height: not doubled.
     house.base = 0.6;
     expect(levelElevation(b, house.id)).toBeCloseTo(0.6);
+  });
+});
+
+describe('walls following floor levels', () => {
+  it('stretch a lowered part of a floor up to the floor above it, and leave stacked floors alone', () => {
+    const { b, lower, upper } = twoHouses();
+    // Part of the large house sunk a further 0.3 m, on a floor of its own after the upper floor.
+    const deep = createLevel(b, 'Deep part', 3);
+    deep.base = -1.8;
+    box(deep, 16, 0, 22, 8);
+    b.levels.push(deep);
+    fitStoreys(b);
+    expect(levelElevation(b, upper.id)).toBeCloseTo(1.5);
+    expect(deep.height).toBeCloseTo(3.3);
+    expect(Object.values(deep.walls).every((w) => Math.abs(w.height - 3.3) < 1e-6)).toBe(true);
+    // The upper floor sits on the lower one, so lowering that moves it too: nothing to stretch.
+    lower.base = -2;
+    fitStoreys(b);
+    expect(lower.height).toBeCloseTo(3);
+    expect(levelElevation(b, upper.id)).toBeCloseTo(1);
+    expect(deep.height).toBeCloseTo(2.8);
   });
 });

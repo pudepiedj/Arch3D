@@ -47,6 +47,44 @@ export function levelElevation(b: Building, id: string): number {
   return z;
 }
 
+/** Does where `upper` stands depend on `lower`'s height (it is stacked on it in the list)? */
+function stackedOn(b: Building, upper: Level, lower: Level): boolean {
+  const i = b.levels.indexOf(upper);
+  const j = b.levels.indexOf(lower);
+  if (j >= i || i < 1 || upper.base !== undefined) return false;
+  // Back down the list to the floor that sets the height (the first, or one with a base).
+  for (let k = i - 1; k >= 0; k--) {
+    if (k === j) return true;
+    if (k === 0 || b.levels[k].base !== undefined) return false;
+  }
+  return false;
+}
+
+/**
+ * After a floor's level has changed, make each floor's walls reach the floor above it again
+ * (and stop at it): the storey height, and every wall that ran the full storey, become the
+ * distance up to the next floor, where that floor doesn't simply sit on top of this one.
+ */
+export function fitStoreys(b: Building) {
+  for (let pass = 0; pass < 2; pass++) {
+    for (const level of b.levels) {
+      // The nearest floor over the same ground at least a storey up: not a split-level part
+      // of the same floor a little higher.
+      const z = levelElevation(b, level.id);
+      let above: Level | undefined;
+      for (const other of b.levels) {
+        const oz = levelElevation(b, other.id);
+        if (other === level || oz < z + 1.5 || !sameStack(level, other)) continue;
+        if (!above || oz < levelElevation(b, above.id)) above = other;
+      }
+      if (!above || stackedOn(b, above, level)) continue;
+      const h = levelElevation(b, above.id) - z;
+      if (h < 0.5 || Math.abs(h - level.height) < 0.005) continue;
+      setLevelHeight(level, h);
+    }
+  }
+}
+
 /** Raised patios higher than this are plinths: a building on one stands on its top. */
 export const PLINTH = 0.25;
 
