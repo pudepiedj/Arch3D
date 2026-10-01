@@ -358,6 +358,11 @@ export class Panel {
       `Floor level ${z >= 0 ? '+' : '−'}${Math.abs(z).toFixed(2)} m · ceiling height ${ceilingHeight(b, level).toFixed(2)} m` +
         (!isGround && level.base !== undefined ? ' · set for this floor (floors on top of it follow it)' : ''),
     );
+    if (isGround) {
+      this.note(
+        'The first floor is always at the ground, with the garden on it. To raise or sink one building (a plinth, half below ground), or to add floors on top of just one of two buildings, give it a floor of its own: Build → Move to its own floor…, and drag a box round it.',
+      );
+    }
 
     // Default roof for the parts of this floor with nothing above them.
     const roof = defaultRoof(b, level) ?? { ...DEFAULT_ROOF, kind: 'none' as const };

@@ -110,7 +110,11 @@ export function ceilingHeight(b: Building, level: Level): number {
 export function addLevelOnTop(b: Building, copyOutline: boolean, onto?: Level): Level {
   const last = b.levels[b.levels.length - 1];
   const top = onto ?? last;
-  const level = createLevel(b, undefined, top?.height ?? DEFAULTS.levelHeight);
+  // Named for the floor it goes on: "First floor" on "Ground floor"; on a building's own
+  // floor ("Small house"), "Small house, upper floor".
+  const i = top ? LEVEL_NAMES.indexOf(top.name) : -1;
+  const name = !top || b.levels.length < 2 ? undefined : i >= 0 ? (LEVEL_NAMES[i + 1] ?? `${top.name}, upper floor`) : `${top.name}, upper floor`;
+  const level = createLevel(b, name, top?.height ?? DEFAULTS.levelHeight);
   // On top of a floor that isn't the last in the list: say where it goes, so the floors
   // after it keep their places.
   if (top && top !== last) level.base = levelElevation(b, top.id) + top.height;

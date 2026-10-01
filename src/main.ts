@@ -554,6 +554,7 @@ const HINTS: Record<Tool, string> = {
   split: 'Click on a wall to add a joint you can drag',
   paste: 'Click on walls to place exact copies · Esc when done',
   paint: 'Walls: click one side of a wall to paint that face, or inside a room to paint all its walls · Floors: click inside a room · the panel sets the defaults',
+  moveArea: 'Drag a box round one whole building to give it a floor of its own (its own floor level, and its own floors on top); the garden stays · Esc to cancel',
   copyArea: 'Drag a box round what to copy (walls crossing the box are cut off at it) · Esc to cancel',
   pasteArea: 'Click where the copy goes (the pointer is its middle; joints landing on joints join up) · Esc to cancel',
   stair: 'Click where the stair starts (its bottom step), then click in the direction it goes up',

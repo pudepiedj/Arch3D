@@ -68,3 +68,25 @@ describe('floors at their own heights', () => {
     expect(levelBelow(b, small.id)?.id).toBe(cellar.id);
   });
 });
+
+describe('moving a building onto its own floor', () => {
+  it('takes the walls in the box, leaves the rest, and stacks a floor on just that building', async () => {
+    const { moveToOwnFloor } = await import('../src/model/separate');
+    const b = createBuilding();
+    const g = b.levels[0];
+    box(g, 0, 0, 6, 5);
+    box(g, 12, 0, 22, 8);
+    g.patios = { p: { id: 'p', points: [{ x: 7, y: 0 }, { x: 11, y: 0 }, { x: 11, y: 5 }, { x: 7, y: 5 }], surface: 'paving', height: 0.04, angle: 0, module: 0.6 } };
+    const small = moveToOwnFloor(b, g, { x0: -1, y0: -1, x1: 7, y1: 6 }, 'Small house')!;
+    expect(Object.keys(small.walls).length).toBe(4);
+    expect(Object.keys(g.walls).length).toBe(4);
+    expect(g.patios.p).toBeDefined();
+    expect(levelElevation(b, small.id)).toBeCloseTo(0);
+    small.base = 0.6;
+    const upstairs = addLevelOnTop(b, true, small);
+    expect(Object.keys(upstairs.walls).length).toBe(4);
+    expect(levelElevation(b, upstairs.id)).toBeCloseTo(0.6 + small.height);
+    expect(levelAbove(b, small.id)?.id).toBe(upstairs.id);
+    expect(levelAbove(b, g.id)).toBeUndefined();
+  });
+});
