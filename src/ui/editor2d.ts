@@ -32,7 +32,7 @@ import { drawFurnitureSymbol } from './furniture2d';
 import { addChimney, addRooflight, addSolarArray, chimneyFootprint, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { roofSurfaceAt } from '../model/roof';
 import { DEFAULT_ROOF, type LevelRoof, levelRoofs, parapetHeight, roofAreaRings, setAreaRoof, toggleEdge, toggleParapet } from '../model/roof';
-import { DEFAULT_GOING, DEFAULT_STAIR_WIDTH, type StairGeometry, addStair, reachesFloorAbove, stairAt, placedStair, stairGeometry } from '../model/stairs';
+import { DEFAULT_GOING, DEFAULT_STAIR_WIDTH, type StairGeometry, addStair, reachesFloorAbove, stairAt, placedStair, stairEnds, stairGeometry, stairRise } from '../model/stairs';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import {
   type OpeningTemplate,
@@ -444,6 +444,32 @@ export class Editor2D {
       }
     }
     if (best) return { p: best, kind: 'node', guides };
+    // ...then the corners and ends of stairs, on any floor, for a patio, balcony or landing
+    // to meet a stair exactly.
+    if (this.tool === 'patio' || this.selection?.kind === 'patio') {
+      let onLine: Vec2 | null = null;
+      let lineD = tol;
+      for (const l of this.store.building.levels) {
+        for (const st of Object.values(l.stairs ?? {})) {
+          for (const e of stairEnds(placedStair(st, l), st.width, stairRise(st, l))) {
+            for (const c of [e.a, e.b]) {
+              const d = dist(c, raw);
+              if (d < bestD) {
+                bestD = d;
+                best = vec(c.x, c.y);
+              }
+            }
+            const pr = projectOnSegment(raw, e.a, e.b);
+            if (pr.dist < lineD) {
+              lineD = pr.dist;
+              onLine = pr.point;
+            }
+          }
+        }
+      }
+      if (best) return { p: best, kind: 'node', guides };
+      if (onLine) return { p: vec(onLine.x, onLine.y), kind: 'wall', guides };
+    }
     // ...then joints on the floor below, so walls can be stacked exactly.
     const below = this.below();
     if (below) {

@@ -930,12 +930,14 @@ function buildPatios(
           const d = { x: (q.x - p.x) / len, y: (q.y - p.y) / len };
           // Into the balcony, away from the wall.
           const n = { x: -d.y * sign, y: d.x * sign };
-          const reach = Math.max(...ring.map((r) => (r.x - p.x) * n.x + (r.y - p.y) * n.y)) - 0.05;
-          if (reach < 0.2) return;
           const count = Math.max(2, Math.round(len / 1.2) + 1);
           for (let i = 0; i < count; i++) {
             const t = 0.15 + ((len - 0.3) * i) / (count - 1);
             const c = { x: p.x + d.x * t, y: p.y + d.y * t };
+            // Out from the wall to where the slab ends in front of this joist (round an L,
+            // that is the near edge, not the far arm), stopping just short of it.
+            const reach = rayToRing(c, n, ring) - 0.05;
+            if (reach < 0.2) continue;
             const hw = 0.04;
             const box = [
               { x: c.x - d.x * hw - n.x * 0.2, y: c.y - d.y * hw - n.y * 0.2 },
@@ -981,6 +983,22 @@ function buildPatios(
     }
   }
   return g;
+}
+
+/** How far from p, going in direction d (a unit vector), until the ray leaves through the ring's edge. */
+function rayToRing(p: Vec2, d: Vec2, ring: Vec2[]): number {
+  let best = Infinity;
+  ring.forEach((a, k) => {
+    const b = ring[(k + 1) % ring.length];
+    const e = { x: b.x - a.x, y: b.y - a.y };
+    const den = d.x * e.y - d.y * e.x;
+    if (Math.abs(den) < 1e-9) return;
+    const w = { x: a.x - p.x, y: a.y - p.y };
+    const t = (w.x * e.y - w.y * e.x) / den;
+    const u = (w.x * d.y - w.y * d.x) / den;
+    if (t > 0.01 && u >= -1e-9 && u <= 1 + 1e-9) best = Math.min(best, t);
+  });
+  return Number.isFinite(best) ? best : 0;
 }
 
 const AWNING_COLOURS: Record<AwningColour, number> = {
