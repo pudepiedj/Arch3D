@@ -23,6 +23,9 @@ export const PATIO_DEFAULTS: Record<PatioSurface, { height: number; module: numb
   pool: { height: -1.5, module: 0 },
   // A stone balcony slab, cantilevered from the wall at the level of the floor it is drawn on.
   balcony: { height: 0, module: 0.6 },
+  // A landing indoors (a gallery over a double-height space, or at the head of a stair):
+  // boarded, at this floor's level, with a balustrade round its open edges.
+  landing: { height: 0.02, module: 0.145 },
 };
 
 /** How thick a balcony's slab is. */
@@ -43,7 +46,7 @@ export function addPatio(level: Level, points: Vec2[], surface: PatioSurface): P
   level.patios ??= {};
   level.patios[id] = patio;
   // A balcony comes with a wrought-iron railing.
-  if (surface === 'balcony') patio.guard = 'iron';
+  if (surface === 'balcony' || surface === 'landing') patio.guard = 'iron';
   return patio;
 }
 
@@ -51,7 +54,7 @@ export function addPatio(level: Level, points: Vec2[], surface: PatioSurface): P
 export function setPatioSurface(patio: Patio, surface: PatioSurface) {
   patio.surface = surface;
   Object.assign(patio, PATIO_DEFAULTS[surface]);
-  if (surface === 'balcony' && !patio.guard) patio.guard = 'iron';
+  if ((surface === 'balcony' || surface === 'landing') && !patio.guard) patio.guard = 'iron';
 }
 
 /** The patio's actual extent: its outline minus the house (outer ring first, then holes). */

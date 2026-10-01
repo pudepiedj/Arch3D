@@ -963,7 +963,7 @@ export class Panel {
     const level = this.store.plan;
     const pt = level.patios?.[id];
     if (!pt) return;
-    const names: Record<PatioSurface, string> = { paving: 'Patio', decking: 'Deck', gravel: 'Gravel', rubber: 'Rubber floor', lawn: 'Lawn', pool: 'Swimming pool', balcony: 'Balcony' };
+    const names: Record<PatioSurface, string> = { paving: 'Patio', decking: 'Deck', gravel: 'Gravel', rubber: 'Rubber floor', lawn: 'Lawn', pool: 'Swimming pool', balcony: 'Balcony', landing: 'Landing' };
     const pool = pt.surface === 'pool';
     this.title(names[pt.surface]);
     this.select('Surface', pt.surface, [
@@ -974,6 +974,7 @@ export class Panel {
       ['lawn', 'Lawn'],
       ['pool', 'Swimming pool'],
       ['balcony', 'Balcony (cantilevered)'],
+      ['landing', 'Landing (indoors)'],
     ], (v) => {
       setPatioSurface(pt, v as PatioSurface);
       this.done();
@@ -1016,6 +1017,8 @@ export class Panel {
       `${patioArea(level, pt).toFixed(1)} m². ` +
         (pool
           ? `About ${Math.round(patioArea(level, pt) * (-pt.height - 0.15))} m³ of water (${Math.round(patioArea(level, pt) * (-pt.height - 0.15) * 1000).toLocaleString('en-GB')} litres). Mosaic-lined, with a stone coping round the edge; a railing stands at the outside of the coping.`
+          : pt.surface === 'landing'
+          ? 'A boarded landing with a balustrade round its open edges, none along walls, and a gap wherever a stair steps on or off it. Draw it over a space with no floor (a double-height hall, a gallery), at the head of a stair or between two flights; set its Height for a half landing.'
           : pt.surface === 'balcony'
           ? `A ${BALCONY_SLAB * 100} cm stone slab cantilevered from the wall on steel brackets, nothing under it. Draw it outside the wall of an upper floor; the railing runs round its open edges, not along the house. An outside stair whose Rises reaches this floor's level climbs onto it.`
           : pt.height < 0

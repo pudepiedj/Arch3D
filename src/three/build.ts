@@ -13,7 +13,7 @@ import { detectRooms } from '../model/rooms';
 import { ceilingHeight, levelElevation, levelsUnder, sameStack } from '../model/building';
 import { type Shape, intersectAll, subtract } from '../model/clip';
 import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs, outerFaces, outsetLoop, planeOf } from '../model/roof';
-import { type StairGeometry, reachesFloorAbove, stairGeometry, stairRise, stairSurfaceAt, stairwells } from '../model/stairs';
+import { type StairGeometry, reachesFloorAbove, stairEnds, stairGeometry, stairRise, stairSurfaceAt, stairwells } from '../model/stairs';
 import { type RailLine, againstWall, buildRails, onSegment } from './rails';
 import { pillarHeight } from '../model/pillars';
 import {
@@ -58,6 +58,7 @@ export interface Materials {
   /** A pool's mosaic lining (floor and sides), and its water. */
   pool: THREE.Material;
   balcony: THREE.Material;
+  landing: THREE.Material;
   water: THREE.Material;
   lawnEdge: THREE.Material;
   paveEdge: THREE.Material;
@@ -100,6 +101,7 @@ export function createMaterials(): Materials {
     lawn: new THREE.MeshStandardMaterial({ color: 0xffffff, map: lawnTexture(), roughness: 1 }),
     pool: new THREE.MeshStandardMaterial({ color: 0xffffff, map: mosaicTexture(), roughness: 0.3, side: THREE.DoubleSide }),
     balcony: new THREE.MeshStandardMaterial({ color: 0xffffff, map: pavingTexture(), roughness: 0.85 }),
+    landing: new THREE.MeshStandardMaterial({ color: 0xffffff, map: deckingTexture(), roughness: 0.6 }),
     water: new THREE.MeshPhysicalMaterial({ color: 0x3f9fc8, roughness: 0.05, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }),
     lawnEdge: new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 1 }),
     paveEdge: new THREE.MeshStandardMaterial({ color: 0xb9b3a8, roughness: 0.9 }),
@@ -286,8 +288,8 @@ function mosaicTexture() {
 
 /** Size in metres of one repeat of the texture: along the courses/boards, and across them. */
 function patioPeriod(p: Patio): { along: number; across: number } {
-  if (p.surface === 'paving' || p.surface === 'rubber') return { along: SLABS * p.module, across: SLABS * p.module };
-  if (p.surface === 'decking') return { along: BOARD_RUN, across: BOARDS * (p.module + BOARD_GAP) };
+  if (p.surface === 'paving' || p.surface === 'rubber' || p.surface === 'balcony') return { along: SLABS * p.module, across: SLABS * p.module };
+  if (p.surface === 'decking' || p.surface === 'landing') return { along: BOARD_RUN, across: BOARDS * (p.module + BOARD_GAP) };
   if (p.surface === 'lawn') return { along: 2 * p.module, across: 2 * p.module };
   return { along: 1, across: 1 };
 }
@@ -418,7 +420,7 @@ export interface LevelOptions {
   ground?: number;
   house?: Vec2[][];
   /** Where stairs (on any floor) arrive at the top, in this floor's heights: railings leave a gap there. */
-  arrivals?: { p: Vec2; z: number; w: number }[];
+  arrivals?: { a: Vec2; b: Vec2; z: number }[];
   /** The drawing's default finishes (walls outside and in, floors). */
   materials?: { outside: WallFinish; inside: WallFinish; floor: FloorFinish };
 }
@@ -446,11 +448,9 @@ export function buildBuildingObject(
   const ownWalls = !!cutLevel && Object.keys(cutLevel.walls).length > 0;
   // The tops of all the stairs, so a balcony or terrace railing leaves a way in for them.
   const arrivals = b.levels.flatMap((l) =>
-    Object.values(l.stairs ?? {}).map((st) => ({
-      p: stairGeometry(st, stairRise(st, l)).path.at(-1)!,
-      z: levelElevation(b, l.id) + stairRise(st, l),
-      w: st.width,
-    })),
+    Object.values(l.stairs ?? {}).flatMap((st) =>
+      stairEnds(stairGeometry(st, stairRise(st, l)), st.width, stairRise(st, l)).map((e) => ({ ...e, z: e.z + levelElevation(b, l.id) })),
+    ),
   );
   b.levels.forEach((level) => {
     const z = levelElevation(b, level.id);
@@ -619,7 +619,8 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
         if (polygonArea(ring) < 0) ring = [...ring].reverse();
         if (pool) ring = outsetLoop(ring, ring.map(() => POOL_COPING - 0.05));
         // Round the open edges only: none along the house (a balcony against its wall).
-        const house = opts.house ?? [];
+        // ...nor along a wall of this floor (a landing indoors, between rooms).
+        const house = [...(opts.house ?? []), ...[...fps.values()].map((f) => f.polygon)];
         const along = (a: Vec2, b: Vec2) => alongHouse(house, a, b);
         let run: Vec2[] = [];
         const flush = () => {
@@ -627,13 +628,27 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
           run = [];
         };
         // A gap where a stair arrives at this height (not round a pool).
-        const arrive = pool ? [] : (opts.arrivals ?? []).filter((s) => Math.abs(s.z - z) < 0.1);
+        // A gap where a stair steps on or off at this height (not round a pool): the stretch
+        // of the edge alongside the stair's end, at least the stair's width.
+        const arrive = pool ? [] : (opts.arrivals ?? []).filter((s) => Math.abs(s.z - z) < 0.25);
         const gaps = (a: Vec2, b: Vec2) => {
           const len = Math.hypot(b.x - a.x, b.y - a.y);
+          if (len < 1e-6) return [];
+          const u = { x: (b.x - a.x) / len, y: (b.y - a.y) / len };
+          const along = (p: Vec2) => (p.x - a.x) * u.x + (p.y - a.y) * u.y;
           return arrive
-            .map((s) => ({ s, q: projectOnSegment(s.p, a, b) }))
-            .filter(({ q }) => q.dist < 0.4)
-            .map(({ s, q }) => [Math.max(0, q.t * len - s.w / 2 - 0.05), Math.min(len, q.t * len + s.w / 2 + 0.05)] as const)
+            .filter((s) => projectOnSegment({ x: (s.a.x + s.b.x) / 2, y: (s.a.y + s.b.y) / 2 }, a, b).dist < 0.5)
+            .map((s) => {
+              const w = Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y);
+              let t0 = Math.min(along(s.a), along(s.b));
+              let t1 = Math.max(along(s.a), along(s.b));
+              if (t1 - t0 < w) {
+                const m = (t0 + t1) / 2;
+                t0 = m - w / 2;
+                t1 = m + w / 2;
+              }
+              return [Math.max(0, t0 - 0.05), Math.min(len, t1 + 0.05)] as const;
+            })
             .filter(([t0, t1]) => t1 > t0)
             .sort((m, n) => m[0] - n[0])
             .map(([t0, t1]) => [t0 / len, t1 / len] as const);
@@ -803,7 +818,9 @@ function buildPatios(
   for (const { patio, shapes } of list) {
     const sunk = patio.height < ground - 0.005;
     const balcony = patio.surface === 'balcony';
-    const plinth = !balcony && patio.height > ground + 0.25;
+    // Balconies and landings are slabs with nothing under them.
+    const slabbed = balcony || patio.surface === 'landing';
+    const plinth = !slabbed && patio.height > ground + 0.25;
     const period = patioPeriod(patio);
     const along = { x: Math.cos(patio.angle), y: Math.sin(patio.angle) };
     const across = { x: -along.y, y: along.x };
@@ -834,7 +851,7 @@ function buildPatios(
           const q = ring[(k + 1) % ring.length];
           // Outward normal of the edge p->q, for a ring running counter-clockwise.
           const out = new THREE.Vector3(q.y - p.y, 0, p.x - q.x).multiplyScalar(ccw);
-          if (balcony) edges.vface(p, q, z - BALCONY_SLAB, z, out);
+          if (slabbed) edges.vface(p, q, z - BALCONY_SLAB, z, out);
           else if (!sunk) edges.vface(p, q, ground - 0.01, z, out);
           else if (!alongHouse(p, q)) edges.vface(p, q, z, ground, out.negate());
         });
@@ -849,10 +866,10 @@ function buildPatios(
     top.name = `patio:${patio.id}`;
     const pool = patio.surface === 'pool';
     // A balcony: the slab's underside, with nothing under it.
-    if (balcony) for (const shape of shapes) edges.hshape(shape, z - BALCONY_SLAB, false);
+    if (slabbed) for (const shape of shapes) edges.hshape(shape, z - BALCONY_SLAB, false);
     const side = new THREE.Mesh(
       edges.geometry(),
-      pool ? mats.pool : sunk || plinth || balcony ? outside : patio.surface === 'decking' ? mats.deckEdge : patio.surface === 'lawn' ? mats.lawnEdge : mats.paveEdge,
+      pool ? mats.pool : patio.surface === 'landing' ? mats.deckEdge : sunk || plinth || balcony ? outside : patio.surface === 'decking' ? mats.deckEdge : patio.surface === 'lawn' ? mats.lawnEdge : mats.paveEdge,
     );
     side.receiveShadow = side.castShadow = true;
     g.add(top, side);

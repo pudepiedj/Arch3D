@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createBuilding } from '../src/model/building';
 import { subtract, unionAll } from '../src/model/clip';
 import { polygonArea } from '../src/model/geom';
-import { addStair, riserCount, stairAt, stairGeometry, stairwells } from '../src/model/stairs';
+import { addStair, riserCount, stairAt, stairEnds, stairGeometry, stairwells } from '../src/model/stairs';
 import type { Stair } from '../src/model/types';
 
 const base: Stair = { id: 's', x: 0, y: 0, angle: 0, width: 1, going: 0.25, shape: 'straight', turn: 'left' };
@@ -89,5 +89,19 @@ describe('spiral stairs', () => {
     }
     // The stairwell is the circle the treads sweep.
     expect(g.parts).toHaveLength(1);
+  });
+});
+
+describe('stair ends', () => {
+  it('are lines across the stair at the bottom and the top', () => {
+    const g = stairGeometry(base, 2.6);
+    const [bottom, top] = stairEnds(g, base.width, 2.6);
+    expect(bottom.z).toBe(0);
+    expect(top.z).toBe(2.6);
+    expect(Math.hypot(bottom.b.x - bottom.a.x, bottom.b.y - bottom.a.y)).toBeCloseTo(1);
+    // The top runs across the stair (along y) at the end of the last tread.
+    expect(top.a.x).toBeCloseTo(g.path[1].x);
+    expect(top.b.x).toBeCloseTo(g.path[1].x);
+    expect(Math.abs(top.b.y - top.a.y)).toBeCloseTo(1);
   });
 });

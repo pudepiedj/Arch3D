@@ -1840,7 +1840,7 @@ export class Editor2D {
   private drawPatios(C: Record<string, string>) {
     const ctx = this.ctx;
     const plan = this.plan;
-    const fills = { paving: 'rgba(196, 184, 164, 0.55)', decking: 'rgba(170, 118, 76, 0.45)', gravel: 'rgba(170, 162, 148, 0.5)', rubber: 'rgba(58, 60, 64, 0.75)', lawn: 'rgba(96, 146, 74, 0.55)', pool: 'rgba(92, 170, 210, 0.7)', balcony: 'rgba(214, 196, 160, 0.75)' };
+    const fills = { paving: 'rgba(196, 184, 164, 0.55)', decking: 'rgba(170, 118, 76, 0.45)', gravel: 'rgba(170, 162, 148, 0.5)', rubber: 'rgba(58, 60, 64, 0.75)', lawn: 'rgba(96, 146, 74, 0.55)', pool: 'rgba(92, 170, 210, 0.7)', balcony: 'rgba(214, 196, 160, 0.75)', landing: 'rgba(196, 150, 100, 0.6)' };
     const list = Object.values(plan.patios ?? {}).sort((a, b) => a.height - b.height);
     for (const pt of list) {
       const shapes = patioShapes(plan, pt);

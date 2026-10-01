@@ -97,3 +97,13 @@ describe('balconies', () => {
     expect(p2.guard).toBe('iron');
   });
 });
+
+describe('landings', () => {
+  it('come with an iron balustrade and sit just above the floor', () => {
+    const b = house();
+    const l = b.levels[0];
+    const pt = addPatio(l, [{ x: 1, y: 1 }, { x: 3, y: 1 }, { x: 3, y: 3 }, { x: 1, y: 3 }], 'landing');
+    expect(pt.guard).toBe('iron');
+    expect(pt.height).toBeCloseTo(0.02);
+  });
+});

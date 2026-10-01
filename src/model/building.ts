@@ -163,7 +163,11 @@ export function levelAbove(b: Building, id: string): Level | undefined {
 
 /** Every floor with this one directly above it: one, or the parts of a split level. */
 export function levelsUnder(b: Building, id: string): Level[] {
-  return b.levels.filter((l) => l.id !== id && levelAbove(b, l.id)?.id === id);
+  const level = getLevel(b, id);
+  const below = levelBelow(b, id);
+  return b.levels.filter(
+    (l) => l === below || (!!level && l !== level && levelAbove(b, l.id) === level && sameStack(l, level)),
+  );
 }
 
 /** The floors from the top down, as the floor list shows them. */

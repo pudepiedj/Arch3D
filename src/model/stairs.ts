@@ -174,6 +174,21 @@ export function stairGeometry(s: Stair, height: number): StairGeometry {
   };
 }
 
+/**
+ * The two ends of a stair as lines across it, where you step on and off: the bottom (at the
+ * stair's floor) and the top (`rise` above it). A railing meeting either leaves a gap.
+ */
+export function stairEnds(g: StairGeometry, width: number, rise: number): { a: Vec2; b: Vec2; z: number }[] {
+  const across = (p: Vec2, q: Vec2, z: number) => {
+    const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+    const n = { x: (-(q.y - p.y) / len) * (width / 2), y: ((q.x - p.x) / len) * (width / 2) };
+    return { a: { x: p.x - n.x, y: p.y - n.y }, b: { x: p.x + n.x, y: p.y + n.y }, z };
+  };
+  const path = g.path;
+  if (path.length < 2) return [];
+  return [across(path[0], path[1], 0), across(path[path.length - 1], path[path.length - 2], rise)];
+}
+
 /** How high a stair climbs: its own rise, or up to the next floor. */
 export function stairRise(s: Stair, level: Level): number {
   return s.rise ?? level.height;

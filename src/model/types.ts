@@ -116,7 +116,7 @@ export interface Rooflight {
   solarMotor: boolean;
 }
 
-export type PatioSurface = 'paving' | 'decking' | 'gravel' | 'rubber' | 'lawn' | 'pool' | 'balcony';
+export type PatioSurface = 'paving' | 'decking' | 'gravel' | 'rubber' | 'lawn' | 'pool' | 'balcony' | 'landing';
 
 /** A paved, decked or gravelled area outside, drawn as a polygon on a floor's plan. */
 export interface Patio {

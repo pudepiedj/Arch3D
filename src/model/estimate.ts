@@ -107,6 +107,7 @@ export const DEFAULT_PRICES: Record<string, number> = {
   pool: 900, // a built pool: shell, mosaic lining, coping, filtration; £/m² of water
   'glass-balustrade': 350, // £/m
   balcony: 450, // a cantilevered stone balcony slab on steel brackets, £/m²
+  landing: 220, // a boarded landing on timber joists, £/m²
   'iron-railing': 180, // wrought-iron railing, made and fixed, £/m
   'timber-railing': 90, // £/m
   'garden-wall': 140, // stone walling, coping and footing, materials, £/m² of wall face
@@ -627,19 +628,20 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
     // ---- Balconies and railings (on any floor).
     for (const pt of Object.values(level.patios ?? {})) {
       if (!inside(centroid(pt.points.map((p) => ({ ...p, z: 0 }))))) continue;
+      if (pt.surface === 'landing') add({ id: `patio:${pt.id}`, price: 'landing', group: 'Structure', item: 'Landing: boards on timber joists', qty: patioArea(level, pt), unit: 'm²' });
       if (pt.surface === 'balcony') add({ id: `patio:${pt.id}`, price: 'balcony', group: 'Garden and drains', item: 'Balcony: cantilevered stone slab on steel brackets', qty: patioArea(level, pt), unit: 'm²' });
       if (pt.guard) {
-        const what = pt.surface === 'pool' ? ' round the pool' : pt.surface === 'balcony' ? ' round the balcony' : '';
+        const what = pt.surface === 'pool' ? ' round the pool' : pt.surface === 'balcony' ? ' round the balcony' : pt.surface === 'landing' ? ' round the landing' : '';
         const kind = { glass: ['glass-balustrade', 'Glass balustrade'], iron: ['iron-railing', 'Wrought-iron railing'], timber: ['timber-railing', 'Timber railing'] }[pt.guard];
         add({ id: `balustrade:${pt.id}`, price: kind[0], group: 'Garden and drains', item: kind[1] + what, qty: guardLength(level, pt), unit: 'm' });
       }
     }
     if (garden) {
       for (const pt of Object.values(level.patios ?? {})) {
-        if (pt.surface === 'balcony') continue;
+        if (pt.surface === 'balcony' || pt.surface === 'landing') continue;
         if (!inside(centroid(pt.points.map((p) => ({ ...p, z: 0 }))))) continue;
         const m2 = patioArea(level, pt);
-        add({ id: `patio:${pt.id}`, price: pt.surface, group: 'Garden and drains', item: `${{ paving: 'Paving', decking: 'Decking', gravel: 'Gravel', rubber: 'Rubber floor tiles', lawn: 'Lawn: turf and topsoil', pool: 'Swimming pool: shell, lining, coping and filtration', balcony: 'Balcony' }[pt.surface]}`, detail: pt.surface === 'paving' || pt.surface === 'rubber' ? `${m2.toFixed(1)} m²: about ${Math.ceil((m2 / (pt.module * pt.module)) * 1.05)} ${pt.surface === 'rubber' ? 'tiles' : 'slabs'} of ${Math.round(pt.module * 100)} cm` : undefined, qty: m2, unit: 'm²' });
+        add({ id: `patio:${pt.id}`, price: pt.surface, group: 'Garden and drains', item: `${{ paving: 'Paving', decking: 'Decking', gravel: 'Gravel', rubber: 'Rubber floor tiles', lawn: 'Lawn: turf and topsoil', pool: 'Swimming pool: shell, lining, coping and filtration', balcony: 'Balcony', landing: 'Landing' }[pt.surface]}`, detail: pt.surface === 'paving' || pt.surface === 'rubber' ? `${m2.toFixed(1)} m²: about ${Math.ceil((m2 / (pt.module * pt.module)) * 1.05)} ${pt.surface === 'rubber' ? 'tiles' : 'slabs'} of ${Math.round(pt.module * 100)} cm` : undefined, qty: m2, unit: 'm²' });
         if (pt.surface === 'paving' || pt.surface === 'gravel') add({ id: `subbase:${pt.id}`, price: 'sub-base', group: 'Garden and drains', item: 'Sub-base (MOT type 1, 100 mm)', qty: m2 * 0.1, unit: 'm³' });
       }
       for (const h of Object.values(level.hedges ?? {})) {
