@@ -131,6 +131,19 @@ export interface Patio {
   module: number;
   /** A railing round its edge: glass panels (round a pool), wrought iron or timber. */
   guard?: Exclude<RailStyle, 'none'>;
+  /** A pool's slatted cover, on a roller at one end (the end the courses start from). */
+  cover?: 'rolled' | 'covered';
+  /** A fabric awning over it, fixed to the house wall along one side, on posts at the front. */
+  awning?: Awning;
+}
+
+export type AwningColour = 'cream' | 'stripe' | 'terracotta' | 'green' | 'grey';
+
+export interface Awning {
+  colour: AwningColour;
+  /** Height at the wall and at the front, above the patio's top. */
+  back: number;
+  front: number;
 }
 
 /** 'deciduous' and 'conifer' are the generic kinds; the rest are species, plus a bush. */

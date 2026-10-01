@@ -85,9 +85,18 @@ export function patioArea(level: Level, patio: Patio): number {
 }
 
 /** Is the edge a–b against the house (where a railing isn't needed)? */
-export function alongHouse(house: Vec2[][], a: Vec2, b: Vec2): boolean {
+export function alongHouse(house: Vec2[][], a: Vec2, b: Vec2, tol = 0.05): boolean {
   const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-  return house.some((h) => h.some((p, k) => projectOnSegment(m, p, h[(k + 1) % h.length]).dist < 0.05));
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  return house.some((h) =>
+    h.some((p, k) => {
+      const q = h[(k + 1) % h.length];
+      if (projectOnSegment(m, p, q).dist >= tol) return false;
+      // Further off than touching, it must at least run alongside the wall.
+      const wl = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+      return tol <= 0.05 || Math.abs(((b.x - a.x) * (q.y - p.y) - (b.y - a.y) * (q.x - p.x)) / (len * wl)) < 0.1;
+    }),
+  );
 }
 
 /** Length of the patio's railing: round its open edges, not along the house. */

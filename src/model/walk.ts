@@ -6,7 +6,8 @@
 // and walking off the top lands on the next floor. Walls of the storey the walker is on,
 // and stair steps too high to step onto, block movement.
 
-import { levelsUnder, levelElevation } from './building';
+import { levelElevation } from './building';
+import { allStairs, holesAt } from './stairholes';
 import { Vec2, pointInPolygon } from './geom';
 import { computeFootprints, type Footprint } from './joints';
 import { openingsOf } from './openings';
@@ -16,7 +17,7 @@ import { hedgeFootprints } from './hedges';
 import { isGate } from './gates';
 import { catalogueItem, footprint, standingHeight } from './furniture';
 import { detectRooms } from './rooms';
-import { placedStair, stairwells } from './stairs';
+import { placedStair } from './stairs';
 import type { Building, Plan } from './types';
 
 export const RADIUS = 0.25;
@@ -58,6 +59,7 @@ export class WalkWorld {
   private blocks: Block[] = [];
 
   constructor(b: Building) {
+    const placed = allStairs(b);
     b.levels.forEach((level) => {
       const elevation = levelElevation(b, level.id);
       const posts = Object.values(level.pillars ?? {}).map((q) => ({
@@ -81,7 +83,7 @@ export class WalkWorld {
       }
       this.levels.push({ id: level.id, elevation, colliders: buildColliders(level), posts });
       this.heights.push(level.height);
-      const holes = levelsUnder(b, level.id).flatMap((l) => stairwells(l).map((shape) => shape[0]));
+      const holes = holesAt(placed, elevation, level).map((shape) => shape[0]);
       for (const r of detectRooms(level)) this.surfaces.push({ poly: r.polygon, holes, z: elevation + 0.005 });
       for (const pt of Object.values(level.patios ?? {})) {
         for (const [poly, ...holes] of patioShapes(level, pt)) {

@@ -10,10 +10,10 @@ import { Vec2, dot, pointInPolygon, polygonArea, projectOnSegment, sub } from '.
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import { openingsOf } from '../model/openings';
 import { detectRooms } from '../model/rooms';
-import { ceilingHeight, levelElevation, levelsUnder, sameStack } from '../model/building';
+import { ceilingHeight, levelElevation, sameStack } from '../model/building';
 import { type Shape, intersectAll, subtract } from '../model/clip';
 import { FLAT_THICKNESS, type Point3, type RoofGeometry, levelRoofs, outerFaces, outsetLoop, planeOf } from '../model/roof';
-import { type StairGeometry, reachesFloorAbove, stairEnds, placedStair, stairRise, stairSurfaceAt, stairwells } from '../model/stairs';
+import { type StairGeometry, stairEnds, placedStair, stairRise, stairSurfaceAt } from '../model/stairs';
 import { type RailLine, againstWall, buildRails, onSegment } from './rails';
 import { pillarHeight } from '../model/pillars';
 import {
@@ -24,13 +24,14 @@ import {
   rooflightGeometry,
   solarGeometry,
 } from '../model/roofitems';
+import { allStairs, exitsAt, holesAt } from '../model/stairholes';
 import { BALCONY_SLAB, POOL_COPING, POOL_WATER, alongHouse, patioShapes } from '../model/patios';
 import { type Species, crownBase, leanDirection, speciesOf, trunkRadius } from '../model/trees';
 import { standingHeight } from '../model/furniture';
 import { buildFurniture } from './furniture3d';
 import { canvasTexture, floorMaterial, rng, roofMaterial, wallMaterial } from './finishes';
 import { DEFAULT_MATERIALS, faceSides } from '../model/materials';
-import type { Building, FloorFinish, FrameColour, Level, RailStyle, RoofCovering, StairStyle, WallFinish, Furniture, Hedge, Opening, Patio, Pillar, Plan, Tree } from '../model/types';
+import type { AwningColour, Building, FloorFinish, FrameColour, Level, RailStyle, RoofCovering, StairStyle, WallFinish, Furniture, Hedge, Opening, Patio, Pillar, Plan, Tree } from '../model/types';
 import { buildHedge } from './hedges3d';
 import { type HedgeRun, hedgeRuns } from '../model/hedges';
 
@@ -452,12 +453,11 @@ export function buildBuildingObject(
       stairEnds(placedStair(st, l), st.width, stairRise(st, l)).map((e) => ({ ...e, z: e.z + levelElevation(b, l.id) })),
     ),
   );
+  const placed = allStairs(b);
   b.levels.forEach((level) => {
     const z = levelElevation(b, level.id);
     if (z > cutZ + 1e-6 && (!ownWalls || sameStack(level, cutLevel!))) return;
     const isCut = level.id === upTo;
-    // The floors under this one (the parts of a split level), whose stairs come up through it.
-    const under = levelsUnder(b, level.id);
     // Rooflight boxes on flat roofs open a light well through the ceiling and the roof.
     const rooflights =
       isCut ? [] : Object.values(level.rooflights ?? {}).flatMap((r) => rooflightGeometry(b, level, r) ?? []);
@@ -467,9 +467,10 @@ export function buildBuildingObject(
     const vaults = roofs.filter((r) => r.roof.vaulted && r.roof.kind !== 'flat' && r.geometry).map((r) => [r.ring]);
     const obj = buildPlanObject(level, mats, {
       ceiling: isCut ? null : ceilingHeight(b, level),
-      floorHoles: under.flatMap((l) => stairwells(l)),
-      wellExits: under.flatMap((l) => Object.values(l.stairs ?? {}).filter((st) => reachesFloorAbove(st, l)).map((st) => placedStair(st, l).path.at(-1)!)),
-      ceilingHoles: [...stairwells(level), ...kerbs.map((r) => [r.footprint]), ...vaults],
+      // Stairs up through this floor, and on up through its ceiling, from whichever floor.
+      floorHoles: holesAt(placed, z, level),
+      wellExits: exitsAt(placed, z, level),
+      ceilingHoles: [...holesAt(placed, z + level.height, level), ...kerbs.map((r) => [r.footprint]), ...vaults],
       slab: level.slab,
       stairs: Object.values(level.stairs ?? {}).map((st) => ({ ...placedStair(st, level), style: st.style, rail: st.rail })),
       pillars: Object.values(level.pillars ?? {}).map((q) => ({ ...q, height: pillarHeight(b, level, q) })),
@@ -484,9 +485,9 @@ export function buildBuildingObject(
       furniture: Object.values(level.furniture ?? {}).map((f) => ({ ...f, base: standingHeight(level, f) })),
       season,
       materials: { ...DEFAULT_MATERIALS, ...b.materials },
-      nearWalls: Object.keys(level.stairs ?? {}).length ? nearWalls(b, level) : [],
+      nearWalls: Object.keys(level.stairs ?? {}).length || Object.values(level.patios ?? {}).some((pt) => pt.guard || pt.awning) ? nearWalls(b, level) : [],
       ground: -levelElevation(b, level.id),
-      house: Object.values(level.patios ?? {}).some((pt) => pt.height < -levelElevation(b, level.id) || pt.guard) ? outerFaces(level) : [],
+      house: Object.values(level.patios ?? {}).some((pt) => pt.height < -levelElevation(b, level.id) || pt.guard || pt.awning) ? outerFaces(level) : [],
       arrivals: arrivals.map((a) => ({ ...a, z: a.z - z })),
     });
     obj.position.y = levelElevation(b, level.id);
@@ -619,9 +620,10 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
         if (polygonArea(ring) < 0) ring = [...ring].reverse();
         if (pool) ring = outsetLoop(ring, ring.map(() => POOL_COPING - 0.05));
         // Round the open edges only: none along the house (a balcony against its wall).
-        // ...nor along a wall of this floor (a landing indoors, between rooms).
-        const house = [...(opts.house ?? []), ...[...fps.values()].map((f) => f.polygon)];
-        const along = (a: Vec2, b: Vec2) => alongHouse(house, a, b);
+        // ...nor along a wall of this floor (a landing indoors, between rooms) or of another
+        // floor at these heights, even drawn a little short of it.
+        const house = [...(opts.house ?? []), ...[...fps.values(), ...(opts.nearWalls ?? [])].map((f) => f.polygon)];
+        const along = (a: Vec2, b: Vec2) => alongHouse(house, a, b, 0.35);
         let run: Vec2[] = [];
         const flush = () => {
           if (run.length > 1) lines.push({ points: run.map((p) => ({ p, z })), baseAt: () => z });
@@ -686,6 +688,12 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
       }
     }
     if (lines.length) group.add(buildRails(lines, [...fps.values(), ...(opts.nearWalls ?? [])], mats.door, mats.frame, style, mats.glass));
+  }
+  // Awnings, fixed to the wall along the patio's side against the house.
+  for (const { patio, shapes } of opts.patios ?? []) {
+    if (!patio.awning || !shapes.length) continue;
+    const walls = [...(opts.house ?? []), ...[...fps.values(), ...(opts.nearWalls ?? [])].map((f) => f.polygon)];
+    group.add(buildAwning(patio, shapes[0][0], Math.max(patio.height, opts.ground ?? 0), walls));
   }
   for (const t of opts.trees ?? []) group.add(buildTree(t, mats, opts.season ?? { leaf: 1, autumn: false }, opts.north ?? 0));
   for (const { hedge, runs } of opts.hedges ?? []) group.add(buildHedge(hedge, runs, opts.season ?? { leaf: 1, autumn: false }));
@@ -933,6 +941,208 @@ function buildPatios(
       const copingMesh = new THREE.Mesh(coping.geometry(), wallMaterial('stone'));
       copingMesh.castShadow = copingMesh.receiveShadow = true;
       g.add(waterMesh, copingMesh);
+      if (patio.cover) g.add(buildPoolCover(patio, shapes, ground));
+    }
+  }
+  return g;
+}
+
+const AWNING_COLOURS: Record<AwningColour, number> = {
+  cream: 0xefe6cf,
+  stripe: 0xffffff,
+  terracotta: 0xb5583a,
+  green: 0x3f6b4a,
+  grey: 0x8a8d90,
+};
+
+/** Blue and white stripes, 25 cm each, for a striped awning (u runs along the wall, in metres). */
+function stripeTexture() {
+  return canvasTexture(64, 8, (ctx) => {
+    ctx.fillStyle = '#f4f1ea';
+    ctx.fillRect(0, 0, 64, 8);
+    ctx.fillStyle = '#2f5f9a';
+    ctx.fillRect(0, 0, 32, 8);
+  });
+}
+
+/**
+ * A fabric awning over a patio: fixed to the wall along its longest side against the house
+ * (in a cassette there), sloping down to the front, held up by posts at the front corners
+ * with a bar along the front and a short valance. With no side against a wall, it stands on
+ * posts at every corner.
+ */
+function buildAwning(patio: Patio, ring0: Vec2[], z: number, walls: Vec2[][]): THREE.Group {
+  const g = new THREE.Group();
+  g.name = `awning:${patio.id}`;
+  const aw = patio.awning!;
+  const ring = polygonArea(ring0) < 0 ? [...ring0].reverse() : ring0;
+  const n = ring.length;
+  // The side against the house: the longest edge along a wall.
+  let back = -1;
+  let backLen = 0;
+  ring.forEach((p, k) => {
+    const q = ring[(k + 1) % n];
+    const len = Math.hypot(q.x - p.x, q.y - p.y);
+    if (len > backLen && alongHouse(walls, p, q, 0.35)) {
+      back = k;
+      backLen = len;
+    }
+  });
+  const fixed = back >= 0;
+  const a = ring[fixed ? back : 0];
+  const b = ring[((fixed ? back : 0) + 1) % n];
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const d = { x: (b.x - a.x) / len, y: (b.y - a.y) / len };
+  // Into the patio, away from the wall (left of a counter-clockwise edge).
+  const inward = { x: -d.y, y: d.x };
+  const depthOf = (p: Vec2) => (p.x - a.x) * inward.x + (p.y - a.y) * inward.y;
+  const depth = Math.max(0.01, ...ring.map(depthOf));
+  const hBack = aw.back;
+  const hFront = fixed ? aw.front : aw.back;
+  const h = (p: Vec2) => z + hBack - ((hBack - hFront) * depthOf(p)) / depth;
+  const colour = AWNING_COLOURS[aw.colour] ?? AWNING_COLOURS.cream;
+  const fabric = new THREE.MeshStandardMaterial({
+    color: colour,
+    map: aw.colour === 'stripe' ? stripeTexture() : null,
+    roughness: 0.9,
+    side: THREE.DoubleSide,
+  });
+  // The canopy: the patio's outline, sloping.
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const tris = THREE.ShapeUtils.triangulateShape(ring.map((p) => new THREE.Vector2(p.x, p.y)), []);
+  for (const t of tris) {
+    for (const k of t) {
+      const p = ring[k];
+      pos.push(p.x, h(p), p.y);
+      uv.push(((p.x - a.x) * d.x + (p.y - a.y) * d.y) / 0.5, depthOf(p));
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.computeVertexNormals();
+  const canopy = new THREE.Mesh(geo, fabric);
+  canopy.castShadow = canopy.receiveShadow = true;
+  g.add(canopy);
+  // A valance hanging along the front edges, and a bar under them.
+  const valance = new Mesher();
+  const frame = steelMaterial();
+  const front = (p: Vec2) => !fixed || depthOf(p) > 0.15;
+  ring.forEach((p, k) => {
+    const q = ring[(k + 1) % n];
+    if (fixed && k === back) return;
+    if (!front(p) || !front(q)) return;
+    const out = new THREE.Vector3(q.y - p.y, 0, p.x - q.x);
+    // Each end at its own height (a valance on a sloping side follows the slope).
+    const hp = h(p);
+    const hq = h(q);
+    valance.quad(new THREE.Vector3(p.x, hp - 0.18, p.y), new THREE.Vector3(q.x, hq - 0.18, q.y), new THREE.Vector3(q.x, hq, q.y), new THREE.Vector3(p.x, hp, p.y), out);
+    const lenPQ = Math.hypot(q.x - p.x, q.y - p.y);
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(lenPQ, 0.05, 0.05), frame);
+    bar.position.set((p.x + q.x) / 2, (hp + hq) / 2 - 0.03, (p.y + q.y) / 2);
+    bar.rotation.y = -Math.atan2(q.y - p.y, q.x - p.x);
+    bar.rotation.z = Math.atan2(hq - hp, lenPQ);
+    bar.castShadow = true;
+    g.add(bar);
+  });
+  const valMesh = new THREE.Mesh(valance.geometry(), fabric);
+  valMesh.castShadow = true;
+  g.add(valMesh);
+  // Posts at the front corners.
+  for (const p of ring) {
+    if (!front(p)) continue;
+    const top = h(p);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.07, top - z, 0.07), frame);
+    post.position.set(p.x, z + (top - z) / 2, p.y);
+    post.castShadow = true;
+    g.add(post);
+  }
+  // The cassette on the wall, the fabric rolled up inside it.
+  if (fixed) {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(len, 0.16, 0.18), frame);
+    box.position.set((a.x + b.x) / 2 + inward.x * 0.09, z + hBack + 0.06, (a.y + b.y) / 2 + inward.y * 0.09);
+    box.rotation.y = -Math.atan2(d.y, d.x);
+    box.castShadow = true;
+    g.add(box);
+  }
+  return g;
+}
+
+/**
+ * A pool's slatted cover and its roller, at the end the patio's direction starts from: rolled
+ * up into a drum on stands at the edge of the coping, or run out over the water in pale and
+ * darker blue slats, leaving a thin roll on the drum.
+ */
+function buildPoolCover(patio: Patio, shapes: Shape[], ground: number): THREE.Group {
+  const g = new THREE.Group();
+  g.name = `poolCover:${patio.id}`;
+  const along = { x: Math.cos(patio.angle), y: Math.sin(patio.angle) };
+  const across = { x: -along.y, y: along.x };
+  const pts = shapes.flatMap((s) => s[0]);
+  if (!pts.length) return g;
+  const au = pts.map((p) => dot(p, along));
+  const cu = pts.map((p) => dot(p, across));
+  const [a0, a1] = [Math.min(...au), Math.max(...au)];
+  const [c0, c1] = [Math.min(...cu), Math.max(...cu)];
+  const at = (a: number, c: number) => ({ x: along.x * a + across.x * c, y: along.y * a + across.y * c });
+  const covered = patio.cover === 'covered';
+  const r = covered ? 0.09 : 0.24;
+  const top = ground + 0.03;
+  // The drum, on the coping just beyond the end of the water.
+  const axisA = a0 - POOL_COPING / 2 - (covered ? 0 : 0.1);
+  const zc = top + 0.32;
+  const len = c1 - c0 + 0.1;
+  const blue = new THREE.MeshStandardMaterial({ color: 0x2f78b8, roughness: 0.45 });
+  const pale = new THREE.MeshStandardMaterial({ color: 0x6aa8d8, roughness: 0.45 });
+  const metal = steelMaterial();
+  const drum = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 24), blue);
+  const mid = at(axisA, (c0 + c1) / 2);
+  drum.position.set(mid.x, zc, mid.y);
+  // The cylinder stands along y: lay it along the across direction.
+  drum.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(across.x, 0, across.y));
+  drum.castShadow = true;
+  g.add(drum);
+  // A stand at each end: a stainless upright and a round end plate.
+  for (const c of [c0 - 0.1, c1 + 0.1]) {
+    const p = at(axisA, c);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, zc - top + 0.05, 0.06), metal);
+    post.position.set(p.x, top + (zc - top + 0.05) / 2, p.y);
+    const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, 0.02, 24), metal);
+    plate.position.set(p.x, zc, p.y);
+    plate.quaternion.copy(drum.quaternion);
+    post.castShadow = plate.castShadow = true;
+    g.add(post, plate);
+  }
+  if (covered) {
+    // Slats 75 mm wide across the pool, floating on the water, alternately pale and darker.
+    const slats = [new Mesher(), new Mesher()];
+    const z = ground - POOL_WATER + 0.015;
+    let k = 0;
+    for (let a = a0; a < a1; a += 0.08, k++) {
+      const strip = [at(a, c0 - 1), at(a + 0.075, c0 - 1), at(a + 0.075, c1 + 1), at(a, c1 + 1)];
+      for (const shape of shapes) {
+        for (const piece of intersectAll(strip, shape[0])) slats[k % 2].hshape(piece, z, true);
+      }
+    }
+    // The cover runs from the drum down to the water.
+    const ramp = new Mesher();
+    const p0 = at(axisA, c0);
+    const p1 = at(axisA, c1);
+    const q0 = at(a0, c0);
+    const q1 = at(a0, c1);
+    const up = new THREE.Vector3(0, 1, 0);
+    ramp.quad(
+      new THREE.Vector3(p0.x, zc - r, p0.y),
+      new THREE.Vector3(p1.x, zc - r, p1.y),
+      new THREE.Vector3(q1.x, z, q1.y),
+      new THREE.Vector3(q0.x, z, q0.y),
+      up,
+    );
+    for (const [m, mat] of [[slats[0], pale], [slats[1], blue], [ramp, blue]] as const) {
+      const mesh = new THREE.Mesh(m.geometry(), mat);
+      mesh.receiveShadow = true;
+      g.add(mesh);
     }
   }
   return g;

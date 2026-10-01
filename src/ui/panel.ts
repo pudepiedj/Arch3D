@@ -20,7 +20,7 @@ import { computeFootprints } from '../model/joints';
 import { FLOOR_FINISHES, ROOF_COVERINGS, WALL_FINISHES, faceSides, materialsOf } from '../model/materials';
 import { clamp, freeGaps, moveOpening } from '../model/openings';
 import { deleteNode, deleteOpening, deleteWall, finishNodeMove, moveNode, normalize, setWallLength, splitWallAt } from '../model/plan';
-import { DEFAULTS, type OpeningKind, type DrainFitting, type DrainKind, type FloorFinish, type FrameColour, type GlazedStyle, type PatioSurface, type Pillar, type RailStyle, type TreeKind, type HedgeKind, type Roof, type RoofCovering, type RoofKind, type Stair, type StairShape, type StairStyle, type WallFinish } from '../model/types';
+import { type AwningColour, DEFAULTS, type OpeningKind, type DrainFitting, type DrainKind, type FloorFinish, type FrameColour, type GlazedStyle, type PatioSurface, type Pillar, type RailStyle, type TreeKind, type HedgeKind, type Roof, type RoofCovering, type RoofKind, type Stair, type StairShape, type StairStyle, type WallFinish } from '../model/types';
 import type { Editor2D } from './editor2d';
 import type { Store } from './store';
 
@@ -1001,6 +1001,40 @@ export class Panel {
       pt.guard = v === 'none' ? undefined : (v as NonNullable<typeof pt.guard>);
       this.done();
     });
+    if (pool) {
+      this.select('Cover', pt.cover ?? 'none', [
+        ['none', 'None'],
+        ['rolled', 'Rolled up on its roller'],
+        ['covered', 'Over the pool'],
+      ], (v) => {
+        pt.cover = v === 'none' ? undefined : (v as 'rolled' | 'covered');
+        this.done();
+      });
+      if (pt.cover) this.note('A slatted blue cover on a roller at one end. Turn 90° (below) moves the roller round to the next side.');
+    }
+    this.select('Awning', pt.awning?.colour ?? 'none', [
+      ['none', 'None'],
+      ['cream', 'Cream'],
+      ['stripe', 'Blue and white stripes'],
+      ['terracotta', 'Terracotta'],
+      ['green', 'Green'],
+      ['grey', 'Grey'],
+    ], (v) => {
+      pt.awning = v === 'none' ? undefined : { back: 2.6, front: 2.2, ...pt.awning, colour: v as AwningColour };
+      this.done();
+    });
+    if (pt.awning) {
+      const aw = pt.awning;
+      this.number('Awning at the wall', aw.back, 0.05, 1.8, 6, (v) => {
+        aw.back = v;
+        this.done();
+      }, 'm', 'Height of the awning where it is fixed to the wall, above the patio');
+      this.number('Awning at the front', aw.front, 0.05, 1.8, 6, (v) => {
+        aw.front = v;
+        this.done();
+      }, 'm', 'Height of its front edge, on the posts');
+      this.note('Fixed to the wall along the patio\'s longest side against the house, with posts at the front corners. With no side against a wall it stands on posts at every corner, level at the wall height. Reshape the patio to change what it covers.');
+    }
     if (pt.surface !== 'gravel' && !pool) {
       const slab = pt.surface === 'paving' || pt.surface === 'rubber' || pt.surface === 'balcony';
       const lawn = pt.surface === 'lawn';

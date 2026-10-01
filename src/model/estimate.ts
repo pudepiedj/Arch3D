@@ -106,6 +106,8 @@ export const DEFAULT_PRICES: Record<string, number> = {
   rubber: 30, // interlocking rubber tiles, 20 mm, £/m²
   pool: 900, // a built pool: shell, mosaic lining, coping, filtration; £/m² of water
   'glass-balustrade': 350, // £/m
+  'pool-cover': 220, // slatted cover with a manual roller and stands, £/m² of water
+  awning: 160, // fixed awning: fabric, cassette, front bar and posts, £/m² covered
   balcony: 450, // a cantilevered stone balcony slab on steel brackets, £/m²
   landing: 220, // a boarded landing on timber joists, £/m²
   'iron-railing': 180, // wrought-iron railing, made and fixed, £/m
@@ -630,6 +632,8 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
       if (!inside(centroid(pt.points.map((p) => ({ ...p, z: 0 }))))) continue;
       if (pt.surface === 'landing') add({ id: `patio:${pt.id}`, price: 'landing', group: 'Structure', item: 'Landing: boards on timber joists', qty: patioArea(level, pt), unit: 'm²' });
       if (pt.surface === 'balcony') add({ id: `patio:${pt.id}`, price: 'balcony', group: 'Garden and drains', item: 'Balcony: cantilevered stone slab on steel brackets', qty: patioArea(level, pt), unit: 'm²' });
+      if (pt.cover) add({ id: `cover:${pt.id}`, price: 'pool-cover', group: 'Garden and drains', item: 'Slatted pool cover on a roller', qty: patioArea(level, pt), unit: 'm²' });
+      if (pt.awning) add({ id: `awning:${pt.id}`, price: 'awning', group: 'Garden and drains', item: 'Awning: fabric on a wall cassette, with front posts', qty: patioArea(level, pt), unit: 'm²' });
       if (pt.guard) {
         const what = pt.surface === 'pool' ? ' round the pool' : pt.surface === 'balcony' ? ' round the balcony' : pt.surface === 'landing' ? ' round the landing' : '';
         const kind = { glass: ['glass-balustrade', 'Glass balustrade'], iron: ['iron-railing', 'Wrought-iron railing'], timber: ['timber-railing', 'Timber railing'] }[pt.guard];
