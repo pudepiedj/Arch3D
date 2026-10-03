@@ -428,6 +428,8 @@ export interface LevelOptions {
   partySteps?: Map<string, number>;
   /** The walls and roofs of every floor, in this floor's heights: trees grow round them. */
   treeBlockers?: TreeBlocker[];
+  /** Every floor's outline, with how low its walls go (in this floor's heights): a sunken area beside it shows the foundation down to it. */
+  footings?: { ring: Vec2[]; bottom: number }[];
   /** Where stairs (on any floor) arrive at the top, in this floor's heights: railings leave a gap there. */
   arrivals?: { a: Vec2; b: Vec2; z: number }[];
   /** The drawing's default finishes (walls outside and in, floors). */
@@ -509,6 +511,9 @@ export function buildBuildingObject(
       house: Object.values(level.patios ?? {}).some((pt) => pt.height < -levelElevation(b, level.id) || pt.guard || pt.awning) ? outerFaces(level) : [],
       arrivals: arrivals.map((a) => ({ ...a, z: a.z - z })),
       partySteps: partySteps(b, level, z),
+      footings: Object.values(level.patios ?? {}).some((pt) => pt.height < -z - 0.005 || pt.surface === 'balcony')
+        ? b.levels.flatMap((l) => outerFaces(l).map((ring) => ({ ring, bottom: levelElevation(b, l.id) - z })))
+        : [],
       treeBlockers: Object.keys(level.trees ?? {}).length
         ? blockers.map((k) => ({ ...k, bottom: k.bottom - z, eaves: k.eaves - z, peak: k.peak - z, top: (p: Vec2) => k.top(p) - z }))
         : [],
@@ -657,7 +662,7 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
     group.add(m);
   }
 
-  if (opts.patios?.length) group.add(buildPatios(opts.patios, mats, wallMaterial(finishes.outside), opts.ground ?? 0, opts.house ?? []));
+  if (opts.patios?.length) group.add(buildPatios(opts.patios, mats, wallMaterial(finishes.outside), opts.ground ?? 0, opts.footings ?? []));
   // Railings round patios that have one: round a pool at the outside of its coping, at the
   // ground; round a raised terrace at its edge, on its top.
   for (const style of ['glass', 'iron', 'timber'] as const) {
@@ -885,14 +890,12 @@ function buildPatios(
   mats: Materials,
   outside: THREE.Material = mats.paveEdge,
   ground = 0,
-  house: Vec2[][] = [],
+  footings: { ring: Vec2[]; bottom: number }[] = [],
 ): THREE.Group {
   const g = new THREE.Group();
   g.name = 'patios';
-  const alongHouse = (p: Vec2, q: Vec2) => {
-    const m = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
-    return house.some((ring) => ring.some((a, k) => projectOnSegment(m, a, ring[(k + 1) % ring.length]).dist < 0.03));
-  };
+  // The house (any floor's walls) along an edge of a sunken area, and how low its walls go.
+  const footingAt = (p: Vec2, q: Vec2) => footings.find((f) => alongHouse([f.ring], p, q, 0.2));
   for (const { patio, shapes } of list) {
     const sunk = patio.height < ground - 0.005;
     const balcony = patio.surface === 'balcony';
@@ -931,7 +934,14 @@ function buildPatios(
           const out = new THREE.Vector3(q.y - p.y, 0, p.x - q.x).multiplyScalar(ccw);
           if (slabbed) edges.vface(p, q, z - BALCONY_SLAB, z, out);
           else if (!sunk) edges.vface(p, q, ground - 0.01, z, out);
-          else if (!alongHouse(p, q)) edges.vface(p, q, z, ground, out.negate());
+          else {
+            // Sunk: a retaining wall round it; along the house, only the foundation showing
+            // between the sunken floor and the bottom of a wall standing higher (none where the
+            // house goes down to it, so windows of a half-sunk floor stay clear).
+            const f = footingAt(p, q);
+            if (!f) edges.vface(p, q, z, ground, out.negate());
+            else if (f.bottom > z + 0.01) edges.vface(p, q, z, Math.min(f.bottom, ground), out.negate());
+          }
         });
       }
     }
@@ -959,7 +969,7 @@ function buildPatios(
         const sign = polygonSign(ring);
         ring.forEach((p, k) => {
           const q = ring[(k + 1) % ring.length];
-          if (!alongHouse(p, q)) return;
+          if (!footingAt(p, q)) return;
           const len = Math.hypot(q.x - p.x, q.y - p.y);
           const d = { x: (q.x - p.x) / len, y: (q.y - p.y) / len };
           // Into the balcony, away from the wall.
