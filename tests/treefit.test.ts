@@ -46,3 +46,37 @@ describe('trees beside the house', () => {
     expect(checked).toBeGreaterThan(100);
   }, 30000);
 });
+
+describe('a bush planted on the corner of a bay', () => {
+  it('has no leaf, not even the middle of a face, inside the house', () => {
+    const b = createBuilding();
+    const g = b.levels[0];
+    // A house with a bay window sticking out of its front.
+    const pts: [number, number][] = [[0, 0], [2, 0], [2, -1], [5, -1], [5, 0], [8, 0], [8, 6], [0, 6]];
+    pts.forEach(([x, y], i) => {
+      const [x2, y2] = pts[(i + 1) % pts.length];
+      addWall(g, { x, y }, { x: x2, y: y2 }, { thickness: 0.3, height: g.height });
+    });
+    g.roof = { kind: 'flat', pitch: 0, overhang: 0 };
+    g.trees = { quince: { id: 'quince', x: 2, y: -1, kind: 'bush', height: 3, spread: 2.5 } };
+    const obj = buildBuildingObject(b, createMaterials());
+    obj.updateMatrixWorld(true);
+    const house = outerFaces(g)[0];
+    const v = new THREE.Vector3();
+    let faces = 0;
+    obj.getObjectByName('tree:quince')!.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const geo = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry;
+      const pos = geo.getAttribute('position');
+      for (let i = 0; i + 2 < pos.count; i += 3) {
+        const c = new THREE.Vector3();
+        for (let j = 0; j < 3; j++) c.add(v.fromBufferAttribute(pos, i + j).applyMatrix4(m.matrixWorld));
+        c.divideScalar(3);
+        faces++;
+        if (c.y > 0.05 && c.y < g.height) expect(pointInPolygon({ x: c.x, y: c.z }, house)).toBe(false);
+      }
+    });
+    expect(faces).toBeGreaterThan(50);
+  }, 30000);
+});

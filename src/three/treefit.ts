@@ -113,29 +113,96 @@ export function fitTree(tree: THREE.Object3D, blockers: TreeBlocker[], reach: nu
   });
   if (!near.length) return;
   tree.updateMatrixWorld(true);
+  const boxes = near.map((b) => {
+    const xs = b.ring.map((p) => p.x);
+    const ys = b.ring.map((p) => p.y);
+    const m = 0.3;
+    return { x0: Math.min(...xs) - m, x1: Math.max(...xs) + m, y0: Math.min(...ys) - m, y1: Math.max(...ys) + m, z0: b.bottom - m, z1: b.peak + m };
+  });
+  // Does a triangle (in the floor's coordinates) come near any blocker?
+  const touches = (t: number[]) => {
+    const xs = [t[0], t[3], t[6]];
+    const zs = [t[1], t[4], t[7]];
+    const ys = [t[2], t[5], t[8]];
+    return boxes.some(
+      (b) =>
+        Math.max(...xs) > b.x0 && Math.min(...xs) < b.x1 && Math.max(...ys) > b.y0 && Math.min(...ys) < b.y1 && Math.max(...zs) > b.z0 && Math.min(...zs) < b.z1,
+    );
+  };
   const v = new THREE.Vector3();
   tree.traverse((o) => {
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh) return;
     const toLevel = mesh.matrixWorld;
-    const back = new THREE.Matrix4().copy(toLevel).invert();
-    const geo = mesh.geometry.clone();
-    const pos = geo.getAttribute('position') as THREE.BufferAttribute;
+    const flat = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry;
+    const src = flat.getAttribute('position') as THREE.BufferAttribute;
+    // Every triangle in the floor's coordinates.
+    const tris: number[][] = [];
+    for (let i = 0; i + 2 < src.count; i += 3) {
+      const t: number[] = [];
+      for (let j = 0; j < 3; j++) {
+        v.fromBufferAttribute(src, i + j).applyMatrix4(toLevel);
+        t.push(v.x, v.y, v.z);
+      }
+      tris.push(t);
+    }
+    if (flat !== mesh.geometry) flat.dispose();
+    if (!tris.some(touches)) return;
+    // Near a wall, cut the triangles small first, so that once their corners are pushed out
+    // they bend round a corner of the house rather than cutting straight across it.
+    const MAX = 0.25;
+    const out: number[] = [];
     let changed = false;
-    for (let i = 0; i < pos.count; i++) {
-      v.fromBufferAttribute(pos, i).applyMatrix4(toLevel);
-      if (!pushOut(v, near)) continue;
-      v.applyMatrix4(back);
-      pos.setXYZ(i, v.x, v.y, v.z);
-      changed = true;
+    const stack = [...tris];
+    let budget = 60000;
+    while (stack.length) {
+      const t = stack.pop()!;
+      if (touches(t) && budget-- > 0) {
+        const d = (i: number, j: number) => Math.hypot(t[i * 3] - t[j * 3], t[i * 3 + 1] - t[j * 3 + 1], t[i * 3 + 2] - t[j * 3 + 2]);
+        const e = [d(0, 1), d(1, 2), d(2, 0)];
+        const k = e.indexOf(Math.max(...e));
+        if (e[k] > MAX) {
+          // Split the longest side at its middle.
+          const a = k;
+          const b = (k + 1) % 3;
+          const c = (k + 2) % 3;
+          const P = (i: number) => t.slice(i * 3, i * 3 + 3);
+          const mid = P(a).map((x, i) => (x + P(b)[i]) / 2);
+          stack.push([...P(a), ...mid, ...P(c)], [...mid, ...P(b), ...P(c)]);
+          continue;
+        }
+        const moved: number[] = [];
+        for (let j = 0; j < 3; j++) {
+          v.set(t[j * 3], t[j * 3 + 1], t[j * 3 + 2]);
+          if (pushOut(v, near)) changed = true;
+          moved.push(v.x, v.y, v.z);
+        }
+        // A sliver still reaching in across a corner after its corners were pushed out: leave
+        // it out (at a corner of the house, too small to miss from outside).
+        const mid = new THREE.Vector3((moved[0] + moved[3] + moved[6]) / 3, (moved[1] + moved[4] + moved[7]) / 3, (moved[2] + moved[5] + moved[8]) / 3);
+        if (pushOut(mid, near)) {
+          changed = true;
+          continue;
+        }
+        out.push(...moved);
+      } else {
+        out.push(...t);
+      }
     }
-    if (changed) {
-      pos.needsUpdate = true;
-      geo.computeVertexNormals();
-      geo.computeBoundingSphere();
-      mesh.geometry = geo;
-    } else {
-      geo.dispose();
+    if (!changed) return;
+    // Back into the mesh's own coordinates.
+    const back = new THREE.Matrix4().copy(toLevel).invert();
+    for (let i = 0; i < out.length; i += 3) {
+      v.set(out[i], out[i + 1], out[i + 2]).applyMatrix4(back);
+      out[i] = v.x;
+      out[i + 1] = v.y;
+      out[i + 2] = v.z;
     }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(out, 3));
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    mesh.geometry = geo;
   });
 }
+
