@@ -85,16 +85,21 @@ export function levelMoves(b: Building, level: Level): 'floor' | 'all' {
 }
 
 /**
- * Set a floor's level. Moving just the floor, its walls (those running its full height)
- * stretch or shrink so the top stays where it was; moving it all, everything goes with it.
- * Then every floor's walls are fitted to the floor above again.
+ * Set a floor's level. Moving just the floor, every wall stretches or shrinks by the same
+ * amount, so each keeps its top where it was (whatever its height, so a roof resting on it
+ * stays on it); moving it all, everything goes with it. Then every floor's walls are fitted
+ * to the floor above again.
  */
 export function setFloorLevel(b: Building, level: Level, z: number) {
   const before = levelElevation(b, level.id);
   const mode = levelMoves(b, level);
   level.base = z;
   const drop = before - levelElevation(b, level.id);
-  if (mode === 'floor' && Math.abs(drop) > 1e-6 && level.height + drop >= 1) setLevelHeight(level, level.height + drop);
+  if (mode === 'floor' && Math.abs(drop) > 1e-6 && level.height + drop >= 1) {
+    for (const w of Object.values(level.walls)) w.height = Math.max(0.1, w.height + drop);
+    level.height += drop;
+    normalize(level);
+  }
   fitStoreys(b);
 }
 

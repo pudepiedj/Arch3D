@@ -385,6 +385,22 @@ export class Panel {
       `Floor level ${z >= 0 ? '+' : '−'}${Math.abs(z).toFixed(2)} m · ceiling height ${ceilingHeight(b, level).toFixed(2)} m` +
         (!isGround && level.base !== undefined ? ' · set for this floor (floors on top of it follow it)' : ''),
     );
+    // Walls not running the full storey (set lower by hand, say) leave a gap under the roof or
+    // the floor above: say how many, with a way to put them right.
+    const odd = Object.values(level.walls).filter((w) => !w.virtual && Math.abs(w.height - level.height) > 0.01);
+    if (odd.length) {
+      const lo = Math.min(...odd.map((w) => w.height));
+      const hi = Math.max(...odd.map((w) => w.height));
+      this.note(
+        `${odd.length} wall${odd.length > 1 ? 's are' : ' is'} ${lo === hi ? `${lo.toFixed(2)} m` : `${lo.toFixed(2)}–${hi.toFixed(2)} m`} high, not the full ${level.height.toFixed(2)} m of this floor, so ${odd.length > 1 ? 'they stop' : 'it stops'} short of (or pokes past) the roof or the floor above. Fine for a low wall; otherwise:`,
+      );
+      this.buttons([
+        [`Make all walls full height (${level.height.toFixed(2)} m)`, () => {
+          for (const w of odd) w.height = level.height;
+          this.done();
+        }],
+      ]);
+    }
     if (isGround) {
       this.note(
         'The first floor is always at the ground, with the garden on it. To raise or sink one building (a plinth, half below ground), or to add floors on top of just one of two buildings, give it a floor of its own: Build → Move to its own floor…, and drag a box round it.',

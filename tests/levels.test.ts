@@ -333,3 +333,23 @@ describe('a part opening onto the rest through an archway', () => {
     expect(detectRooms(g).map((r) => Math.round(r.area))).toEqual([84]);
   });
 });
+
+describe('dropping just the floor', () => {
+  it('keeps every wall top where it was, whatever its height', async () => {
+    const { moveToOwnFloor } = await import('../src/model/separate');
+    const { setFloorLevel } = await import('../src/model/building');
+    const b = createBuilding();
+    const g = b.levels[0];
+    box(g, 0, 0, 10, 6);
+    addWall(g, { x: 6, y: 0 }, { x: 6, y: 6 }, { thickness: 0.12, height: g.height });
+    const room = moveToOwnFloor(b, g, { x0: 5.7, y0: -0.4, x1: 10.4, y1: 6.3 }, 'Room')!;
+    // One wall set lower by hand.
+    const low = Object.values(room.walls).find((w) => room.nodes[w.a].x > 9 && room.nodes[w.b].x > 9)!;
+    low.height = 2.5;
+    const tops = () => Object.values(room.walls).map((w) => levelElevation(b, room.id) + w.height);
+    const before = tops();
+    setFloorLevel(b, room, -0.3);
+    tops().forEach((t, i) => expect(t).toBeCloseTo(before[i]));
+    expect(low.height).toBeCloseTo(2.8);
+  });
+});
