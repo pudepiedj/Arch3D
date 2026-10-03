@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { patioAt, patioShapes } from '../model/patios';
+import { bankRings } from '../model/grading';
 import { outerFaces } from '../model/roof';
 import { planBounds } from '../model/plan';
 import { type Vec2, dist } from '../model/geom';
@@ -291,6 +292,8 @@ export class View3D {
       if (z < -0.05) dug.push(...outerFaces(level));
       for (const pt of Object.values(level.patios ?? {})) {
         if (z + pt.height < -0.005) dug.push(...patioShapes(level, pt).map((shape) => shape[0]));
+        // Its grass banks too, which slope down into the hole.
+        dug.push(...bankRings(b, level, pt).map((r) => r.outer));
       }
     }
     const key = JSON.stringify([ditches.map((h) => [h.points, h.width]), dug]);

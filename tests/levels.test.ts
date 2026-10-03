@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addLevelBelow, addLevelOnTop, addRoomOnTop, createBuilding, fitStoreys, createLevel, levelAbove, levelBelow, levelElevation, levelsTopDown, levelsUnder } from '../src/model/building';
 import { addWall } from '../src/model/plan';
+import { detectRooms } from '../src/model/rooms';
 import { defaultRoof, levelRoofs } from '../src/model/roof';
 import type { Building, Level } from '../src/model/types';
 
@@ -186,5 +187,169 @@ describe('stairs from a split level', () => {
     box(first, 0, 0, 16, 8);
     b.levels.push(first);
     expect(levelsUnder(b, first.id).map((l) => l.id).sort()).toEqual([a.id, c.id].sort());
+  });
+});
+
+describe('moving part of a house to its own floor', () => {
+  it('takes exactly the walls of the room boxed, even with the box drawn loosely', async () => {
+    const { moveToOwnFloor, wallsToMove } = await import('../src/model/separate');
+    const b = createBuilding();
+    const g = b.levels[0];
+    box(g, 0, 0, 10, 6);
+    // A partition at x = 6: the long outside walls are divided where it meets them.
+    addWall(g, { x: 6, y: 0 }, { x: 6, y: 6 }, { thickness: 0.12, height: g.height });
+    const loose = { x0: 5.7, y0: -0.4, x1: 10.4, y1: 6.3 };
+    expect(wallsToMove(g, loose)).toHaveLength(4);
+    const room = moveToOwnFloor(b, g, loose, 'Room')!;
+    expect(Object.keys(room.walls)).toHaveLength(4);
+    // The rest of the house keeps its three outside walls, and a party copy of the wall it
+    // shared with the room (owned by the room's floor), so its room is still closed.
+    expect(Object.keys(g.walls)).toHaveLength(4);
+    const party = Object.values(g.walls).filter((w) => w.party);
+    expect(party).toHaveLength(1);
+    expect(party[0].party).toBe(room.id);
+    expect(room.walls[party[0].id]).toBeDefined();
+    expect(detectRooms(g)).toHaveLength(1);
+    const xs = Object.values(room.nodes).map((n) => n.x);
+    expect(Math.min(...xs)).toBeCloseTo(6);
+    expect(Math.max(...xs)).toBeCloseTo(10);
+  });
+});
+
+describe('changing a floor level', () => {
+  it('moves just the floor of a part of a house, keeping its top, and all of a house on its own', async () => {
+    const { moveToOwnFloor } = await import('../src/model/separate');
+    const { setFloorLevel, levelMoves } = await import('../src/model/building');
+    const b = createBuilding();
+    const g = b.levels[0];
+    box(g, 0, 0, 10, 6);
+    addWall(g, { x: 6, y: 0 }, { x: 6, y: 6 }, { thickness: 0.12, height: g.height });
+    box(g, 20, 0, 26, 5);
+    const room = moveToOwnFloor(b, g, { x0: 5.7, y0: -0.4, x1: 10.4, y1: 6.3 }, 'Room')!;
+    const house = moveToOwnFloor(b, g, { x0: 19, y0: -1, x1: 27, y1: 6 }, 'House')!;
+    expect(levelMoves(b, room)).toBe('floor');
+    expect(levelMoves(b, house)).toBe('all');
+    const top = levelElevation(b, room.id) + room.height;
+    setFloorLevel(b, room, -0.3);
+    expect(levelElevation(b, room.id)).toBeCloseTo(-0.3);
+    expect(levelElevation(b, room.id) + room.height).toBeCloseTo(top);
+    expect(Object.values(room.walls).every((w) => Math.abs(w.height - room.height) < 1e-6)).toBe(true);
+    // The rest of the house is untouched.
+    expect(levelElevation(b, g.id)).toBe(0);
+    expect(g.height).toBeCloseTo(2.9);
+    // The house on its own goes up whole.
+    const h = house.height;
+    setFloorLevel(b, house, 0.6);
+    expect(house.height).toBeCloseTo(h);
+    // Told to, the room moves whole too.
+    room.levelMoves = 'all';
+    const rh = room.height;
+    setFloorLevel(b, room, -0.5);
+    expect(room.height).toBeCloseTo(rh);
+  });
+});
+
+describe('a part of a house set well down, among the rest of it', () => {
+  it('keeps its own roof, and its walls are not cut down to the floor beside it', async () => {
+    const { moveToOwnFloor } = await import('../src/model/separate');
+    const { setFloorLevel } = await import('../src/model/building');
+    const { levelRoofs } = await import('../src/model/roof');
+    for (const mode of ['all', 'floor'] as const) {
+      const b = createBuilding();
+      const g = b.levels[0];
+      box(g, 0, 0, 12, 8);
+      addWall(g, { x: 4, y: 0 }, { x: 4, y: 8 }, { thickness: 0.12, height: g.height });
+      addWall(g, { x: 8, y: 0 }, { x: 8, y: 8 }, { thickness: 0.12, height: g.height });
+      addWall(g, { x: 4, y: 5 }, { x: 8, y: 5 }, { thickness: 0.12, height: g.height });
+      g.roof = { kind: 'gable', pitch: 35, overhang: 0.3 };
+      // The front room in the middle, with rooms either side of it and behind.
+      const room = moveToOwnFloor(b, g, { x0: 3.8, y0: -0.4, x1: 8.2, y1: 5.2 }, 'Sunk room')!;
+      expect(Object.values(g.walls).filter((w) => w.party)).toHaveLength(3);
+      expect(detectRooms(g)).toHaveLength(3);
+      room.levelMoves = mode;
+      setFloorLevel(b, room, -1.5);
+      expect(levelAbove(b, room.id)).toBeUndefined();
+      expect(levelRoofs(b, room)).toHaveLength(1);
+      expect(levelRoofs(b, g).length).toBeGreaterThan(0);
+      expect(room.height).toBeCloseTo(mode === 'all' ? 2.9 : 4.4);
+    }
+  });
+});
+
+describe('a room moved from the middle of a house', () => {
+  it('leaves no room (or floor) behind where it was, and keeps its roof when set well down', async () => {
+    const { moveToOwnFloor } = await import('../src/model/separate');
+    const { setFloorLevel } = await import('../src/model/building');
+    const { levelRoofs } = await import('../src/model/roof');
+    const b = createBuilding();
+    const g = b.levels[0];
+    box(g, 0, 0, 12, 9);
+    addWall(g, { x: 4, y: 0 }, { x: 4, y: 9 }, { thickness: 0.12, height: g.height });
+    addWall(g, { x: 8, y: 0 }, { x: 8, y: 9 }, { thickness: 0.12, height: g.height });
+    addWall(g, { x: 4, y: 3 }, { x: 8, y: 3 }, { thickness: 0.12, height: g.height });
+    addWall(g, { x: 4, y: 6 }, { x: 8, y: 6 }, { thickness: 0.12, height: g.height });
+    // The middle room, with rooms all round it: all four of its walls are shared.
+    const room = moveToOwnFloor(b, g, { x0: 3.8, y0: 2.8, x1: 8.2, y1: 6.2 }, 'Middle')!;
+    expect(Object.values(g.walls).filter((w) => w.party)).toHaveLength(4);
+    expect(detectRooms(g)).toHaveLength(4);
+    room.levelMoves = 'all';
+    setFloorLevel(b, room, -1.5);
+    expect(levelAbove(b, room.id)).toBeUndefined();
+    expect(room.height).toBeCloseTo(2.9);
+    expect(levelRoofs(b, room)).toHaveLength(1);
+  });
+});
+
+describe('a part opening onto the rest through an archway', () => {
+  it('closes both floors across the arch, and can be put back', async () => {
+    const { moveToOwnFloor, putBack, putBackTarget } = await import('../src/model/separate');
+    const { levelRoofs } = await import('../src/model/roof');
+    const b = createBuilding();
+    const g = b.levels[0];
+    const wall = (p: [number, number], q: [number, number]) => addWall(g, { x: p[0], y: p[1] }, { x: q[0], y: q[1] }, { thickness: 0.3, height: g.height });
+    // A house, and an extension behind it opening into it through a 2 m archway (a gap in the wall).
+    wall([0, 0], [4, 0]);
+    wall([6, 0], [10, 0]);
+    wall([10, 0], [10, 6]);
+    wall([10, 6], [0, 6]);
+    wall([0, 6], [0, 0]);
+    wall([2, 0], [2, -4]);
+    wall([2, -4], [8, -4]);
+    wall([8, -4], [8, 0]);
+    expect(detectRooms(g)).toHaveLength(1);
+    const part = moveToOwnFloor(b, g, { x0: 1.8, y0: -4.3, x1: 8.2, y1: 0.2 }, 'Extension')!;
+    // Each side is a closed room, with an open side across the arch; the house keeps party
+    // copies of the wall either side of the arch.
+    expect(detectRooms(part).map((r) => Math.round(r.area))).toEqual([24]);
+    expect(detectRooms(g).map((r) => Math.round(r.area))).toEqual([60]);
+    expect(Object.values(part.walls).filter((w) => w.virtual)).toHaveLength(1);
+    expect(Object.values(g.walls).filter((w) => w.virtual && w.party === part.id)).toHaveLength(1);
+    expect(levelRoofs(b, part).filter((r) => r.geometry)).toHaveLength(1);
+    // And back again: one room through the arch, no party walls or open sides.
+    expect(putBackTarget(b, part)).toBe(g);
+    expect(putBack(b, part, g)).toBe(true);
+    expect(b.levels).toHaveLength(1);
+    expect(Object.values(g.walls).some((w) => w.party || w.virtual)).toBe(false);
+    expect(detectRooms(g).map((r) => Math.round(r.area))).toEqual([84]);
+  });
+});
+
+describe('dropping just the floor', () => {
+  it('keeps every wall top where it was, whatever its height', async () => {
+    const { moveToOwnFloor } = await import('../src/model/separate');
+    const { setFloorLevel } = await import('../src/model/building');
+    const b = createBuilding();
+    const g = b.levels[0];
+    box(g, 0, 0, 10, 6);
+    addWall(g, { x: 6, y: 0 }, { x: 6, y: 6 }, { thickness: 0.12, height: g.height });
+    const room = moveToOwnFloor(b, g, { x0: 5.7, y0: -0.4, x1: 10.4, y1: 6.3 }, 'Room')!;
+    // One wall set lower by hand.
+    const low = Object.values(room.walls).find((w) => room.nodes[w.a].x > 9 && room.nodes[w.b].x > 9)!;
+    low.height = 2.5;
+    const tops = () => Object.values(room.walls).map((w) => levelElevation(b, room.id) + w.height);
+    const before = tops();
+    setFloorLevel(b, room, -0.3);
+    tops().forEach((t, i) => expect(t).toBeCloseTo(before[i]));
+    expect(low.height).toBeCloseTo(2.8);
   });
 });

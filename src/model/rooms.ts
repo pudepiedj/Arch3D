@@ -92,7 +92,12 @@ export function detectRooms(plan: Plan): Room[] {
       }
     }
   }
-  return rooms;
+  // A loop of party walls only is the part of the house moved to a floor of its own: its room
+  // is on that floor, not this one.
+  const party = new Set<string>();
+  for (const w of Object.values(plan.walls)) if (w.party) party.add(`${w.a}|${w.b}`).add(`${w.b}|${w.a}`);
+  if (!party.size) return rooms;
+  return rooms.filter((r) => !r.nodeIds.every((n, i) => party.has(`${n}|${r.nodeIds[(i + 1) % r.nodeIds.length]}`)));
 }
 
 function angle(from: Vec2, to: Vec2): number {

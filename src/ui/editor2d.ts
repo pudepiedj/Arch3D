@@ -16,9 +16,9 @@ import {
   vec,
 } from '../model/geom';
 import { type Clip, copyArea, describeClip, pasteClip } from '../model/copyarea';
-import { moveToOwnFloor } from '../model/separate';
+import { moveToOwnFloor, wallsToMove } from '../model/separate';
 import { FLOOR_FINISHES, WALL_FINISHES, clearFloorFinish, faceSides, materialsOf, paintRoomWalls, setFloorFinish } from '../model/materials';
-import { addRoomOnTop, getLevel, levelBelow } from '../model/building';
+import { addRoomOnTop, getLevel, levelBelow, levelElevation } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
 import { addPatio, patioShapes } from '../model/patios';
 import { addTree, crownCentre, speciesOf, treeAt, trunkRadius } from '../model/trees';
@@ -32,7 +32,7 @@ import { drawFurnitureSymbol } from './furniture2d';
 import { addChimney, addRooflight, addSolarArray, chimneyFootprint, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { roofSurfaceAt } from '../model/roof';
 import { DEFAULT_ROOF, type LevelRoof, levelRoofs, parapetHeight, roofAreaRings, setAreaRoof, toggleEdge, toggleParapet } from '../model/roof';
-import { DEFAULT_GOING, DEFAULT_STAIR_WIDTH, type StairGeometry, addStair, reachesFloorAbove, stairAt, placedStair, stairGeometry } from '../model/stairs';
+import { DEFAULT_GOING, DEFAULT_STAIR_WIDTH, type StairGeometry, addStair, reachesFloorAbove, stairAt, placedStair, stairEnds, stairGeometry, stairRise } from '../model/stairs';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import {
   type OpeningTemplate,
@@ -248,6 +248,9 @@ export class Editor2D {
       const pts = this.selectedOutline();
       if (pts && pts.length > (this.selection?.kind === 'hedge' ? 2 : 3)) {
         pts.splice(h.index, 1);
+        // A patio's per-side railing settings: the two sides at the corner become one.
+        const rs = this.selection?.kind === 'patio' ? this.plan.patios?.[this.selection.id]?.railSides : undefined;
+        if (rs) rs.splice(h.index, 1);
         this.store.commit();
         return;
       }
@@ -441,6 +444,32 @@ export class Editor2D {
       }
     }
     if (best) return { p: best, kind: 'node', guides };
+    // ...then the corners and ends of stairs, on any floor, for a patio, balcony or landing
+    // to meet a stair exactly.
+    if (this.tool === 'patio' || this.selection?.kind === 'patio') {
+      let onLine: Vec2 | null = null;
+      let lineD = tol;
+      for (const l of this.store.building.levels) {
+        for (const st of Object.values(l.stairs ?? {})) {
+          for (const e of stairEnds(placedStair(st, l), st.width, stairRise(st, l))) {
+            for (const c of [e.a, e.b]) {
+              const d = dist(c, raw);
+              if (d < bestD) {
+                bestD = d;
+                best = vec(c.x, c.y);
+              }
+            }
+            const pr = projectOnSegment(raw, e.a, e.b);
+            if (pr.dist < lineD) {
+              lineD = pr.dist;
+              onLine = pr.point;
+            }
+          }
+        }
+      }
+      if (best) return { p: best, kind: 'node', guides };
+      if (onLine) return { p: vec(onLine.x, onLine.y), kind: 'wall', guides };
+    }
     // ...then joints on the floor below, so walls can be stacked exactly.
     const below = this.below();
     if (below) {
@@ -845,6 +874,9 @@ export class Editor2D {
         if (cur.insert) {
           // First movement of a midpoint handle: it becomes a new corner.
           pts.splice(cur.index + 1, 0, { x: w.x, y: w.y });
+          // Both halves of a split side keep its railing setting.
+          const rs = this.selection?.kind === 'patio' ? this.plan.patios?.[this.selection.id]?.railSides : undefined;
+          if (rs) rs.splice(cur.index + 1, 0, rs[cur.index] ?? 'auto');
           cur.index += 1;
           cur.insert = false;
         }
@@ -1915,6 +1947,25 @@ export class Editor2D {
         this.path(ring);
         ctx.stroke();
       }
+      // Selected with a railing: number its sides, for the Railing sides in its panel.
+      if (sel && pt.guard && pt.surface !== 'pool') {
+        ctx.save();
+        ctx.font = '700 11px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        pt.points.forEach((a, k) => {
+          const b = pt.points[(k + 1) % pt.points.length];
+          const m = this.toScreen({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+          const set = pt.railSides?.[k];
+          ctx.fillStyle = set === 'on' ? '#1f6f3a' : set === 'off' ? '#9a2a2a' : C.accent;
+          ctx.beginPath();
+          ctx.arc(m.x, m.y, 9, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.fillText(String(k + 1), m.x, m.y + 0.5);
+        });
+        ctx.restore();
+      }
     }
   }
 
@@ -2027,6 +2078,51 @@ export class Editor2D {
     ctx.textBaseline = 'bottom';
     ctx.fillStyle = C.accent;
     ctx.fillText(`${label} ${(b.x1 - b.x0).toFixed(2)} × ${(b.y1 - b.y0).toFixed(2)} m`, p.x + 4, p.y - 4);
+  }
+
+  /**
+   * The other floors at about this floor's height (within half a storey either way), with
+   * walls: their walls dashed and faint, and each labelled with its name and how much higher
+   * or lower it is. A split level's parts, and the remnant of the floor a part came from, can
+   * then be read together.
+   */
+  private drawGhostFloors(C: Record<string, string>) {
+    const b = this.store.building;
+    const here = this.store.activeId;
+    const z = levelElevation(b, here);
+    const ctx = this.ctx;
+    for (const l of b.levels) {
+      if (l.id === here || !Object.keys(l.walls).length) continue;
+      const dz = levelElevation(b, l.id) - z;
+      if (Math.abs(dz) > 1.45) continue;
+      const fps = [...computeFootprints(l).values()];
+      ctx.save();
+      ctx.setLineDash([6, 4]);
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = hexAlpha(C.wall, 0.55);
+      ctx.fillStyle = hexAlpha(C.wall, 0.12);
+      for (const fp of fps) {
+        this.path(fp.polygon);
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      // The label, at the middle of its walls.
+      const pts = fps.flatMap((f) => f.polygon);
+      const xs = pts.map((p) => p.x);
+      const ys = pts.map((p) => p.y);
+      const m = this.toScreen({ x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 });
+      const text = `${l.name} (${dz === 0 ? 'same level' : `${dz > 0 ? '+' : '−'}${Math.abs(dz).toFixed(2)} m`})`;
+      ctx.font = 'italic 600 12px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.strokeText(text, m.x, m.y);
+      ctx.fillStyle = hexAlpha(C.wall, 0.75);
+      ctx.fillText(text, m.x, m.y);
+      ctx.restore();
+    }
   }
 
   /**
@@ -2690,12 +2786,39 @@ export class Editor2D {
       }
     }
 
-    // Walls.
+    // The other floors standing at about this height (the rest of a house a part of which
+    // has its own floor, or a house beside it), as dashed ghosts, named with their level.
+    if (!this.printing) this.drawGhostFloors(C);
+
+    // Walls. While a box is being dragged for Move to its own floor, the walls it would take
+    // are shown in the accent colour.
+    const moving =
+      this.areaPick && this.areaPurpose === 'move' && this.pickDraft ? new Set(wallsToMove(this.plan as Level, this.pickDraft)) : null;
     for (const fp of this.fps.values()) {
-      this.path(fp.polygon);
       const sel = this.selection?.kind === 'wall' && this.selection.id === fp.wallId;
-      ctx.fillStyle = sel ? C.accent : C.wall;
+      // An open side (across an archway to a part of the house on its own floor): a dotted line.
+      if (this.plan.walls[fp.wallId]?.virtual) {
+        ctx.save();
+        ctx.setLineDash([3, 4]);
+        ctx.strokeStyle = sel ? C.accent : hexAlpha(C.wall, 0.6);
+        ctx.lineWidth = sel ? 3 : 1.5;
+        this.line(fp.a, fp.b);
+        ctx.restore();
+        continue;
+      }
+      this.path(fp.polygon);
+      // A party wall (built with the part of the house on the other side): pale and dashed.
+      const party = !!this.plan.walls[fp.wallId]?.party && !sel;
+      ctx.fillStyle = sel || moving?.has(fp.wallId) ? C.accent : party ? hexAlpha(C.wall, 0.3) : C.wall;
       ctx.fill();
+      if (party && !this.printing) {
+        ctx.save();
+        ctx.setLineDash([5, 3]);
+        ctx.strokeStyle = C.wall;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+      }
     }
 
     // With the Paint tool, each wall face shows its finish as a stripe along it.
@@ -2828,7 +2951,7 @@ export class Editor2D {
     this.drawToolPreview(C);
     if (this.tool === 'stretch') this.drawStretch(C);
     const picking = this.areaPick ? (this.pickDraft ?? (this.areaPurpose === 'print' ? this.printArea : null)) : null;
-    if (picking) this.drawPrintArea(C, picking, this.areaPurpose === 'copy' ? 'Copy' : this.areaPurpose === 'move' ? 'Move to its own floor' : this.areaPurpose === 'room' ? 'Room on top' : 'Print area');
+    if (picking) this.drawPrintArea(C, picking, this.areaPurpose === 'copy' ? 'Copy' : this.areaPurpose === 'move' ? `Move to its own floor (${wallsToMove(this.plan as Level, picking).length} walls, in colour):` : this.areaPurpose === 'room' ? 'Room on top' : 'Print area');
     else if (this.printArea && this.showPrintArea) this.drawPrintArea(C, this.printArea, 'Print area');
 
     for (const g of this.lastGuides) this.guide(g.from, g.to, C.accent);

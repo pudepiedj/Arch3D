@@ -1,8 +1,8 @@
 // Properties panel for the current selection. Every change goes through the model's
 // clean-up (normalize), so e.g. thickening a wall re-mitres its corners and re-fits its openings.
 
-import { PLINTH, addLevelBelow, addLevelOnTop, ceilingHeight, deleteLevel, fitStoreys, getLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
-import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, parapetHeight, roofAreaRings, setAreaRoof } from '../model/roof';
+import { PLINTH, addLevelBelow, addLevelOnTop, ceilingHeight, deleteLevel, getLevel, isPartOfBuilding, levelMoves, setFloorLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
+import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, levelRoofs, parapetHeight, roofAreaRings, setAreaRoof } from '../model/roof';
 import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
 import { BALCONY_SLAB, PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
@@ -14,7 +14,8 @@ import { GRAND_MODELS, TANK_STAND, catalogueItem, tankLitres } from '../model/fu
 import { stretchSummary } from '../model/stretch';
 import { DEFAULT_INVERT, DEFAULT_TANK, FITTING_NAMES, deleteDrainNode, pipeFall, pipeLength, tankVolume } from '../model/drains';
 import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
-import { moveToOwnFloor } from '../model/separate';
+import { moveToOwnFloor, putBack, putBackTarget } from '../model/separate';
+import { bankWidth } from '../model/patios';
 import { placedStair, reachesFloorAbove, stairBase, stairRise } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { FLOOR_FINISHES, ROOF_COVERINGS, WALL_FINISHES, faceSides, materialsOf } from '../model/materials';
@@ -92,7 +93,18 @@ export class Panel {
       const w = plan.walls[sel.id];
       if (!w) return;
       const fp = computeFootprints(plan).get(w.id);
-      this.title('Wall');
+      this.title(w.virtual ? 'Open side' : w.party ? 'Party wall' : 'Wall');
+      if (w.virtual) {
+        this.note('Not a wall: an open side across a gap (an archway to a part of the house on a floor of its own), drawn so the rooms on each side close and have a floor and a roof. Nothing is built here, and you can walk through it.');
+      }
+      if (w.party && !w.virtual) {
+        const owner = this.store.building.levels.find((l) => l.id === w.party);
+        this.note(
+          owner?.walls[w.id]
+            ? `Shared with ${owner.name}: it is built (with its doors and windows) and costed on that floor. Here it only closes this floor's rooms, and fills the step under it if that floor is higher. Change the wall on ${owner.name}.`
+            : 'Shared with a floor that no longer has it, so it is built here as an ordinary wall.',
+        );
+      }
       this.number('Thickness', w.thickness, 0.01, 0.05, 1, (v) => {
         w.thickness = v;
         this.done();
@@ -350,16 +362,46 @@ export class Panel {
     }
     const z = levelElevation(b, id);
     if (!isGround) {
+      const moves = levelMoves(b, level);
       this.number('Floor level', z, 0.05, -20, 100, (v) => {
-        level.base = v;
-        fitStoreys(b);
+        setFloorLevel(b, level, v);
         this.done();
-      }, 'm', 'Height of this floor above the ground: e.g. 0.6 for a house on a plinth, -1.5 for one half below ground. Floors on top of it follow; where one doesn\'t (it stands on another part too), the walls stretch or shrink to meet it.');
+      }, 'm', moves === 'floor'
+        ? 'Height of this floor above the ground. Only the floor moves: its walls stretch or shrink, and its top (ceiling, roof, the floor above) stays where it is.'
+        : 'Height of this floor above the ground: e.g. 0.6 for a house on a plinth, -1.5 for one half below ground. The whole floor moves, with its roof and the floors on top.');
+      this.select('Changing the level', moves, [
+        ['floor', 'Moves just the floor (walls stretch)'],
+        ['all', 'Moves it all (walls, roof, floors on top)'],
+      ], (v) => {
+        level.levelMoves = v as 'floor' | 'all';
+        this.done();
+      });
+      this.note(
+        moves === 'floor'
+          ? 'Part of a building: lowering it makes its walls taller, raising it makes them shorter, so nothing opens up above them.'
+          : 'A building on its own: everything goes up or down with its floor.',
+      );
     }
     this.note(
       `Floor level ${z >= 0 ? '+' : '−'}${Math.abs(z).toFixed(2)} m · ceiling height ${ceilingHeight(b, level).toFixed(2)} m` +
         (!isGround && level.base !== undefined ? ' · set for this floor (floors on top of it follow it)' : ''),
     );
+    // Walls not running the full storey (set lower by hand, say) leave a gap under the roof or
+    // the floor above: say how many, with a way to put them right.
+    const odd = Object.values(level.walls).filter((w) => !w.virtual && Math.abs(w.height - level.height) > 0.01);
+    if (odd.length) {
+      const lo = Math.min(...odd.map((w) => w.height));
+      const hi = Math.max(...odd.map((w) => w.height));
+      this.note(
+        `${odd.length} wall${odd.length > 1 ? 's are' : ' is'} ${lo === hi ? `${lo.toFixed(2)} m` : `${lo.toFixed(2)}–${hi.toFixed(2)} m`} high, not the full ${level.height.toFixed(2)} m of this floor, so ${odd.length > 1 ? 'they stop' : 'it stops'} short of (or pokes past) the roof or the floor above. Fine for a low wall; otherwise:`,
+      );
+      this.buttons([
+        [`Make all walls full height (${level.height.toFixed(2)} m)`, () => {
+          for (const w of odd) w.height = level.height;
+          this.done();
+        }],
+      ]);
+    }
     if (isGround) {
       this.note(
         'The first floor is always at the ground, with the garden on it. To raise or sink one building (a plinth, half below ground), or to add floors on top of just one of two buildings, give it a floor of its own: Build → Move to its own floor…, and drag a box round it.',
@@ -373,6 +415,23 @@ export class Panel {
       this.done();
     }, true);
     this.note('Applies wherever this floor has nothing built above it. Use the Roof tool to set particular areas or edges differently, or to add roof sections.');
+    // Say plainly whether this floor has a roof of its own, and if not, why not.
+    {
+      const roofs = levelRoofs(b, level);
+      const over = levelAbove(b, level.id);
+      const built = roofs.filter((r) => r.geometry).length;
+      this.note(
+        built
+          ? `This floor has ${built === 1 ? 'a roof' : `${built} roofs`} of its own. (With Cutaway on, the roof of the floor you are on is lifted off in 3D to show the rooms: turn Cutaway off to see it.)`
+          : roofs.length
+          ? 'Its roof could not be shaped over this outline: try another kind, or a flat roof.'
+          : over
+          ? `No roof of its own: ${over.name} stands on top of it (at ${levelElevation(b, over.id) >= 0 ? '+' : '−'}${Math.abs(levelElevation(b, over.id)).toFixed(2)} m) and covers it.`
+          : roof.kind === 'none'
+          ? 'No roof: the default roof is set to none.'
+          : 'No roof: this floor has no closed outline of walls yet.',
+      );
+    }
     this.buttons([
       ['Add floor above', () => this.addFloor(true)],
       ['Add empty floor', () => this.addFloor(false)],
@@ -390,6 +449,20 @@ export class Panel {
       }, true],
     ]);
     if (b.levels.length === 1) (this.el.querySelector('button.danger') as HTMLButtonElement).disabled = true;
+    // A part of the house moved to a floor of its own: it can go back where it came from.
+    const home = b.levels[0] !== level && isPartOfBuilding(b, level) ? putBackTarget(b, level) : undefined;
+    if (home) {
+      this.note(`Part of the house moved to a floor of its own. Put back returns its walls, doors, windows and everything on it to ${home.name}, as one floor again (to split it differently, or undo a split made long ago).`);
+      this.buttons([
+        [`Put back into ${home.name}`, () => {
+          if (!confirm(`Put ${level.name} back into ${home.name}, as one floor again? (You can undo this.)`)) return;
+          if (!putBack(b, level, home)) return;
+          this.editor.select(null);
+          this.store.commit();
+          this.store.setActive(home.id);
+        }],
+      ]);
+    }
   }
 
   private renderStair(id: string) {
@@ -991,6 +1064,16 @@ export class Panel {
         pt.height = v;
         this.done();
       }, 'm', 'Height of the top above this floor (the ground, for the ground floor): higher than a step for a plinth or terrace (stone sides), below 0 for a sunken area, dug out of the ground with retaining walls round it');
+      if (pt.height < 0) {
+        this.select('Edges', pt.edge ?? 'wall', [
+          ['wall', 'Retaining walls'],
+          ['bank', 'Grass banks up to the ground'],
+        ], (v) => {
+          pt.edge = v === 'bank' ? 'bank' : undefined;
+          this.done();
+        });
+        if (pt.edge === 'bank') this.note(`Grass banks slope up from its edges to the ground round it, ${bankWidth(-pt.height).toFixed(1)} m wide (1 in 3); along the house, the foundation shows instead.`);
+      }
     }
     this.select('Railing', pt.guard ?? 'none', [
       ['none', 'None'],
@@ -1001,6 +1084,23 @@ export class Panel {
       pt.guard = v === 'none' ? undefined : (v as NonNullable<typeof pt.guard>);
       this.done();
     });
+    if (pt.guard && !pool) {
+      // Each side, numbered on the plan: automatic, or the railing put on or left off by hand.
+      this.note('Railing sides (numbered on the plan): Auto leaves it off along a wall and puts it on the open edges; set a side to Railing or None to decide yourself.');
+      pt.points.forEach((a, k) => {
+        const b = pt.points[(k + 1) % pt.points.length];
+        this.select(`Side ${k + 1} (${Math.hypot(b.x - a.x, b.y - a.y).toFixed(2)} m)`, pt.railSides?.[k] ?? 'auto', [
+          ['auto', 'Auto'],
+          ['on', 'Railing'],
+          ['off', 'None'],
+        ], (v) => {
+          const sides = pt.points.map((_, i) => pt.railSides?.[i] ?? 'auto');
+          sides[k] = v as 'auto' | 'on' | 'off';
+          pt.railSides = sides.every((s) => s === 'auto') ? undefined : sides;
+          this.done();
+        });
+      });
+    }
     if (pool) {
       this.select('Cover', pt.cover ?? 'none', [
         ['none', 'None'],

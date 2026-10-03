@@ -269,8 +269,8 @@ try {
 } catch {
   // No storage (private browsing): it stays off.
 }
-// In the View menu, and as a toggle beside Orbit and Walk.
-for (const id of ['#cutaway', '#cutawayQuick']) {
+// In the View menu, as a toggle beside Orbit and Walk, and on the note over the 3D view.
+for (const id of ['#cutaway', '#cutawayQuick', '#cutNoteOff']) {
   $(id).addEventListener('click', () => {
     view.setCutaway(!view.cutaway);
     try {
@@ -620,6 +620,13 @@ function syncToolbar() {
   const cutaway = $<HTMLButtonElement>('#cutaway');
   cutaway.classList.toggle('on', view.cutaway);
   cutaway.disabled = view.mode === 'walk';
+  // While Cutaway is lifting things off, say so on the 3D view, with a way to put them back.
+  const note = $('#cutNote');
+  note.hidden = !view.cutaway || view.mode === 'walk' || layout === 'plan';
+  if (!note.hidden) {
+    const level = store.building.levels.find((l) => l.id === store.activeId);
+    $('#cutNoteText').textContent = `Cutaway is on: the roof of ${level?.name ?? 'this floor'} and the floors above it are lifted off to show the rooms.`;
+  }
   const quick = $<HTMLButtonElement>('#cutawayQuick');
   quick.classList.toggle('on', view.cutaway);
   quick.disabled = view.mode === 'walk';

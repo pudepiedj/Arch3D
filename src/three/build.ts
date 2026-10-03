@@ -6,7 +6,7 @@
 // plan is edited, the result is watertight at joints and has no stray slivers.
 
 import * as THREE from 'three';
-import { Vec2, dot, pointInPolygon, polygonArea, projectOnSegment, sub } from '../model/geom';
+import { Vec2, add, dot, pointInPolygon, polygonArea, projectOnSegment, scale, sub } from '../model/geom';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import { openingsOf } from '../model/openings';
 import { detectRooms } from '../model/rooms';
@@ -25,7 +25,9 @@ import {
   solarGeometry,
 } from '../model/roofitems';
 import { allStairs, exitsAt, holesAt } from '../model/stairholes';
-import { BALCONY_SLAB, POOL_COPING, POOL_WATER, alongHouse, patioShapes } from '../model/patios';
+import { type Approach, approaches, bankRings } from '../model/grading';
+import { type TreeBlocker, fitTree, roofBlocker, wallBlocker } from './treefit';
+import { BALCONY_SLAB, POOL_COPING, POOL_WATER, alongHouse, opensOnto, patioShapes, railSideOf } from '../model/patios';
 import { type Species, crownBase, leanDirection, speciesOf, trunkRadius } from '../model/trees';
 import { standingHeight } from '../model/furniture';
 import { buildFurniture } from './furniture3d';
@@ -420,6 +422,19 @@ export interface LevelOptions {
   /** The ground's height in this floor's terms (minus the floor's elevation), and the house's outline. */
   ground?: number;
   house?: Vec2[][];
+  /**
+   * Party walls of this floor to build after all: those whose owning floor stands higher, as
+   * just the step from this floor up to it (wall id -> height). The rest are left to their owner.
+   */
+  partySteps?: Map<string, number>;
+  /** The walls and roofs of every floor, in this floor's heights: trees grow round them. */
+  treeBlockers?: TreeBlocker[];
+  /** The grass banks round banked sunken areas, by patio. */
+  banks?: Map<string, { inner: Vec2[]; outer: Vec2[]; bank: boolean[] }[]>;
+  /** Ramps and steps down from doors to lower ground outside them. */
+  approaches?: Approach[];
+  /** Every floor's outline, with how low its walls go (in this floor's heights): a sunken area beside it shows the foundation down to it. */
+  footings?: { ring: Vec2[]; bottom: number }[];
   /** Where stairs (on any floor) arrive at the top, in this floor's heights: railings leave a gap there. */
   arrivals?: { a: Vec2; b: Vec2; z: number }[];
   /** The drawing's default finishes (walls outside and in, floors). */
@@ -454,6 +469,17 @@ export function buildBuildingObject(
     ),
   );
   const placed = allStairs(b);
+  // Every floor's walls, and its roofs, for the trees to grow round.
+  const anyTrees = b.levels.some((l) => Object.keys(l.trees ?? {}).length);
+  const blockers: TreeBlocker[] = anyTrees
+    ? b.levels.flatMap((l) => {
+        const e = levelElevation(b, l.id);
+        return [
+          ...outerFaces(l).map((ring) => wallBlocker(ring, e, e + l.height)),
+          ...levelRoofs(b, l).flatMap((r) => (r.geometry ? (roofBlocker(r.geometry, e) ?? []) : [])),
+        ];
+      })
+    : [];
   b.levels.forEach((level) => {
     const z = levelElevation(b, level.id);
     if (z > cutZ + 1e-6 && (!ownWalls || sameStack(level, cutLevel!))) return;
@@ -478,7 +504,7 @@ export function buildBuildingObject(
       solar: isCut ? [] : Object.values(level.solar ?? {}).flatMap((sa) => solarGeometry(b, level, sa) ?? []),
       rooflights,
       roofs: roofs.flatMap((r) => (r.geometry ? [{ ...r.geometry, vaulted: !!r.roof.vaulted && r.roof.kind !== 'flat', glazedGables: !!r.roof.glazedGables && r.roof.kind !== 'flat', covering: r.roof.covering }] : [])),
-      patios: Object.values(level.patios ?? {}).map((patio) => ({ patio, shapes: patioShapes(level, patio) })),
+      patios: Object.values(level.patios ?? {}).map((patio) => ({ patio, shapes: patioShapes(level, patio, bankOuters(b, level)) })),
       trees: Object.values(level.trees ?? {}),
       north: (b.site?.north ?? 0),
       hedges: Object.values(level.hedges ?? {}).map((hedge) => ({ hedge, runs: hedgeRuns(hedge, level) })),
@@ -489,12 +515,45 @@ export function buildBuildingObject(
       ground: -levelElevation(b, level.id),
       house: Object.values(level.patios ?? {}).some((pt) => pt.height < -levelElevation(b, level.id) || pt.guard || pt.awning) ? outerFaces(level) : [],
       arrivals: arrivals.map((a) => ({ ...a, z: a.z - z })),
+      partySteps: partySteps(b, level, z),
+      approaches: Object.keys(level.openings).length ? approaches(b, level) : [],
+      banks: new Map(Object.values(level.patios ?? {}).map((pt) => [pt.id, bankRings(b, level, pt)] as const)),
+      footings: Object.values(level.patios ?? {}).some((pt) => pt.height < -z - 0.005 || pt.surface === 'balcony')
+        ? b.levels.flatMap((l) => outerFaces(l).map((ring) => ({ ring, bottom: levelElevation(b, l.id) - z })))
+        : [],
+      treeBlockers: Object.keys(level.trees ?? {}).length
+        ? blockers.map((k) => ({ ...k, bottom: k.bottom - z, eaves: k.eaves - z, peak: k.peak - z, top: (p: Vec2) => k.top(p) - z }))
+        : [],
     });
     obj.position.y = levelElevation(b, level.id);
     obj.name = `level:${level.id}`;
     group.add(obj);
   });
   return group;
+}
+
+/** The outlines of the banks round a floor's banked sunken areas, for its lawns to stop at. */
+function bankOuters(b: Building, level: Level): Vec2[][] {
+  return Object.values(level.patios ?? {}).flatMap((pt) => bankRings(b, level, pt).map((r) => r.outer));
+}
+
+/**
+ * The party walls of a floor that it must build itself: those whose owner is higher (just the
+ * step up to it), and any whose owner no longer has the wall (all of it, as an ordinary wall).
+ */
+function partySteps(b: Building, level: Level, z: number): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const w of Object.values(level.walls)) {
+    if (!w.party) continue;
+    const owner = b.levels.find((l) => l.id === w.party);
+    if (!owner?.walls[w.id]) {
+      out.set(w.id, w.height);
+      continue;
+    }
+    const step = levelElevation(b, owner.id) - z;
+    if (step > 0.01) out.set(w.id, Math.min(step, w.height));
+  }
+  return out;
 }
 
 /** The walls of the other floors that stand at the same heights as a floor's stairs. */
@@ -513,6 +572,8 @@ function nearWalls(b: Building, level: Level): Footprint[] {
 export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions = { ceiling: null }): THREE.Group {
   const group = new THREE.Group();
   const fps = computeFootprints(plan);
+  // The walls actually built (not open sides drawn only to close a room).
+  const solidFps = [...fps.values()].filter((f) => !plan.walls[f.wallId]?.virtual);
   const finishes = opts.materials ?? DEFAULT_MATERIALS;
   const faces = new MeshSet<WallFinish>();
   const tops = new Mesher();
@@ -535,9 +596,16 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   };
 
   for (const w of Object.values(plan.walls)) {
-    const fp = fps.get(w.id);
-    if (!fp) continue;
-    const ops = openingsOf(plan, w.id);
+    let fp = fps.get(w.id);
+    if (!fp || w.virtual) continue;
+    // A party wall is built with the floor that owns it; here only the step under it, if
+    // that floor stands higher than this one (nothing at all if not).
+    if (w.party) {
+      const step = opts.partySteps?.get(w.id);
+      if (!step) continue;
+      fp = { ...fp, height: step };
+    }
+    const ops = w.party ? [] : openingsOf(plan, w.id);
     const where = sidesOf.get(w.id) ?? { left: 'outside', right: 'outside' };
     const left = w.faces?.left ?? finishes[where.left];
     const right = w.faces?.right ?? finishes[where.right];
@@ -606,11 +674,14 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
     group.add(m);
   }
 
-  if (opts.patios?.length) group.add(buildPatios(opts.patios, mats, wallMaterial(finishes.outside), opts.ground ?? 0, opts.house ?? []));
+  if (opts.approaches?.length) group.add(buildApproaches(opts.approaches, mats));
+  if (opts.patios?.length) group.add(buildPatios(opts.patios, mats, wallMaterial(finishes.outside), opts.ground ?? 0, opts.footings ?? [], opts.banks));
   // Railings round patios that have one: round a pool at the outside of its coping, at the
   // ground; round a raised terrace at its edge, on its top.
   for (const style of ['glass', 'iron', 'timber'] as const) {
     const lines: RailLine[] = [];
+    // Sides given a railing by hand: a full railing even against a wall, not just a handrail.
+    const forced: RailLine[] = [];
     for (const { patio, shapes } of opts.patios ?? []) {
       if (patio.guard !== style) continue;
       const pool = patio.surface === 'pool';
@@ -622,11 +693,16 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
         // Round the open edges only: none along the house (a balcony against its wall).
         // ...nor along a wall of this floor (a landing indoors, between rooms) or of another
         // floor at these heights, even drawn a little short of it.
-        const house = [...(opts.house ?? []), ...[...fps.values(), ...(opts.nearWalls ?? [])].map((f) => f.polygon)];
-        const along = (a: Vec2, b: Vec2) => alongHouse(house, a, b, 0.35);
+        const house = [...(opts.house ?? []), ...[...solidFps, ...(opts.nearWalls ?? [])].map((f) => f.polygon)];
+        // A side set by hand has the railing or not, whatever is beside it.
+        const along = (a: Vec2, b: Vec2) => {
+          const set = pool ? undefined : railSideOf(patio, a, b);
+          return set ? set === 'off' : alongHouse(house, a, b, 0.35);
+        };
         let run: Vec2[] = [];
+        let forcing = false;
         const flush = () => {
-          if (run.length > 1) lines.push({ points: run.map((p) => ({ p, z })), baseAt: () => z });
+          if (run.length > 1) (forcing ? forced : lines).push({ points: run.map((p) => ({ p, z })), baseAt: () => z });
           run = [];
         };
         // A gap where a stair arrives at this height (not round a pool).
@@ -670,6 +746,11 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
             flush();
             continue;
           }
+          const on = !pool && railSideOf(patio, a, b) === 'on';
+          if (on !== forcing) {
+            flush();
+            forcing = on;
+          }
           let t = 0;
           for (const [t0, t1] of gaps(a, b)) {
             if (t0 > t) {
@@ -685,17 +766,24 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
           }
         }
         flush();
+        forcing = false;
       }
     }
-    if (lines.length) group.add(buildRails(lines, [...fps.values(), ...(opts.nearWalls ?? [])], mats.door, mats.frame, style, mats.glass));
+    if (forced.length) group.add(buildRails(forced, [], mats.door, mats.frame, style, mats.glass));
+    if (lines.length) group.add(buildRails(lines, [...solidFps, ...(opts.nearWalls ?? [])], mats.door, mats.frame, style, mats.glass));
   }
   // Awnings, fixed to the wall along the patio's side against the house.
   for (const { patio, shapes } of opts.patios ?? []) {
     if (!patio.awning || !shapes.length) continue;
-    const walls = [...(opts.house ?? []), ...[...fps.values(), ...(opts.nearWalls ?? [])].map((f) => f.polygon)];
+    const walls = [...(opts.house ?? []), ...[...solidFps, ...(opts.nearWalls ?? [])].map((f) => f.polygon)];
     group.add(buildAwning(patio, shapes[0][0], Math.max(patio.height, opts.ground ?? 0), walls));
   }
-  for (const t of opts.trees ?? []) group.add(buildTree(t, mats, opts.season ?? { leaf: 1, autumn: false }, opts.north ?? 0));
+  for (const t of opts.trees ?? []) {
+    const tree = buildTree(t, mats, opts.season ?? { leaf: 1, autumn: false }, opts.north ?? 0);
+    // Grown round the house, not through it.
+    if (opts.treeBlockers?.length) fitTree(tree, opts.treeBlockers, t.height + t.spread);
+    group.add(tree);
+  }
   for (const { hedge, runs } of opts.hedges ?? []) group.add(buildHedge(hedge, runs, opts.season ?? { leaf: 1, autumn: false }));
   for (const f of opts.furniture ?? []) {
     const obj = buildFurniture(f);
@@ -782,7 +870,7 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
         },
       })),
       );
-      group.add(buildRails(lines, [...fps.values(), ...(opts.nearWalls ?? [])], mats.door, mats.frame, style, mats.glass));
+      group.add(buildRails(lines, [...solidFps, ...(opts.nearWalls ?? [])], mats.door, mats.frame, style, mats.glass));
     }
   }
   if (opts.ceiling !== null) {
@@ -815,14 +903,14 @@ function buildPatios(
   mats: Materials,
   outside: THREE.Material = mats.paveEdge,
   ground = 0,
-  house: Vec2[][] = [],
+  footings: { ring: Vec2[]; bottom: number }[] = [],
+  banks: Map<string, { inner: Vec2[]; outer: Vec2[]; bank: boolean[] }[]> = new Map(),
 ): THREE.Group {
   const g = new THREE.Group();
   g.name = 'patios';
-  const alongHouse = (p: Vec2, q: Vec2) => {
-    const m = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
-    return house.some((ring) => ring.some((a, k) => projectOnSegment(m, a, ring[(k + 1) % ring.length]).dist < 0.03));
-  };
+  // The house (any floor's walls) along an edge of a sunken area, and how low its walls go.
+  const footingAt = (p: Vec2, q: Vec2) => footings.find((f) => alongHouse([f.ring], p, q, 0.2));
+  const neighbours = list.map((l) => l.patio);
   for (const { patio, shapes } of list) {
     const sunk = patio.height < ground - 0.005;
     const balcony = patio.surface === 'balcony';
@@ -855,13 +943,26 @@ function buildPatios(
       for (const ring of shape) {
         const inside = ring === outer ? 1 : -1;
         const ccw = polygonSign(ring) * inside;
+        // Grass banks round the open edges of a sunken area set to have them: no retaining
+        // wall there (the banks themselves are built from the banks' outline, below).
+        const isBank = (k: number) => sunk && ring === outer && !!banks.get(patio.id)?.length && !footingAt(ring[k], ring[(k + 1) % ring.length]);
         ring.forEach((p, k) => {
           const q = ring[(k + 1) % ring.length];
           // Outward normal of the edge p->q, for a ring running counter-clockwise.
           const out = new THREE.Vector3(q.y - p.y, 0, p.x - q.x).multiplyScalar(ccw);
+          if (isBank(k)) return;
           if (slabbed) edges.vface(p, q, z - BALCONY_SLAB, z, out);
           else if (!sunk) edges.vface(p, q, ground - 0.01, z, out);
-          else if (!alongHouse(p, q)) edges.vface(p, q, z, ground, out.negate());
+          else if (opensOnto(neighbours, patio, p, q, { x: out.x, y: out.z })) {
+            // Straight onto another sunken area at the same level: nothing between them.
+          } else {
+            // Sunk: a retaining wall round it; along the house, only the foundation showing
+            // between the sunken floor and the bottom of a wall standing higher (none where the
+            // house goes down to it, so windows of a half-sunk floor stay clear).
+            const f = footingAt(p, q);
+            if (!f) edges.vface(p, q, z, ground, out.negate());
+            else if (f.bottom > z + 0.01) edges.vface(p, q, z, Math.min(f.bottom, ground), out.negate());
+          }
         });
       }
     }
@@ -881,6 +982,27 @@ function buildPatios(
     );
     side.receiveShadow = side.castShadow = true;
     g.add(top, side);
+    const bankList = banks.get(patio.id) ?? [];
+    if (bankList.length) {
+      // Each banked side a slope from the sunken edge up to the ground at the banks' outline.
+      const bankMesh3 = new Mesher();
+      for (const r of bankList) {
+        r.inner.forEach((p, k) => {
+          if (!r.bank[k]) return;
+          const k1 = (k + 1) % r.inner.length;
+          const q = r.inner[k1];
+          const po = r.outer[k];
+          const qo = r.outer[k1];
+          const nx = q.y - p.y;
+          const ny = p.x - q.x;
+          const len = Math.hypot(nx, ny) || 1;
+          bankMesh3.quad(new THREE.Vector3(p.x, z, p.y), new THREE.Vector3(q.x, z, q.y), new THREE.Vector3(qo.x, ground, qo.y), new THREE.Vector3(po.x, ground, po.y), new THREE.Vector3((-nx / len) * (ground - z), 1, (-ny / len) * (ground - z)));
+        });
+      }
+      const bankMesh = new THREE.Mesh(bankMesh3.geometry(), bankMaterial());
+      bankMesh.receiveShadow = true;
+      g.add(bankMesh);
+    }
     if (balcony) {
       // Steel joists set into the wall, about every 1.2 m, out under the slab.
       const joists = new Mesher();
@@ -889,17 +1011,19 @@ function buildPatios(
         const sign = polygonSign(ring);
         ring.forEach((p, k) => {
           const q = ring[(k + 1) % ring.length];
-          if (!alongHouse(p, q)) return;
+          if (!footingAt(p, q)) return;
           const len = Math.hypot(q.x - p.x, q.y - p.y);
           const d = { x: (q.x - p.x) / len, y: (q.y - p.y) / len };
           // Into the balcony, away from the wall.
           const n = { x: -d.y * sign, y: d.x * sign };
-          const reach = Math.max(...ring.map((r) => (r.x - p.x) * n.x + (r.y - p.y) * n.y)) - 0.05;
-          if (reach < 0.2) return;
           const count = Math.max(2, Math.round(len / 1.2) + 1);
           for (let i = 0; i < count; i++) {
             const t = 0.15 + ((len - 0.3) * i) / (count - 1);
             const c = { x: p.x + d.x * t, y: p.y + d.y * t };
+            // Out from the wall to where the slab ends in front of this joist (round an L,
+            // that is the near edge, not the far arm), stopping just short of it.
+            const reach = rayToRing(c, n, ring) - 0.05;
+            if (reach < 0.2) continue;
             const hw = 0.04;
             const box = [
               { x: c.x - d.x * hw - n.x * 0.2, y: c.y - d.y * hw - n.y * 0.2 },
@@ -944,6 +1068,73 @@ function buildPatios(
       if (patio.cover) g.add(buildPoolCover(patio, shapes, ground));
     }
   }
+  return g;
+}
+
+/** How far from p, going in direction d (a unit vector), until the ray leaves through the ring's edge. */
+function rayToRing(p: Vec2, d: Vec2, ring: Vec2[]): number {
+  let best = Infinity;
+  ring.forEach((a, k) => {
+    const b = ring[(k + 1) % ring.length];
+    const e = { x: b.x - a.x, y: b.y - a.y };
+    const den = d.x * e.y - d.y * e.x;
+    if (Math.abs(den) < 1e-9) return;
+    const w = { x: a.x - p.x, y: a.y - p.y };
+    const t = (w.x * e.y - w.y * e.x) / den;
+    const u = (w.x * d.y - w.y * d.x) / den;
+    if (t > 0.01 && u >= -1e-9 && u <= 1 + 1e-9) best = Math.min(best, t);
+  });
+  return Number.isFinite(best) ? best : 0;
+}
+
+let grassBank: THREE.Material | null = null;
+/** Grass on a bank down to a sunken area. */
+function bankMaterial(): THREE.Material {
+  return (grassBank ??= new THREE.MeshStandardMaterial({ color: 0x7fa45e, roughness: 1, side: THREE.DoubleSide }));
+}
+
+/**
+ * Ramps (in front of garage doors) and steps (in front of other doors) down from the threshold
+ * to lower ground outside: a concrete ramp sloping the whole way, or stone steps a going each.
+ */
+function buildApproaches(list: Approach[], mats: Materials): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'approaches';
+  const m = new Mesher();
+  const V = (p: Vec2, z: number) => new THREE.Vector3(p.x, z, p.y);
+  for (const a of list) {
+    const half = scale(a.along, a.width / 2);
+    const p0 = sub(a.at, half);
+    const p1 = add(a.at, half);
+    const top = a.sill;
+    const bottom = a.sill - a.drop;
+    if (a.kind === 'ramp') {
+      const p2 = add(p1, scale(a.out, a.length));
+      const p3 = add(p0, scale(a.out, a.length));
+      m.quad(V(p0, top), V(p1, top), V(p2, bottom), V(p3, bottom), new THREE.Vector3(a.out.x * a.drop, a.length, a.out.y * a.drop));
+      // Its two sides, wedges down to the ground.
+      for (const [p, q, s] of [[p0, p3, -1], [p1, p2, 1]] as const) {
+        m.tri(V(p, top), V(q, bottom), V(p, bottom), new THREE.Vector3(a.along.x * s, 0, a.along.y * s));
+      }
+    } else {
+      const rise = a.drop / a.risers;
+      for (let j = 1; j < a.risers; j++) {
+        // Each step a block from the wall out, the lower ones reaching further.
+        const reach = scale(a.out, j * (a.length / (a.risers - 1)));
+        const rect = [p0, p1, add(p1, reach), add(p0, reach)];
+        const z = top - j * rise;
+        m.hpoly(rect, z, true);
+        rect.forEach((p, k) => {
+          const q = rect[(k + 1) % 4];
+          const mid = { x: (p.x + q.x) / 2 - a.at.x, y: (p.y + q.y) / 2 - a.at.y };
+          m.vface(p, q, bottom, z, new THREE.Vector3(mid.x, 0, mid.y));
+        });
+      }
+    }
+  }
+  const mesh = new THREE.Mesh(m.geometry(), mats.paveEdge);
+  mesh.castShadow = mesh.receiveShadow = true;
+  g.add(mesh);
   return g;
 }
 

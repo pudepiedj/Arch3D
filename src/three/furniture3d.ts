@@ -895,13 +895,23 @@ const BUILDERS: Record<string, Builder> = {
   },
   lounger: (k, f, w, d) => {
     const m = wood(f.finish);
-    k.legs(w, d, 0.3, 0, 0, 0.025, m, 0.05);
-    k.box(w, d * 0.7, 0.05, 0, d * 0.15, 0.3, m);
-    k.box(w - 0.06, d * 0.68, 0.06, 0, d * 0.15, 0.35, plain(0xe8e2d0, 0.95));
     // The back rest, raised about its hinge.
     const L = d * 0.34;
     const tilt = 0.9;
     const hingeY = -d / 2 + d * 0.3;
+    // Where the raised end of the back rest is, and how high its underside is there.
+    const topY = hingeY - Math.cos(tilt) * L;
+    const topZ = 0.38 + Math.sin(tilt) * L - 0.04;
+    // Short legs at the foot; at the head, posts up to the top of the back rest, which rests
+    // on a rail between them; the frame runs back to the posts.
+    for (const s of [-1, 1]) {
+      k.box(0.05, 0.05, 0.3, s * (w / 2 - 0.025), d / 2 - 0.05, 0, m);
+      k.box(0.05, 0.05, topZ, s * (w / 2 - 0.025), topY + 0.02, 0, m);
+    }
+    k.box(w, 0.04, 0.04, 0, topY + 0.02, topZ - 0.04, m);
+    const frameFrom = topY - 0.005;
+    k.box(w, d / 2 - frameFrom, 0.05, 0, (d / 2 + frameFrom) / 2, 0.3, m);
+    k.box(w - 0.06, d * 0.68, 0.06, 0, d * 0.15, 0.35, plain(0xe8e2d0, 0.95));
     const back = k.box(w - 0.06, L, 0.06, 0, hingeY - (Math.cos(tilt) * L) / 2, 0, plain(0xe8e2d0, 0.95));
     back.position.y = 0.38 + (Math.sin(tilt) * L) / 2;
     back.rotation.x = tilt;

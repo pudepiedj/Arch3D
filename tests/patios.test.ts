@@ -107,3 +107,21 @@ describe('landings', () => {
     expect(pt.height).toBeCloseTo(0.02);
   });
 });
+
+describe('railing sides set by hand', () => {
+  it('put the railing on a side along the house, or take it off an open one', () => {
+    const b = house();
+    const l = b.levels[0];
+    // A balcony against the south wall (outer face at y = 4.15): open on three sides.
+    const pt = addPatio(l, [{ x: 1, y: 4 }, { x: 4, y: 4 }, { x: 4, y: 5.5 }, { x: 1, y: 5.5 }], 'balcony');
+    const auto = guardLength(l, pt);
+    expect(auto).toBeCloseTo(3 + 2 * 1.35, 5);
+    // Side 1 runs along the wall: railing on it after all. Side 3 (the front) off.
+    pt.railSides = ['on', 'auto', 'off', 'auto'];
+    expect(guardLength(l, pt)).toBeCloseTo(3 + 2 * 1.35, 5);
+    pt.railSides = ['on', 'auto', 'auto', 'auto'];
+    expect(guardLength(l, pt)).toBeCloseTo(auto + 3, 5);
+    pt.railSides = ['auto', 'off', 'auto', 'off'];
+    expect(guardLength(l, pt)).toBeCloseTo(3, 5);
+  });
+});

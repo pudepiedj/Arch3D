@@ -6,7 +6,7 @@
 import { type Shape, subtract } from './clip';
 import { type Vec2, dist, pointInPolygon, polygonArea, projectOnSegment } from './geom';
 import { computeFootprints } from './joints';
-import { outerFaces } from './roof';
+import { outerFaces, outsetLoop } from './roof';
 import type { Level, Patio, PatioSurface } from './types';
 
 export const PATIO_DEFAULTS: Record<PatioSurface, { height: number; module: number }> = {
@@ -57,8 +57,43 @@ export function setPatioSurface(patio: Patio, surface: PatioSurface) {
   if ((surface === 'balcony' || surface === 'landing') && !patio.guard) patio.guard = 'iron';
 }
 
+/** How wide a grass bank down to a sunken area is: a 1 in 3 slope, at least half a metre. */
+export function bankWidth(depth: number): number {
+  return Math.max(0.5, depth * 3);
+}
+
+/** Is this patio a sunken area with banks (on a floor at the ground, `ground` its height there)? */
+export function banked(pt: Patio, ground = 0): boolean {
+  return pt.edge === 'bank' && pt.surface !== 'pool' && pt.height < ground - 0.005;
+}
+
+/** The outline of a banked sunken area with its banks: its drawn outline grown by their width. */
+export function bankOutline(pt: Patio, ground = 0): Vec2[] {
+  const w = bankWidth(ground - pt.height);
+  const ccw = polygonArea(pt.points) < 0 ? [...pt.points].reverse() : pt.points;
+  return outsetLoop(ccw, ccw.map(() => w));
+}
+
+/**
+ * Does the side p-q of a sunken area open straight onto another at about the same level (a
+ * sunken patio meeting sunken gravel)? Then it needs neither a retaining wall nor a bank.
+ * `others` are the floor's patios; the side's outward direction is found from `inside`, a
+ * point of the area itself.
+ */
+export function opensOnto(others: Patio[], self: Patio, p: Vec2, q: Vec2, outward: Vec2): boolean {
+  const len = Math.hypot(outward.x, outward.y) || 1;
+  const probe = { x: (p.x + q.x) / 2 + (outward.x / len) * 0.1, y: (p.y + q.y) / 2 + (outward.y / len) * 0.1 };
+  return others.some(
+    (o) => o !== self && o.surface !== 'pool' && o.surface !== 'lawn' && o.points.length >= 3 && Math.abs(o.height - self.height) < 0.05 && pointInPolygon(probe, o.points),
+  );
+}
+
 /** The patio's actual extent: its outline minus the house (outer ring first, then holes). */
-export function patioShapes(level: Level, patio: Patio): Shape[] {
+/**
+ * `banks`: the outlines of sunken areas' banks on this floor, exactly (from `bankRings`), for
+ * a lawn to stop at; without them, a lawn stops at an outline near enough for the plan.
+ */
+export function patioShapes(level: Level, patio: Patio, banks?: Vec2[][]): Shape[] {
   if (patio.points.length < 3) return [];
   if (patio.height >= CUT_BELOW) return subtract(patio.points, []).filter((s) => s[0].length >= 3);
   // Drawn inside the house (rubber over a garage floor, say), it is a floor covering and only
@@ -69,8 +104,12 @@ export function patioShapes(level: Level, patio: Patio): Shape[] {
   // A lawn stops at the patios, paths and beds laid in it.
   if (patio.surface === 'lawn') {
     for (const other of Object.values(level.patios ?? {})) {
-      if (other.id !== patio.id && other.surface !== 'lawn' && other.height < CUT_BELOW && other.points.length >= 3) cut.push([other.points]);
+      if (other.id !== patio.id && other.surface !== 'lawn' && other.height < CUT_BELOW && other.points.length >= 3) {
+        // A sunken area with banks takes its banks out of the lawn too.
+        cut.push([banked(other) && !banks ? bankOutline(other) : other.points]);
+      }
     }
+    for (const ring of banks ?? []) cut.push([ring]);
   }
   return subtract(patio.points, cut).filter((s) => s[0].length >= 3);
 }
@@ -99,7 +138,29 @@ export function alongHouse(house: Vec2[][], a: Vec2, b: Vec2, tol = 0.05): boole
   );
 }
 
-/** Length of the patio's railing: round its open edges, not along the house. */
+/**
+ * The railing setting for the stretch a-b of the patio's outline: that of the drawn side it
+ * lies on ('on' or 'off'), or undefined to decide automatically.
+ */
+export function railSideOf(patio: Patio, a: Vec2, b: Vec2): 'on' | 'off' | undefined {
+  const sides = patio.railSides;
+  if (!sides?.length) return undefined;
+  const n = patio.points.length;
+  for (let k = 0; k < n; k++) {
+    const s = sides[k];
+    if (s !== 'on' && s !== 'off') continue;
+    const p = patio.points[k];
+    const q = patio.points[(k + 1) % n];
+    // On that side, or cut back from it a little by the wall it was drawn on, running the same way.
+    const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+    const run = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const sin = Math.abs(((q.x - p.x) * (b.y - a.y) - (q.y - p.y) * (b.x - a.x)) / (len * run));
+    if (sin < 0.05 && projectOnSegment(a, p, q).dist < 0.3 && projectOnSegment(b, p, q).dist < 0.3) return s;
+  }
+  return undefined;
+}
+
+/** Length of the patio's railing: round its open edges, not along the house (unless set otherwise). */
 export function guardLength(level: Level, patio: Patio): number {
   const house = outerFaces(level);
   let len = 0;
@@ -107,7 +168,8 @@ export function guardLength(level: Level, patio: Patio): number {
     const ring = shape[0];
     ring.forEach((p, k) => {
       const q = ring[(k + 1) % ring.length];
-      if (!alongHouse(house, p, q)) len += dist(p, q);
+      const set = railSideOf(patio, p, q);
+      if (set === 'on' || (set !== 'off' && !alongHouse(house, p, q))) len += dist(p, q);
     });
   }
   return len;

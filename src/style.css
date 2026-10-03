@@ -431,6 +431,17 @@ button.icon {
   font-size: 13px;
 }
 
+.overlay.cutnote {
+  top: 12px;
+  bottom: auto;
+  pointer-events: auto;
+  color: var(--text, inherit);
+}
+.overlay.cutnote button {
+  margin-left: 6px;
+  padding: 2px 8px;
+}
+
 .overlay.recording {
   top: 12px;
   bottom: auto;
