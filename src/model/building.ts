@@ -1,9 +1,10 @@
 // A building is a stack of levels. Each level is an independent floor plan (so all the
 // wall-joint and opening logic works per floor unchanged) plus its vertical dimensions.
 
-import { pointInPolygon } from './geom';
+import { intersectAll } from './clip';
+import { pointInPolygon, polygonArea } from './geom';
 import { addWall, createPlan, healNode, normalize } from './plan';
-import { outlineWallIds } from './rooms';
+import { detectRooms, outlineWallIds } from './rooms';
 import { DEFAULTS, type Building, type Level, type Plan } from './types';
 
 const LEVEL_NAMES = ['Ground floor', 'First floor', 'Second floor', 'Third floor', 'Fourth floor'];
@@ -157,7 +158,27 @@ function wallExtent(l: Level) {
 export function sameStack(a: Level, c: Level): boolean {
   const p = wallExtent(a);
   const q = wallExtent(c);
-  return !!p && !!q && !(q.x0 >= p.x1 - 0.05 || p.x0 >= q.x1 - 0.05 || q.y0 >= p.y1 - 0.05 || p.y0 >= q.y1 - 0.05);
+  if (!p || !q || q.x0 >= p.x1 - 0.05 || p.x0 >= q.x1 - 0.05 || q.y0 >= p.y1 - 0.05 || p.y0 >= q.y1 - 0.05) return false;
+  return roomsOverlap(a, c);
+}
+
+/**
+ * Do two floors' rooms overlap on plan (by more than a sliver)? A part of a house moved to a
+ * floor of its own sits among the rest of the house's rooms, inside its outline, but not on
+ * top of any of them. Floors without closed rooms yet count as overlapping (their walls'
+ * extents already do).
+ */
+function roomsOverlap(a: Level, c: Level): boolean {
+  const ra = detectRooms(a);
+  const rc = detectRooms(c);
+  if (!ra.length || !rc.length) return true;
+  for (const p of ra) {
+    for (const q of rc) {
+      const area = intersectAll(p.polygon, q.polygon).reduce((s, sh) => s + Math.abs(polygonArea(sh[0])) - sh.slice(1).reduce((h, r) => h + Math.abs(polygonArea(r)), 0), 0);
+      if (area > 0.25) return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -182,6 +203,8 @@ function neighbour(b: Building, id: string, dir: 1 | -1): Level | undefined {
     const oz = levelElevation(b, other.id);
     // A storey up or down, not a split-level part of the same floor a little higher or lower.
     if (dir > 0 ? oz < z + Math.min(1.5, level.height / 2) : oz > z - Math.min(1.5, other.height / 2)) continue;
+    // Over the same rooms, not round them (the rest of a house a part of which is set lower).
+    if (!roomsOverlap(level, other)) continue;
     if (!best || (dir > 0 ? oz < bestZ : oz > bestZ)) {
       best = other;
       bestZ = oz;

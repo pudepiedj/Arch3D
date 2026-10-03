@@ -248,3 +248,30 @@ describe('changing a floor level', () => {
     expect(room.height).toBeCloseTo(rh);
   });
 });
+
+describe('a part of a house set well down, among the rest of it', () => {
+  it('keeps its own roof, and its walls are not cut down to the floor beside it', async () => {
+    const { moveToOwnFloor } = await import('../src/model/separate');
+    const { setFloorLevel } = await import('../src/model/building');
+    const { levelRoofs } = await import('../src/model/roof');
+    for (const mode of ['all', 'floor'] as const) {
+      const b = createBuilding();
+      const g = b.levels[0];
+      box(g, 0, 0, 12, 8);
+      addWall(g, { x: 4, y: 0 }, { x: 4, y: 8 }, { thickness: 0.12, height: g.height });
+      addWall(g, { x: 8, y: 0 }, { x: 8, y: 8 }, { thickness: 0.12, height: g.height });
+      addWall(g, { x: 4, y: 5 }, { x: 8, y: 5 }, { thickness: 0.12, height: g.height });
+      g.roof = { kind: 'gable', pitch: 35, overhang: 0.3 };
+      // The front room in the middle, with rooms either side of it and behind.
+      const room = moveToOwnFloor(b, g, { x0: 3.8, y0: -0.4, x1: 8.2, y1: 5.2 }, 'Sunk room')!;
+      expect(Object.values(g.walls).filter((w) => w.party)).toHaveLength(3);
+      expect(detectRooms(g)).toHaveLength(3);
+      room.levelMoves = mode;
+      setFloorLevel(b, room, -1.5);
+      expect(levelAbove(b, room.id)).toBeUndefined();
+      expect(levelRoofs(b, room)).toHaveLength(1);
+      expect(levelRoofs(b, g).length).toBeGreaterThan(0);
+      expect(room.height).toBeCloseTo(mode === 'all' ? 2.9 : 4.4);
+    }
+  });
+});
