@@ -1,7 +1,7 @@
 // Properties panel for the current selection. Every change goes through the model's
 // clean-up (normalize), so e.g. thickening a wall re-mitres its corners and re-fits its openings.
 
-import { PLINTH, addLevelBelow, addLevelOnTop, ceilingHeight, deleteLevel, fitStoreys, getLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
+import { PLINTH, addLevelBelow, addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelMoves, setFloorLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
 import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, parapetHeight, roofAreaRings, setAreaRoof } from '../model/roof';
 import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
@@ -92,7 +92,15 @@ export class Panel {
       const w = plan.walls[sel.id];
       if (!w) return;
       const fp = computeFootprints(plan).get(w.id);
-      this.title('Wall');
+      this.title(w.party ? 'Party wall' : 'Wall');
+      if (w.party) {
+        const owner = this.store.building.levels.find((l) => l.id === w.party);
+        this.note(
+          owner?.walls[w.id]
+            ? `Shared with ${owner.name}: it is built (with its doors and windows) and costed on that floor. Here it only closes this floor's rooms, and fills the step under it if that floor is higher. Change the wall on ${owner.name}.`
+            : 'Shared with a floor that no longer has it, so it is built here as an ordinary wall.',
+        );
+      }
       this.number('Thickness', w.thickness, 0.01, 0.05, 1, (v) => {
         w.thickness = v;
         this.done();
@@ -350,11 +358,25 @@ export class Panel {
     }
     const z = levelElevation(b, id);
     if (!isGround) {
+      const moves = levelMoves(b, level);
       this.number('Floor level', z, 0.05, -20, 100, (v) => {
-        level.base = v;
-        fitStoreys(b);
+        setFloorLevel(b, level, v);
         this.done();
-      }, 'm', 'Height of this floor above the ground: e.g. 0.6 for a house on a plinth, -1.5 for one half below ground. Floors on top of it follow; where one doesn\'t (it stands on another part too), the walls stretch or shrink to meet it.');
+      }, 'm', moves === 'floor'
+        ? 'Height of this floor above the ground. Only the floor moves: its walls stretch or shrink, and its top (ceiling, roof, the floor above) stays where it is.'
+        : 'Height of this floor above the ground: e.g. 0.6 for a house on a plinth, -1.5 for one half below ground. The whole floor moves, with its roof and the floors on top.');
+      this.select('Changing the level', moves, [
+        ['floor', 'Moves just the floor (walls stretch)'],
+        ['all', 'Moves it all (walls, roof, floors on top)'],
+      ], (v) => {
+        level.levelMoves = v as 'floor' | 'all';
+        this.done();
+      });
+      this.note(
+        moves === 'floor'
+          ? 'Part of a building: lowering it makes its walls taller, raising it makes them shorter, so nothing opens up above them.'
+          : 'A building on its own: everything goes up or down with its floor.',
+      );
     }
     this.note(
       `Floor level ${z >= 0 ? '+' : '−'}${Math.abs(z).toFixed(2)} m · ceiling height ${ceilingHeight(b, level).toFixed(2)} m` +

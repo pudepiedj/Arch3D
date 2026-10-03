@@ -421,6 +421,11 @@ export interface LevelOptions {
   /** The ground's height in this floor's terms (minus the floor's elevation), and the house's outline. */
   ground?: number;
   house?: Vec2[][];
+  /**
+   * Party walls of this floor to build after all: those whose owning floor stands higher, as
+   * just the step from this floor up to it (wall id -> height). The rest are left to their owner.
+   */
+  partySteps?: Map<string, number>;
   /** The walls and roofs of every floor, in this floor's heights: trees grow round them. */
   treeBlockers?: TreeBlocker[];
   /** Where stairs (on any floor) arrive at the top, in this floor's heights: railings leave a gap there. */
@@ -503,6 +508,7 @@ export function buildBuildingObject(
       ground: -levelElevation(b, level.id),
       house: Object.values(level.patios ?? {}).some((pt) => pt.height < -levelElevation(b, level.id) || pt.guard || pt.awning) ? outerFaces(level) : [],
       arrivals: arrivals.map((a) => ({ ...a, z: a.z - z })),
+      partySteps: partySteps(b, level, z),
       treeBlockers: Object.keys(level.trees ?? {}).length
         ? blockers.map((k) => ({ ...k, bottom: k.bottom - z, eaves: k.eaves - z, peak: k.peak - z, top: (p: Vec2) => k.top(p) - z }))
         : [],
@@ -512,6 +518,25 @@ export function buildBuildingObject(
     group.add(obj);
   });
   return group;
+}
+
+/**
+ * The party walls of a floor that it must build itself: those whose owner is higher (just the
+ * step up to it), and any whose owner no longer has the wall (all of it, as an ordinary wall).
+ */
+function partySteps(b: Building, level: Level, z: number): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const w of Object.values(level.walls)) {
+    if (!w.party) continue;
+    const owner = b.levels.find((l) => l.id === w.party);
+    if (!owner?.walls[w.id]) {
+      out.set(w.id, w.height);
+      continue;
+    }
+    const step = levelElevation(b, owner.id) - z;
+    if (step > 0.01) out.set(w.id, Math.min(step, w.height));
+  }
+  return out;
 }
 
 /** The walls of the other floors that stand at the same heights as a floor's stairs. */
@@ -552,9 +577,16 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   };
 
   for (const w of Object.values(plan.walls)) {
-    const fp = fps.get(w.id);
+    let fp = fps.get(w.id);
     if (!fp) continue;
-    const ops = openingsOf(plan, w.id);
+    // A party wall is built with the floor that owns it; here only the step under it, if
+    // that floor stands higher than this one (nothing at all if not).
+    if (w.party) {
+      const step = opts.partySteps?.get(w.id);
+      if (!step) continue;
+      fp = { ...fp, height: step };
+    }
+    const ops = w.party ? [] : openingsOf(plan, w.id);
     const where = sidesOf.get(w.id) ?? { left: 'outside', right: 'outside' };
     const left = w.faces?.left ?? finishes[where.left];
     const right = w.faces?.right ?? finishes[where.right];

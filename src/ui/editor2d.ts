@@ -16,9 +16,9 @@ import {
   vec,
 } from '../model/geom';
 import { type Clip, copyArea, describeClip, pasteClip } from '../model/copyarea';
-import { moveToOwnFloor } from '../model/separate';
+import { moveToOwnFloor, wallsToMove } from '../model/separate';
 import { FLOOR_FINISHES, WALL_FINISHES, clearFloorFinish, faceSides, materialsOf, paintRoomWalls, setFloorFinish } from '../model/materials';
-import { addRoomOnTop, getLevel, levelBelow } from '../model/building';
+import { addRoomOnTop, getLevel, levelBelow, levelElevation } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
 import { addPatio, patioShapes } from '../model/patios';
 import { addTree, crownCentre, speciesOf, treeAt, trunkRadius } from '../model/trees';
@@ -2081,6 +2081,51 @@ export class Editor2D {
   }
 
   /**
+   * The other floors at about this floor's height (within half a storey either way), with
+   * walls: their walls dashed and faint, and each labelled with its name and how much higher
+   * or lower it is. A split level's parts, and the remnant of the floor a part came from, can
+   * then be read together.
+   */
+  private drawGhostFloors(C: Record<string, string>) {
+    const b = this.store.building;
+    const here = this.store.activeId;
+    const z = levelElevation(b, here);
+    const ctx = this.ctx;
+    for (const l of b.levels) {
+      if (l.id === here || !Object.keys(l.walls).length) continue;
+      const dz = levelElevation(b, l.id) - z;
+      if (Math.abs(dz) > 1.45) continue;
+      const fps = [...computeFootprints(l).values()];
+      ctx.save();
+      ctx.setLineDash([6, 4]);
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = hexAlpha(C.wall, 0.55);
+      ctx.fillStyle = hexAlpha(C.wall, 0.12);
+      for (const fp of fps) {
+        this.path(fp.polygon);
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      // The label, at the middle of its walls.
+      const pts = fps.flatMap((f) => f.polygon);
+      const xs = pts.map((p) => p.x);
+      const ys = pts.map((p) => p.y);
+      const m = this.toScreen({ x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 });
+      const text = `${l.name} (${dz === 0 ? 'same level' : `${dz > 0 ? '+' : '−'}${Math.abs(dz).toFixed(2)} m`})`;
+      ctx.font = 'italic 600 12px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.strokeText(text, m.x, m.y);
+      ctx.fillStyle = hexAlpha(C.wall, 0.75);
+      ctx.fillText(text, m.x, m.y);
+      ctx.restore();
+    }
+  }
+
+  /**
    * Choose an area to print: the next box dragged on the plan (whatever the tool) is it.
    * `done` gets the box, or null if Esc was pressed.
    */
@@ -2741,12 +2786,29 @@ export class Editor2D {
       }
     }
 
-    // Walls.
+    // The other floors standing at about this height (the rest of a house a part of which
+    // has its own floor, or a house beside it), as dashed ghosts, named with their level.
+    if (!this.printing) this.drawGhostFloors(C);
+
+    // Walls. While a box is being dragged for Move to its own floor, the walls it would take
+    // are shown in the accent colour.
+    const moving =
+      this.areaPick && this.areaPurpose === 'move' && this.pickDraft ? new Set(wallsToMove(this.plan as Level, this.pickDraft)) : null;
     for (const fp of this.fps.values()) {
       this.path(fp.polygon);
       const sel = this.selection?.kind === 'wall' && this.selection.id === fp.wallId;
-      ctx.fillStyle = sel ? C.accent : C.wall;
+      // A party wall (built with the part of the house on the other side): pale and dashed.
+      const party = !!this.plan.walls[fp.wallId]?.party && !sel;
+      ctx.fillStyle = sel || moving?.has(fp.wallId) ? C.accent : party ? hexAlpha(C.wall, 0.3) : C.wall;
       ctx.fill();
+      if (party && !this.printing) {
+        ctx.save();
+        ctx.setLineDash([5, 3]);
+        ctx.strokeStyle = C.wall;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+      }
     }
 
     // With the Paint tool, each wall face shows its finish as a stripe along it.
@@ -2879,7 +2941,7 @@ export class Editor2D {
     this.drawToolPreview(C);
     if (this.tool === 'stretch') this.drawStretch(C);
     const picking = this.areaPick ? (this.pickDraft ?? (this.areaPurpose === 'print' ? this.printArea : null)) : null;
-    if (picking) this.drawPrintArea(C, picking, this.areaPurpose === 'copy' ? 'Copy' : this.areaPurpose === 'move' ? 'Move to its own floor' : this.areaPurpose === 'room' ? 'Room on top' : 'Print area');
+    if (picking) this.drawPrintArea(C, picking, this.areaPurpose === 'copy' ? 'Copy' : this.areaPurpose === 'move' ? `Move to its own floor (${wallsToMove(this.plan as Level, picking).length} walls, in colour):` : this.areaPurpose === 'room' ? 'Room on top' : 'Print area');
     else if (this.printArea && this.showPrintArea) this.drawPrintArea(C, this.printArea, 'Print area');
 
     for (const g of this.lastGuides) this.guide(g.from, g.to, C.accent);

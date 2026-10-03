@@ -505,6 +505,8 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
       const mid = { x: (fp.a.x + fp.b.x) / 2, y: (fp.a.y + fp.b.y) / 2 };
       if (!inside(mid)) continue;
       const wall = level.walls[fp.wallId];
+      // A party wall is costed with the floor that owns it.
+      if (wall.party && b.levels.some((l) => l.id === wall.party && l.walls[wall.id])) continue;
       const holes = Object.values(level.openings)
         .filter((o: Opening) => o.wallId === fp.wallId)
         .reduce((s, o) => s + o.width * o.height, 0);

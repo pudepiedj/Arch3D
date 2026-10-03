@@ -18,6 +18,12 @@ export interface Wall {
   height: number;
   /** Finishes painted on its faces (left of a->b, and right); unset follows the drawing's defaults. */
   faces?: { left?: WallFinish; right?: WallFinish };
+  /**
+   * A party wall: the id of the floor that owns this wall (a part of the house moved to a
+   * floor of its own, on the other side of it). Here it only closes this floor's rooms; it is
+   * built and costed with that floor, except for any step below it, if that floor is higher.
+   */
+  party?: string;
 }
 
 /** How a wall face looks: plaster, render, paint, stone or brick. */
@@ -294,6 +300,13 @@ export interface Level extends Plan {
    * in the list (the garden's) is always at 0.
    */
   base?: number;
+  /**
+   * What changing the floor level moves: 'floor' just the floor (the walls stretch or shrink
+   * and the top stays where it is: a part of a house set lower or higher), 'all' the whole
+   * floor, walls, roof and floors on top (a house on a plinth). Unset: 'floor' for a part of a
+   * building (another floor at about its height beside or round it), else 'all'.
+   */
+  levelMoves?: 'floor' | 'all';
   /** Thickness of this floor's structure (the slab above the storey below). */
   slab: number;
   /** Stairs going up from this level. */

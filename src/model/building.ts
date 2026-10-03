@@ -61,6 +61,43 @@ function stackedOn(b: Building, upper: Level, lower: Level): boolean {
 }
 
 /**
+ * Is this floor part of a building that goes on beside it (the rest of a house a room of
+ * which has its own floor)? There is another floor with walls at about its height (within
+ * half a storey) whose walls meet or overlap its own.
+ */
+export function isPartOfBuilding(b: Building, level: Level): boolean {
+  const own = wallExtent(level);
+  if (!own) return false;
+  const z = levelElevation(b, level.id);
+  return b.levels.some((l) => {
+    if (l === level) return false;
+    const e = wallExtent(l);
+    if (!e || Math.abs(levelElevation(b, l.id) - z) > 1.45) return false;
+    const gap = 0.3;
+    return !(e.x0 > own.x1 + gap || own.x0 > e.x1 + gap || e.y0 > own.y1 + gap || own.y0 > e.y1 + gap);
+  });
+}
+
+/** What changing this floor's level moves (see `Level.levelMoves`). */
+export function levelMoves(b: Building, level: Level): 'floor' | 'all' {
+  return level.levelMoves ?? (isPartOfBuilding(b, level) ? 'floor' : 'all');
+}
+
+/**
+ * Set a floor's level. Moving just the floor, its walls (those running its full height)
+ * stretch or shrink so the top stays where it was; moving it all, everything goes with it.
+ * Then every floor's walls are fitted to the floor above again.
+ */
+export function setFloorLevel(b: Building, level: Level, z: number) {
+  const before = levelElevation(b, level.id);
+  const mode = levelMoves(b, level);
+  level.base = z;
+  const drop = before - levelElevation(b, level.id);
+  if (mode === 'floor' && Math.abs(drop) > 1e-6 && level.height + drop >= 1) setLevelHeight(level, level.height + drop);
+  fitStoreys(b);
+}
+
+/**
  * After a floor's level has changed, make each floor's walls reach the floor above it again
  * (and stop at it): the storey height, and every wall that ran the full storey, become the
  * distance up to the next floor, where that floor doesn't simply sit on top of this one.
