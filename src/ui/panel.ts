@@ -2,7 +2,7 @@
 // clean-up (normalize), so e.g. thickening a wall re-mitres its corners and re-fits its openings.
 
 import { PLINTH, addLevelBelow, addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelMoves, setFloorLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
-import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, parapetHeight, roofAreaRings, setAreaRoof } from '../model/roof';
+import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, levelRoofs, parapetHeight, roofAreaRings, setAreaRoof } from '../model/roof';
 import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
 import { BALCONY_SLAB, PATIO_DEFAULTS, patioArea, setPatioSurface } from '../model/patios';
@@ -395,6 +395,23 @@ export class Panel {
       this.done();
     }, true);
     this.note('Applies wherever this floor has nothing built above it. Use the Roof tool to set particular areas or edges differently, or to add roof sections.');
+    // Say plainly whether this floor has a roof of its own, and if not, why not.
+    {
+      const roofs = levelRoofs(b, level);
+      const over = levelAbove(b, level.id);
+      const built = roofs.filter((r) => r.geometry).length;
+      this.note(
+        built
+          ? `This floor has ${built === 1 ? 'a roof' : `${built} roofs`} of its own. (With Cutaway on, the roof of the floor you are on is lifted off in 3D to show the rooms: turn Cutaway off to see it.)`
+          : roofs.length
+          ? 'Its roof could not be shaped over this outline: try another kind, or a flat roof.'
+          : over
+          ? `No roof of its own: ${over.name} stands on top of it (at ${levelElevation(b, over.id) >= 0 ? '+' : '−'}${Math.abs(levelElevation(b, over.id)).toFixed(2)} m) and covers it.`
+          : roof.kind === 'none'
+          ? 'No roof: the default roof is set to none.'
+          : 'No roof: this floor has no closed outline of walls yet.',
+      );
+    }
     this.buttons([
       ['Add floor above', () => this.addFloor(true)],
       ['Add empty floor', () => this.addFloor(false)],

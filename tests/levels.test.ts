@@ -275,3 +275,27 @@ describe('a part of a house set well down, among the rest of it', () => {
     }
   });
 });
+
+describe('a room moved from the middle of a house', () => {
+  it('leaves no room (or floor) behind where it was, and keeps its roof when set well down', async () => {
+    const { moveToOwnFloor } = await import('../src/model/separate');
+    const { setFloorLevel } = await import('../src/model/building');
+    const { levelRoofs } = await import('../src/model/roof');
+    const b = createBuilding();
+    const g = b.levels[0];
+    box(g, 0, 0, 12, 9);
+    addWall(g, { x: 4, y: 0 }, { x: 4, y: 9 }, { thickness: 0.12, height: g.height });
+    addWall(g, { x: 8, y: 0 }, { x: 8, y: 9 }, { thickness: 0.12, height: g.height });
+    addWall(g, { x: 4, y: 3 }, { x: 8, y: 3 }, { thickness: 0.12, height: g.height });
+    addWall(g, { x: 4, y: 6 }, { x: 8, y: 6 }, { thickness: 0.12, height: g.height });
+    // The middle room, with rooms all round it: all four of its walls are shared.
+    const room = moveToOwnFloor(b, g, { x0: 3.8, y0: 2.8, x1: 8.2, y1: 6.2 }, 'Middle')!;
+    expect(Object.values(g.walls).filter((w) => w.party)).toHaveLength(4);
+    expect(detectRooms(g)).toHaveLength(4);
+    room.levelMoves = 'all';
+    setFloorLevel(b, room, -1.5);
+    expect(levelAbove(b, room.id)).toBeUndefined();
+    expect(room.height).toBeCloseTo(2.9);
+    expect(levelRoofs(b, room)).toHaveLength(1);
+  });
+});
