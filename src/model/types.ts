@@ -148,6 +148,11 @@ export interface Patio {
    * 'off' overrides the automatic choice (none along a wall, railing on open edges).
    */
   railSides?: ('auto' | 'on' | 'off')[];
+  /**
+   * A sunken area's edges away from the house: retaining walls (the default), or grass banks
+   * sloping up from it to the ground round it.
+   */
+  edge?: 'wall' | 'bank';
   /** A pool's slatted cover, on a roller at one end (the end the courses start from). */
   cover?: 'rolled' | 'covered';
   /** The cover's roller at the other short end. */

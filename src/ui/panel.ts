@@ -15,6 +15,7 @@ import { stretchSummary } from '../model/stretch';
 import { DEFAULT_INVERT, DEFAULT_TANK, FITTING_NAMES, deleteDrainNode, pipeFall, pipeLength, tankVolume } from '../model/drains';
 import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { moveToOwnFloor, putBack, putBackTarget } from '../model/separate';
+import { bankWidth } from '../model/patios';
 import { placedStair, reachesFloorAbove, stairBase, stairRise } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { FLOOR_FINISHES, ROOF_COVERINGS, WALL_FINISHES, faceSides, materialsOf } from '../model/materials';
@@ -1063,6 +1064,16 @@ export class Panel {
         pt.height = v;
         this.done();
       }, 'm', 'Height of the top above this floor (the ground, for the ground floor): higher than a step for a plinth or terrace (stone sides), below 0 for a sunken area, dug out of the ground with retaining walls round it');
+      if (pt.height < 0) {
+        this.select('Edges', pt.edge ?? 'wall', [
+          ['wall', 'Retaining walls'],
+          ['bank', 'Grass banks up to the ground'],
+        ], (v) => {
+          pt.edge = v === 'bank' ? 'bank' : undefined;
+          this.done();
+        });
+        if (pt.edge === 'bank') this.note(`Grass banks slope up from its edges to the ground round it, ${bankWidth(-pt.height).toFixed(1)} m wide (1 in 3); along the house, the foundation shows instead.`);
+      }
     }
     this.select('Railing', pt.guard ?? 'none', [
       ['none', 'None'],

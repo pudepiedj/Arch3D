@@ -6,7 +6,7 @@
 import { type Shape, subtract } from './clip';
 import { type Vec2, dist, pointInPolygon, polygonArea, projectOnSegment } from './geom';
 import { computeFootprints } from './joints';
-import { outerFaces } from './roof';
+import { outerFaces, outsetLoop } from './roof';
 import type { Level, Patio, PatioSurface } from './types';
 
 export const PATIO_DEFAULTS: Record<PatioSurface, { height: number; module: number }> = {
@@ -57,8 +57,43 @@ export function setPatioSurface(patio: Patio, surface: PatioSurface) {
   if ((surface === 'balcony' || surface === 'landing') && !patio.guard) patio.guard = 'iron';
 }
 
+/** How wide a grass bank down to a sunken area is: a 1 in 3 slope, at least half a metre. */
+export function bankWidth(depth: number): number {
+  return Math.max(0.5, depth * 3);
+}
+
+/** Is this patio a sunken area with banks (on a floor at the ground, `ground` its height there)? */
+export function banked(pt: Patio, ground = 0): boolean {
+  return pt.edge === 'bank' && pt.surface !== 'pool' && pt.height < ground - 0.005;
+}
+
+/** The outline of a banked sunken area with its banks: its drawn outline grown by their width. */
+export function bankOutline(pt: Patio, ground = 0): Vec2[] {
+  const w = bankWidth(ground - pt.height);
+  const ccw = polygonArea(pt.points) < 0 ? [...pt.points].reverse() : pt.points;
+  return outsetLoop(ccw, ccw.map(() => w));
+}
+
+/**
+ * Does the side p-q of a sunken area open straight onto another at about the same level (a
+ * sunken patio meeting sunken gravel)? Then it needs neither a retaining wall nor a bank.
+ * `others` are the floor's patios; the side's outward direction is found from `inside`, a
+ * point of the area itself.
+ */
+export function opensOnto(others: Patio[], self: Patio, p: Vec2, q: Vec2, outward: Vec2): boolean {
+  const len = Math.hypot(outward.x, outward.y) || 1;
+  const probe = { x: (p.x + q.x) / 2 + (outward.x / len) * 0.1, y: (p.y + q.y) / 2 + (outward.y / len) * 0.1 };
+  return others.some(
+    (o) => o !== self && o.surface !== 'pool' && o.surface !== 'lawn' && o.points.length >= 3 && Math.abs(o.height - self.height) < 0.05 && pointInPolygon(probe, o.points),
+  );
+}
+
 /** The patio's actual extent: its outline minus the house (outer ring first, then holes). */
-export function patioShapes(level: Level, patio: Patio): Shape[] {
+/**
+ * `banks`: the outlines of sunken areas' banks on this floor, exactly (from `bankRings`), for
+ * a lawn to stop at; without them, a lawn stops at an outline near enough for the plan.
+ */
+export function patioShapes(level: Level, patio: Patio, banks?: Vec2[][]): Shape[] {
   if (patio.points.length < 3) return [];
   if (patio.height >= CUT_BELOW) return subtract(patio.points, []).filter((s) => s[0].length >= 3);
   // Drawn inside the house (rubber over a garage floor, say), it is a floor covering and only
@@ -69,8 +104,12 @@ export function patioShapes(level: Level, patio: Patio): Shape[] {
   // A lawn stops at the patios, paths and beds laid in it.
   if (patio.surface === 'lawn') {
     for (const other of Object.values(level.patios ?? {})) {
-      if (other.id !== patio.id && other.surface !== 'lawn' && other.height < CUT_BELOW && other.points.length >= 3) cut.push([other.points]);
+      if (other.id !== patio.id && other.surface !== 'lawn' && other.height < CUT_BELOW && other.points.length >= 3) {
+        // A sunken area with banks takes its banks out of the lawn too.
+        cut.push([banked(other) && !banks ? bankOutline(other) : other.points]);
+      }
     }
+    for (const ring of banks ?? []) cut.push([ring]);
   }
   return subtract(patio.points, cut).filter((s) => s[0].length >= 3);
 }
