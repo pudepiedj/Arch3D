@@ -24,6 +24,12 @@ export interface Wall {
    * built and costed with that floor, except for any step below it, if that floor is higher.
    */
   party?: string;
+  /**
+   * An open side, not a wall: drawn across a gap (an archway between a part of the house moved
+   * to a floor of its own and the rest) so the rooms on both sides close and the roof has an
+   * outline. Nothing is built there and you walk straight through.
+   */
+  virtual?: boolean;
 }
 
 /** How a wall face looks: plaster, render, paint, stone or brick. */

@@ -555,6 +555,8 @@ function nearWalls(b: Building, level: Level): Footprint[] {
 export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions = { ceiling: null }): THREE.Group {
   const group = new THREE.Group();
   const fps = computeFootprints(plan);
+  // The walls actually built (not open sides drawn only to close a room).
+  const solidFps = [...fps.values()].filter((f) => !plan.walls[f.wallId]?.virtual);
   const finishes = opts.materials ?? DEFAULT_MATERIALS;
   const faces = new MeshSet<WallFinish>();
   const tops = new Mesher();
@@ -578,7 +580,7 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
 
   for (const w of Object.values(plan.walls)) {
     let fp = fps.get(w.id);
-    if (!fp) continue;
+    if (!fp || w.virtual) continue;
     // A party wall is built with the floor that owns it; here only the step under it, if
     // that floor stands higher than this one (nothing at all if not).
     if (w.party) {
@@ -673,7 +675,7 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
         // Round the open edges only: none along the house (a balcony against its wall).
         // ...nor along a wall of this floor (a landing indoors, between rooms) or of another
         // floor at these heights, even drawn a little short of it.
-        const house = [...(opts.house ?? []), ...[...fps.values(), ...(opts.nearWalls ?? [])].map((f) => f.polygon)];
+        const house = [...(opts.house ?? []), ...[...solidFps, ...(opts.nearWalls ?? [])].map((f) => f.polygon)];
         // A side set by hand has the railing or not, whatever is beside it.
         const along = (a: Vec2, b: Vec2) => {
           const set = pool ? undefined : railSideOf(patio, a, b);
@@ -750,12 +752,12 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
       }
     }
     if (forced.length) group.add(buildRails(forced, [], mats.door, mats.frame, style, mats.glass));
-    if (lines.length) group.add(buildRails(lines, [...fps.values(), ...(opts.nearWalls ?? [])], mats.door, mats.frame, style, mats.glass));
+    if (lines.length) group.add(buildRails(lines, [...solidFps, ...(opts.nearWalls ?? [])], mats.door, mats.frame, style, mats.glass));
   }
   // Awnings, fixed to the wall along the patio's side against the house.
   for (const { patio, shapes } of opts.patios ?? []) {
     if (!patio.awning || !shapes.length) continue;
-    const walls = [...(opts.house ?? []), ...[...fps.values(), ...(opts.nearWalls ?? [])].map((f) => f.polygon)];
+    const walls = [...(opts.house ?? []), ...[...solidFps, ...(opts.nearWalls ?? [])].map((f) => f.polygon)];
     group.add(buildAwning(patio, shapes[0][0], Math.max(patio.height, opts.ground ?? 0), walls));
   }
   for (const t of opts.trees ?? []) {
@@ -850,7 +852,7 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
         },
       })),
       );
-      group.add(buildRails(lines, [...fps.values(), ...(opts.nearWalls ?? [])], mats.door, mats.frame, style, mats.glass));
+      group.add(buildRails(lines, [...solidFps, ...(opts.nearWalls ?? [])], mats.door, mats.frame, style, mats.glass));
     }
   }
   if (opts.ceiling !== null) {

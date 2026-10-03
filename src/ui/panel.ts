@@ -1,7 +1,7 @@
 // Properties panel for the current selection. Every change goes through the model's
 // clean-up (normalize), so e.g. thickening a wall re-mitres its corners and re-fits its openings.
 
-import { PLINTH, addLevelBelow, addLevelOnTop, ceilingHeight, deleteLevel, getLevel, levelMoves, setFloorLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
+import { PLINTH, addLevelBelow, addLevelOnTop, ceilingHeight, deleteLevel, getLevel, isPartOfBuilding, levelMoves, setFloorLevel, levelAbove, levelElevation, setLevelHeight } from '../model/building';
 import { DEFAULT_ROOF, clearAreaRoof, defaultRoof, levelRoofs, parapetHeight, roofAreaRings, setAreaRoof } from '../model/roof';
 import { pointInPolygon } from '../model/geom';
 import { addPillar, pillarHeight, pillarsForSection } from '../model/pillars';
@@ -14,7 +14,7 @@ import { GRAND_MODELS, TANK_STAND, catalogueItem, tankLitres } from '../model/fu
 import { stretchSummary } from '../model/stretch';
 import { DEFAULT_INVERT, DEFAULT_TANK, FITTING_NAMES, deleteDrainNode, pipeFall, pipeLength, tankVolume } from '../model/drains';
 import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
-import { moveToOwnFloor } from '../model/separate';
+import { moveToOwnFloor, putBack, putBackTarget } from '../model/separate';
 import { placedStair, reachesFloorAbove, stairBase, stairRise } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { FLOOR_FINISHES, ROOF_COVERINGS, WALL_FINISHES, faceSides, materialsOf } from '../model/materials';
@@ -92,8 +92,11 @@ export class Panel {
       const w = plan.walls[sel.id];
       if (!w) return;
       const fp = computeFootprints(plan).get(w.id);
-      this.title(w.party ? 'Party wall' : 'Wall');
-      if (w.party) {
+      this.title(w.virtual ? 'Open side' : w.party ? 'Party wall' : 'Wall');
+      if (w.virtual) {
+        this.note('Not a wall: an open side across a gap (an archway to a part of the house on a floor of its own), drawn so the rooms on each side close and have a floor and a roof. Nothing is built here, and you can walk through it.');
+      }
+      if (w.party && !w.virtual) {
         const owner = this.store.building.levels.find((l) => l.id === w.party);
         this.note(
           owner?.walls[w.id]
@@ -429,6 +432,20 @@ export class Panel {
       }, true],
     ]);
     if (b.levels.length === 1) (this.el.querySelector('button.danger') as HTMLButtonElement).disabled = true;
+    // A part of the house moved to a floor of its own: it can go back where it came from.
+    const home = b.levels[0] !== level && isPartOfBuilding(b, level) ? putBackTarget(b, level) : undefined;
+    if (home) {
+      this.note(`Part of the house moved to a floor of its own. Put back returns its walls, doors, windows and everything on it to ${home.name}, as one floor again (to split it differently, or undo a split made long ago).`);
+      this.buttons([
+        [`Put back into ${home.name}`, () => {
+          if (!confirm(`Put ${level.name} back into ${home.name}, as one floor again? (You can undo this.)`)) return;
+          if (!putBack(b, level, home)) return;
+          this.editor.select(null);
+          this.store.commit();
+          this.store.setActive(home.id);
+        }],
+      ]);
+    }
   }
 
   private renderStair(id: string) {

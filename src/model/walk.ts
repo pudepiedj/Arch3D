@@ -222,6 +222,7 @@ export class WalkWorld {
 function buildColliders(plan: Plan): Collider[] {
   const out: Collider[] = [];
   for (const fp of computeFootprints(plan).values()) {
+    if (plan.walls[fp.wallId]?.virtual) continue;
     const u0 = Math.min(fp.uL0, fp.uR0);
     const u1 = Math.max(fp.uL1, fp.uR1);
     let cursor = u0;

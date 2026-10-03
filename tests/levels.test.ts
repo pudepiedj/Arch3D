@@ -299,3 +299,37 @@ describe('a room moved from the middle of a house', () => {
     expect(levelRoofs(b, room)).toHaveLength(1);
   });
 });
+
+describe('a part opening onto the rest through an archway', () => {
+  it('closes both floors across the arch, and can be put back', async () => {
+    const { moveToOwnFloor, putBack, putBackTarget } = await import('../src/model/separate');
+    const { levelRoofs } = await import('../src/model/roof');
+    const b = createBuilding();
+    const g = b.levels[0];
+    const wall = (p: [number, number], q: [number, number]) => addWall(g, { x: p[0], y: p[1] }, { x: q[0], y: q[1] }, { thickness: 0.3, height: g.height });
+    // A house, and an extension behind it opening into it through a 2 m archway (a gap in the wall).
+    wall([0, 0], [4, 0]);
+    wall([6, 0], [10, 0]);
+    wall([10, 0], [10, 6]);
+    wall([10, 6], [0, 6]);
+    wall([0, 6], [0, 0]);
+    wall([2, 0], [2, -4]);
+    wall([2, -4], [8, -4]);
+    wall([8, -4], [8, 0]);
+    expect(detectRooms(g)).toHaveLength(1);
+    const part = moveToOwnFloor(b, g, { x0: 1.8, y0: -4.3, x1: 8.2, y1: 0.2 }, 'Extension')!;
+    // Each side is a closed room, with an open side across the arch; the house keeps party
+    // copies of the wall either side of the arch.
+    expect(detectRooms(part).map((r) => Math.round(r.area))).toEqual([24]);
+    expect(detectRooms(g).map((r) => Math.round(r.area))).toEqual([60]);
+    expect(Object.values(part.walls).filter((w) => w.virtual)).toHaveLength(1);
+    expect(Object.values(g.walls).filter((w) => w.virtual && w.party === part.id)).toHaveLength(1);
+    expect(levelRoofs(b, part).filter((r) => r.geometry)).toHaveLength(1);
+    // And back again: one room through the arch, no party walls or open sides.
+    expect(putBackTarget(b, part)).toBe(g);
+    expect(putBack(b, part, g)).toBe(true);
+    expect(b.levels).toHaveLength(1);
+    expect(Object.values(g.walls).some((w) => w.party || w.virtual)).toBe(false);
+    expect(detectRooms(g).map((r) => Math.round(r.area))).toEqual([84]);
+  });
+});

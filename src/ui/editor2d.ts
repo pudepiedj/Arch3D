@@ -2795,8 +2795,18 @@ export class Editor2D {
     const moving =
       this.areaPick && this.areaPurpose === 'move' && this.pickDraft ? new Set(wallsToMove(this.plan as Level, this.pickDraft)) : null;
     for (const fp of this.fps.values()) {
-      this.path(fp.polygon);
       const sel = this.selection?.kind === 'wall' && this.selection.id === fp.wallId;
+      // An open side (across an archway to a part of the house on its own floor): a dotted line.
+      if (this.plan.walls[fp.wallId]?.virtual) {
+        ctx.save();
+        ctx.setLineDash([3, 4]);
+        ctx.strokeStyle = sel ? C.accent : hexAlpha(C.wall, 0.6);
+        ctx.lineWidth = sel ? 3 : 1.5;
+        this.line(fp.a, fp.b);
+        ctx.restore();
+        continue;
+      }
+      this.path(fp.polygon);
       // A party wall (built with the part of the house on the other side): pale and dashed.
       const party = !!this.plan.walls[fp.wallId]?.party && !sel;
       ctx.fillStyle = sel || moving?.has(fp.wallId) ? C.accent : party ? hexAlpha(C.wall, 0.3) : C.wall;
