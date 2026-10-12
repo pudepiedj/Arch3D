@@ -12,30 +12,51 @@ Draw a floor plan in 2D and walk through it in 3D, in the browser (desktop or iP
 Built with TypeScript, [three.js](https://threejs.org) and Vite.
 
 ## Installation
-To download and install the latest version from `GitHub` first run
+To download and install the latest version from `GitHub` first open **terminal** (press Cmd+Space simultaneously then type "Term" into the box) and run
 
 > https://github.com/pudepiedj/Arch3D.git
 
-That will create a folder `Arch3D`
+That will create a folder `Arch3D` and the latest version of the **User Guide** will be there.
 
 ```sh
 cd Arch3D
 npm install
 npm run dev      # http://localhost:5173
+```
+That will show something like this but the IP addresses on your network will almost certainly be different:
+```sh
+Arch3D % npm run dev        
+
+> arch3d@0.1.0 dev
+> vite
+
+
+  VITE v8.3.1  ready in 223 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.1.174:5173/  en0
+  ➜  Network: http://192.168.1.221:5173/  en1
+  ➜  press h + enter to show help
+
+```
+That is all there is to it! Now go to a browser, open a new tab and enter/paste `http://localhost:5173/` (on the same machine) or `http://192.168.1.174:5173/` on an iPad (changing the `174` to whatever nymber the **vite** display shows).
+For administrative purposes two other **npm** commands are provided, but they are not necessary for the installation and should usually not be used.
+
+```sh
 npm test         # model unit tests
 npm run build    # static site in dist/
 ```
 
-**On an iPad (or phone):** keep `npm run dev` running on your computer. As well as the Local address, it prints a **Network:** address such as `http://192.168.1.23:5173/`. With the iPad on the same Wi-Fi, type that address into Safari. Tip: Share → **Add to Home Screen** gives it an app icon.
+**On an iPad (or phone):** keep `npm run dev` running on your main computer (desktop or laptop). As well as the Local address, when you type `npm run dev` it will show an address on the network (as above): it prints a **Network:** address such as `http://192.168.1.23:5173/`. With the iPad on the same Wi-Fi, type that address into a new tab in Safari, Chrome or whichever browser you use. **Tip**: Share → **Add to Home Screen** gives it an app icon.
 - Each browser keeps its own working copy. To move a drawing between computer and iPad, use **File → Save to computer…** on one and **File → Open from computer…** on the other.
-  - Saves go into the `drawings` folder of this project on the computer running `npm run dev`. That folder is not committed to git.
-  - Every save is a new, dated file: nothing is ever overwritten. The list shows which device each one came from.
+  - **Saves** go into the `drawings` folder of this project ***on the computer running `npm run dev`*** (the main desktop or laptop. That folder is not committed to git.
+  - Every save is a new, dated file: **nothing is ever overwritten**. The list shows which device each one came from.
   - Opening a drawing replaces what is on screen, but **Undo** brings it back.
   - Anyone on your home Wi-Fi who opens the app could also see the saved drawings.
 - **Automatic backup:** while the computer is reachable, each device's drawing is backed up to it a few seconds after every change (one file per device, `drawings/autosave-<device>.json`, listed in **Open from computer…** as *Automatic backup*). The light next to **File** shows *Backed up 14:32*, *Backing up…* or *Not connected*.
 - **If the computer stops answering** (`npm run dev` stopped, Wi-Fi dropped), a red banner says so at once. Your changes are then kept only in that browser: start `npm run dev` again and the app backs up straight away (the page reloads itself), or press **Download a copy**. **Save to computer…** checks first and says plainly **NOT SAVED** rather than seeming to work, and the browser asks before you close or reload a page whose changes the computer hasn't got.
 - `npm run dev` always uses port 5173. If something else has it, it stops with a message rather than moving to another port, because the browser keeps its working copy per address, and on a new port your work would seem to have vanished.
-- **Export/Import JSON** save and open a file on the device you are using, for keeping or sending a copy elsewhere. Chrome and Edge ask where to put it; Safari always uses `Downloads` (a web page can't choose the folder there). **Save to computer** is the one that goes into this project's `drawings` folder, and its message shows the full path.
+- **Export/Import JSON** save and open a file ***on the device you are using***, such as an iPad or iPhone, for keeping or sending a copy elsewhere. **Chrome** and **Edge** ask where to put it; **Safari** always uses `Downloads` (a web page can't choose the folder there). **Save to computer** is the one that goes into this project's `drawings` folder on the main computer, and its message shows the full path.
 - If the iPad can't connect, the computer's firewall may be asking whether to allow incoming connections to `node`. Allow it.
 
 **If a drawing won't open, or breaks the 3D view:** `npm run check-drawing` lists what is in every drawing in the `drawings` folder (newest first) and anything odd: numbers that aren't numbers, very long hedges or fences, things far from the house. `npm run check-drawing -- drawings/autosave-iPad.json` checks just one.
@@ -300,3 +321,89 @@ Choose the wall build, the roof covering, the foundation depth and underfloor he
 - Curved walls.
 - Snapping openings to exact positions from a room's inside corner on either side.
 - Drawing directly from specified dimensions.
+
+[INDEX{
+2D,
+3D,
+Arch3D,
+browser,
+build,
+bush,
+chimney,
+copy,
+cost,
+cutaway,
+date,
+deck,
+desktop,
+dimension,
+ditch,
+door,
+door!shown shut,
+door!shown open,
+drain,
+duplicate,
+elevation,
+floor,
+furniture,
+garage,
+garden,
+git,
+heating,
+heating!boiler,
+heating!radiator,
+hedge,
+install,
+iPad,
+iPhone,
+junction,
+laptop,
+level,
+location,
+main computer,
+materials,
+node,
+npm,
+opening,
+orbit,
+orientation,
+paint,
+paint!painting,
+parapet,
+patio,
+patio!gravel,
+patio!paved,
+pillar,
+plan,
+play the day,
+play the year,
+print,
+roof,
+roof!flat,
+roof!gable,
+roof!hipped,
+roof!rooflight,
+save,
+select,
+sewage,
+shadow,
+sill,
+slice,
+stairs,
+stairs!balustrade,
+stairs!handrail,
+stairs!spiral,
+stone,
+stretch,
+structure,
+sun,
+swimming-pool,
+toolbar,
+tree,
+underground,
+vite,
+walk,
+wall,
+window,
+wrought iron,
+}]
