@@ -2,7 +2,7 @@
 set -e
 
 REPO_URL="https://github.com/pudepiedj/Arch3D.git"
-INSTALL_DIR="$HOME/architect"          # where the repo will be cloned
+INSTALL_DIR="$HOME/Arch3D"             # where the repo will be cloned
 
 echo "=== 1. Homebrew ==="
 if ! command -v brew >/dev/null 2>&1; then

@@ -19,7 +19,7 @@ curl -fsSL https://raw.githubusercontent.com/pudepiedj/Arch3D/master/Arch3D_inst
 bash Arch3D_installer.sh
 ```
 
-The installer installs **Homebrew** and **Node.js** if they are missing (it asks for your password for Homebrew), downloads Arch3D into a folder `architect` in your home folder (or brings it up to date if it is already there), installs what it needs, starts it and opens it in the browser. Run it again any time to update to the latest version. Closing the Terminal window (or Ctrl-C) stops the app.
+The installer installs **Homebrew** and **Node.js** if they are missing (it asks for your password for Homebrew), downloads Arch3D into a folder `Arch3D` in your home folder (or brings it up to date if it is already there), installs what it needs, starts it and opens it in the browser. Run it again any time to update to the latest version. Closing the Terminal window (or Ctrl-C) stops the app.
 
 **By hand:** to download the latest version from `GitHub`, open **Terminal** and run
 
