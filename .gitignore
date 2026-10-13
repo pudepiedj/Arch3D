@@ -3,3 +3,4 @@ dist
 *.log
 drawings
 vite.config_original.ts
+.DS_Store

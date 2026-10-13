@@ -18,6 +18,8 @@ To download and install the latest version from `GitHub` first open **terminal**
 
 That will create a folder `Arch3D` and the latest version of the **User Guide** will be there.
 
+On an Apple device that has not been set up with **Homebrew** or **Node.js** both of which are needed for the installation process, first install **Homebrew** and **Node.js** following the instructions in the **Appendix**.
+
 ```sh
 cd Arch3D
 npm install
@@ -322,6 +324,80 @@ Choose the wall build, the roof covering, the foundation depth and underfloor he
 - Curved walls.
 - Snapping openings to exact positions from a room's inside corner on either side.
 - Drawing directly from specified dimensions.
+
++++
+
+## Appendix
+
+On a new MacBook, here's the situation and the sequence:
+
+### Why `npm install` alone won't work yet
+
+A brand-new Mac doesn't ship with Node.js/npm, and `npm run dev` (which launches the Vite dev server) needs Node.js installed — Vite is a JavaScript program that runs *on* Node. So you need to install Node first.
+
+### Recommended step-by-step sequence
+
+**1. Install Homebrew (the Mac package manager)**
+
+Open Terminal and run:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+It will ask for your password (sudo). At the end it prints two "Next steps" commands — run them, they add Homebrew to your PATH (on Apple Silicon they look like):
+
+```bash
+echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+eval "$(/opt/homebrew/bin/brew shellenv)"
+```
+
+Then close and reopen Terminal so PATH changes take effect. Verify:
+
+```bash
+brew --version
+```
+
+**2. Install Node.js (npm comes bundled with it)**
+
+```bash
+brew install node
+```
+
+Verify both:
+
+```bash
+node --version
+npm --version
+```
+
+(Alternative: install `nvm` instead and get Node through it — useful if you'll juggle multiple Node versions across projects. But `brew install node` is the simplest path for a single project.)
+
+**3. Clone the repo**
+
+```bash
+cd ~/Development   # or wherever you like to keep projects
+git clone <repo-url>
+cd <project-folder>
+```
+
+Note: macOS includes `git` out of the box; the first time you use it you may be prompted to install Apple's command-line developer tools — accept, it takes a minute. (You can also `brew install git` for a newer version, but not required.)
+
+**4. Install project dependencies and run the dev server**
+
+```bash
+npm install
+npm run dev
+```
+
+Vite will print a local URL, typically `http://localhost:5173` — open it in your browser tab. Done.
+
+### Summary answer to your question
+
+Yes — you do need `brew install npm` (actually `brew install node`, which includes npm), and yes, that requires Homebrew installed first. After that, `npm install` + `npm run dev` suffices.
+
+---
+One practical tip: if you ever hit a `command not found: brew` error after installing Homebrew, it almost always means the PATH "Next steps" from step 1 weren't run or the Terminal wasn't restarted.
 
 [INDEX{
 2D,
