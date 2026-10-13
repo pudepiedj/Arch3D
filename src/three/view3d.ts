@@ -208,7 +208,7 @@ export class View3D {
     this.sunTime = t;
     const b = this.building;
     const next = b ? seasonAt(t, siteOf(b).latitude) : this.season;
-    const leafChanged = Math.round(next.leaf * 10) !== Math.round(this.season.leaf * 10) || next.autumn !== this.season.autumn;
+    const leafChanged = Math.round(next.leaf * 10) !== Math.round(this.season.leaf * 10) || next.autumn !== this.season.autumn || next.fruit !== this.season.fruit;
     if (leafChanged) this.rebuild();
     else this.placeSun();
   }

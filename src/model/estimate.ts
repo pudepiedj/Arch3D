@@ -17,6 +17,7 @@ import { detectRooms } from './rooms';
 import { hedgeLength } from './hedges';
 import { isGate } from './gates';
 import { isPond, pondArea } from './pond';
+import { isVineyard, rowGap, vineCount } from './vineyard';
 import { fenceRuns, isTennis } from './tennis';
 import { pipeLength } from './drains';
 import type { Extent } from './print';
@@ -128,6 +129,9 @@ export const DEFAULT_PRICES: Record<string, number> = {
   'court-net': 650,
   // A pond: digging, underlay, liner, edging and marginal plants, per m² of water.
   pond: 120,
+  // A vineyard: each vine planted with its stake and guard; posts and wires per metre of row.
+  vine: 6,
+  'vine-trellis': 9,
   pipe: 12,
   chamber: 260,
   soakaway: 450,
@@ -670,6 +674,12 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
         else add({ id: `hedge:${h.id}`, price: 'hedge', group: 'Garden and drains', item: `${h.kind[0].toUpperCase()}${h.kind.slice(1)} hedge plants`, detail: `${L.toFixed(1)} m, 5 a metre in a double row`, qty: Math.ceil(L * 5), unit: 'no.' });
       }
       for (const f of Object.values(level.furniture ?? {})) {
+        if (isVineyard(f) && inside(f)) {
+          const n = vineCount(f);
+          add({ id: `vines:${f.id}`, price: 'vine', group: 'Garden and drains', item: `Vines (${f.finish === 'white' ? 'white' : 'red'} grapes), planted with stakes and guards`, detail: `${n.rows} rows of ${n.perRow}, ${rowGap(f)} m between rows`, qty: n.vines, unit: 'no.' });
+          add({ id: `trellis:${f.id}`, price: 'vine-trellis', group: 'Garden and drains', item: 'Vine trellis: posts, strainers and wires', detail: `${n.rows} rows, ${f.height.toFixed(1)} m high`, qty: n.rowLength, unit: 'm' });
+          continue;
+        }
         if (isPond(f) && inside(f)) {
           const area = pondArea(f);
           add({ id: `pond:${f.id}`, price: 'pond', group: 'Garden and drains', item: 'Pond: dig, underlay, liner, edging and planting', detail: `${area.toFixed(1)} m² of water, ${f.height.toFixed(1)} m deep at the deepest`, qty: area, unit: 'm²' });

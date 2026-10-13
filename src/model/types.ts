@@ -378,6 +378,9 @@ export interface Furniture {
   stool?: boolean;
   /** Mirrored: a gate hung on its right-hand post instead of its left. */
   flip?: boolean;
+  /** A vineyard: distance between rows, and between vines along a row (1 m if unset). */
+  rowGap?: number;
+  vineGap?: number;
 }
 
 export type DrainFitting = 'junction' | 'chamber' | 'gully' | 'downpipe' | 'soakaway' | 'sewer' | 'treatment' | 'outfall';

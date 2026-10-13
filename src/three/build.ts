@@ -444,6 +444,8 @@ export interface LevelOptions {
 export interface Season {
   leaf: number;
   autumn: boolean;
+  /** Fruit on vines: none, small and green, or ripe (shown as ripe when unset). */
+  fruit?: 'none' | 'green' | 'ripe';
 }
 
 /**
@@ -786,7 +788,7 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   }
   for (const { hedge, runs } of opts.hedges ?? []) group.add(buildHedge(hedge, runs, opts.season ?? { leaf: 1, autumn: false }));
   for (const f of opts.furniture ?? []) {
-    const obj = buildFurniture(f);
+    const obj = buildFurniture(f, opts.season ?? { leaf: 1, autumn: false });
     // Just above the floor, so a piece never fights with it.
     obj.position.set(f.x, f.base + 0.006, f.y);
     obj.rotation.y = -f.angle;
