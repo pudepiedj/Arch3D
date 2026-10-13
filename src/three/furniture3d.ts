@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { TANK_STAND, grandOutline } from '../model/furniture';
 import { gateLeaves, gatePost } from '../model/gates';
 import type { Vec2 } from '../model/geom';
+import { COURT, COURT_GATE, courtGate, courtLines, fencePosts, fenceRuns, netTop } from '../model/tennis';
 import type { Furniture } from '../model/types';
 
 // ---------------------------------------------------------------- materials
@@ -460,7 +461,78 @@ function rotaryDryer(k: Kit, f: Furniture, w: number, d: number, h: number) {
   }
 }
 
+/**
+ * A tennis court: the surface over the whole enclosure (tarmac, clay, or grass mown in
+ * stripes across the court), the white lines, the net sagging between its posts with its
+ * white band and centre strap, and a dark green chain-link fence on posts with the gate
+ * standing open.
+ */
+function tennisCourt(k: Kit, f: Furniture, w: number, d: number, h: number) {
+  const T = 0.02;
+  if (f.finish === 'grass') {
+    const n = Math.max(1, Math.round(d / 1.5));
+    for (let i = 0; i < n; i++) {
+      k.box(w, d / n, T, 0, -d / 2 + (d * (i + 0.5)) / n, 0, plain(i % 2 ? 0x5f9442 : 0x6ca34d, 0.95)).castShadow = false;
+    }
+  } else {
+    k.box(w, d, T, 0, 0, 0, plain(f.finish === 'clay' ? 0xb45a33 : 0x3d4144, 0.95)).castShadow = false;
+  }
+  const white = plain(0xf4f4f0, 0.7);
+  for (const l of courtLines()) k.box(l.x1 - l.x0, l.y1 - l.y0, 0.004, (l.x0 + l.x1) / 2, (l.y0 + l.y1) / 2, T, white).castShadow = false;
+
+  // The net: posts, the mesh hanging from a cord, the band along the top and the strap.
+  const post = plain(0x23382a, 0.5, 0.3);
+  const p = COURT.posts / 2;
+  for (const s of [-1, 1]) k.cyl(0.04, COURT.netPost + 0.03, s * p, 0, T, post);
+  const N = 24;
+  const pos: number[] = [];
+  for (let i = 0; i < N; i++) {
+    const x0 = -p + (2 * p * i) / N;
+    const x1 = -p + (2 * p * (i + 1)) / N;
+    const [z0, z1] = [netTop(x0), netTop(x1)];
+    pos.push(x0, T + 0.03, 0, x1, T + 0.03, 0, x1, z1, 0, x0, T + 0.03, 0, x1, z1, 0, x0, z0, 0);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.computeVertexNormals();
+  const net = mat('tennis-net', () => new THREE.MeshStandardMaterial({ color: 0x151617, roughness: 0.9, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }));
+  k.mesh(geo, net, 0, 0, 0).castShadow = false;
+  for (let i = 0; i < N; i++) {
+    const x0 = -p + (2 * p * i) / N;
+    const x1 = -p + (2 * p * (i + 1)) / N;
+    k.rod({ x: x0, y: 0, z: netTop(x0) - 0.02 }, { x: x1, y: 0, z: netTop(x1) - 0.02 }, 0.03, white);
+  }
+  k.box(0.05, 0.012, COURT.netCentre - 0.03, 0, 0, T + 0.03, white);
+
+  // The fence.
+  const runs = fenceRuns(f);
+  if (!runs.length) return;
+  const green = plain(0x2c4a33, 0.6, 0.2);
+  const mesh = mat('chain-link', () => new THREE.MeshStandardMaterial({ color: 0x1f3a26, roughness: 0.8, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false }));
+  const panel = (a: Vec2, b: Vec2, z0: number, z1: number) => {
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const m = k.mesh(new THREE.PlaneGeometry(len, z1 - z0), mesh, (a.x + b.x) / 2, (a.y + b.y) / 2, (z0 + z1) / 2);
+    m.rotation.y = -Math.atan2(b.y - a.y, b.x - a.x);
+    m.castShadow = false;
+  };
+  for (const [a, b] of runs) {
+    for (const q of fencePosts(a, b)) k.cyl(0.03, h, q.x, q.y, 0, green);
+    k.rod({ ...a, z: h - 0.02 }, { ...b, z: h - 0.02 }, 0.02, green);
+    k.rod({ ...a, z: 0.05 }, { ...b, z: 0.05 }, 0.012, green);
+    panel(a, b, 0.02, h - 0.02);
+  }
+  // The gate: a framed chain-link leaf, open outwards.
+  const g = courtGate(f);
+  const leafH = Math.min(h, 2.1);
+  const q = { x: g.hinge.x + COURT_GATE, y: g.hinge.y };
+  k.cyl(0.03, h, g.latch.x, g.latch.y, 0, green);
+  for (const z of [0.05, leafH]) k.rod({ ...g.hinge, z }, { ...q, z }, 0.018, green);
+  k.rod({ ...q, z: 0.05 }, { ...q, z: leafH }, 0.018, green);
+  panel(g.hinge, q, 0.05, leafH);
+}
+
 const BUILDERS: Record<string, Builder> = {
+  tennis: (k, f, w, d, h) => tennisCourt(k, f, w, d, h),
   oiltank: (k, f, w, d) => oilTank(k, f, w, d),
   rotary: (k, f, w, d, h) => rotaryDryer(k, f, w, d, h),
   gate5: (k, f, w, _d, h) => gate(k, f, w, h),

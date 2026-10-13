@@ -15,6 +15,7 @@ import { patioShapes } from './patios';
 import { solidRadius } from './trees';
 import { hedgeFootprints } from './hedges';
 import { isGate } from './gates';
+import { courtBarriers, isTennis } from './tennis';
 import { catalogueItem, footprint, standingHeight } from './furniture';
 import { detectRooms } from './rooms';
 import { placedStair } from './stairs';
@@ -79,6 +80,11 @@ export class WalkWorld {
         // An open gate lets you through.
         if (c?.flat || c?.walkUnder || (isGate(f.kind) && f.open)) continue;
         const base = elevation + standingHeight(level, f);
+        // A tennis court: you walk on it, in through the gate; its fence and net are in the way.
+        if (isTennis(f)) {
+          for (const { poly, top } of courtBarriers(f)) this.blocks.push({ poly, bottom: base, top: base + top });
+          continue;
+        }
         this.blocks.push({ poly: footprint(f), bottom: base, top: base + Math.max(f.height, STEP_UP + 0.05) });
       }
       this.levels.push({ id: level.id, elevation, colliders: buildColliders(level), posts });

@@ -105,7 +105,7 @@ for (const cat of CATEGORIES) {
     const name = document.createElement('strong');
     name.textContent = c.kind === 'grand' ? 'Grand piano (Blüthner Model 6)' : c.name;
     const size = document.createElement('span');
-    size.textContent = `${Math.round(c.width * 100)} × ${Math.round(c.depth * 100)} cm`;
+    size.textContent = c.width > 9 ? `${c.width} × ${c.depth} m` : `${Math.round(c.width * 100)} × ${Math.round(c.depth * 100)} cm`;
     b.append(name, size);
     b.addEventListener('click', () => {
       editor.furnitureKind = c.kind;
@@ -118,6 +118,11 @@ for (const cat of CATEGORIES) {
   $('#catalogueList').append(h, grid);
 }
 const openCatalogue = () => catalogue.showModal();
+$('#tennisTool').addEventListener('click', () => {
+  editor.furnitureKind = 'tennis';
+  editor.furnitureAngle = 0;
+  editor.setTool('furniture');
+});
 $('#furnitureBtn').addEventListener('click', openCatalogue);
 editor.onOpenCatalogue = openCatalogue;
 for (const b of $$('#drainKind button')) {

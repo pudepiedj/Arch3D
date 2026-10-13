@@ -27,6 +27,13 @@ export interface CatalogueItem {
   labels?: { width?: string; depth?: string; height?: string };
   /** Its height follows from its other sizes (not set on its own). */
   fixedHeight?: boolean;
+  /** Largest width or depth (6 m unless set), and largest height (3 m), in the panel. */
+  maxSize?: number;
+  maxHeight?: number;
+  /** Its height can be set to nothing (a tennis court with no fence). */
+  noHeight?: boolean;
+  /** What its finishes are called in the panel (Finish unless set). */
+  finishLabel?: string;
 }
 
 export const CATEGORIES = ['Music', 'Living', 'Heating', 'Dining', 'Office', 'Bedroom', 'Kitchen', 'Bathroom', 'Garage', 'Garden'];
@@ -99,6 +106,8 @@ export const CATALOGUE: CatalogueItem[] = [
   { kind: 'planter', name: 'Planter', category: 'Garden', width: 0.6, depth: 0.6, height: 1.1 },
   { kind: 'oiltank', name: 'Oil tank (horizontal)', category: 'Garden', width: 2.0, depth: 1.2, height: 1.5, finishes: ['green', 'black', 'steel'], labels: { width: 'Length', depth: 'Diameter' }, fixedHeight: true },
   { kind: 'rotary', name: 'Rotary clothes dryer', category: 'Garden', width: 3.0, depth: 3.0, height: 1.8, finishes: ['empty', 'washing'], openable: true, walkUnder: true, labels: { width: 'Across', depth: 'Across (other way)', height: 'Line height' } },
+  // A regulation court in its fenced enclosure; "height" is the fence's.
+  { kind: 'tennis', name: 'Tennis court', category: 'Garden', width: 18.29, depth: 36.58, height: 2.75, finishes: ['tarmac', 'clay', 'grass'], finishLabel: 'Surface', labels: { width: 'Enclosure width', depth: 'Enclosure length', height: 'Fence height' }, maxSize: 50, maxHeight: 4, noHeight: true },
   { kind: 'gate5', name: 'Five-bar gate', category: 'Garden', width: 3.0, depth: 0.15, height: 1.2, finishes: GATE_FINISHES, openable: true },
   { kind: 'pathgate', name: 'Path gate (picket)', category: 'Garden', width: 1.0, depth: 0.12, height: 1.0, finishes: GATE_FINISHES, openable: true },
   { kind: 'pathgatetall', name: 'Path gate (close-board, as the fence)', category: 'Garden', width: 1.0, depth: 0.12, height: 1.8, finishes: GATE_FINISHES, openable: true },
