@@ -4,7 +4,7 @@
 import { type Vec2, dist } from './geom';
 import type { Level, Tree, TreeKind } from './types';
 
-export type CrownShape = 'dome' | 'spreading' | 'oval' | 'narrow' | 'column' | 'multistem' | 'pine' | 'cone' | 'bush';
+export type CrownShape = 'dome' | 'spreading' | 'oval' | 'narrow' | 'column' | 'weeping' | 'multistem' | 'pine' | 'cone' | 'bush';
 
 export interface Species {
   name: string;
@@ -69,6 +69,11 @@ export const SPECIES: Record<TreeKind, Species> = {
     bark: 0x6f6a60, leaf: 0x6e9640, autumn: 0xd4b640, density: 1,
     note: 'Lombardy poplar: a tall, narrow column of upswept branches from near the ground, fast-growing; bright yellow in autumn.',
   },
+  willow: {
+    name: 'Weeping willow', height: 12, spread: 12, evergreen: false, shape: 'weeping', crownBase: 0.2, trunk: 0.03,
+    bark: 0x6b5d4b, leaf: 0x93b04c, autumn: 0xcdbf4e, density: 0.9,
+    note: 'Weeping willow: a short stout trunk, branches arching up and out, and curtains of fine yellow-green shoots hanging almost to the ground; pale yellow in autumn and golden twigs in winter. Best by water, well away from the house and drains.',
+  },
   deciduous: {
     name: 'Broad-leaved (general)', height: 8, spread: 6, evergreen: false, shape: 'dome', crownBase: -1, trunk: 0.018,
     bark: 0x5a4a3c, leaf: 0x5f8f3e, autumn: 0xb8742e, density: 1,
@@ -87,7 +92,7 @@ export const SPECIES: Record<TreeKind, Species> = {
 };
 
 /** The kinds in the order the lists show them. */
-export const TREE_ORDER: TreeKind[] = ['oak', 'ash', 'beech', 'hazel', 'birch', 'rowan', 'poplar', 'pine', 'deciduous', 'conifer', 'bush'];
+export const TREE_ORDER: TreeKind[] = ['oak', 'ash', 'beech', 'hazel', 'birch', 'rowan', 'poplar', 'willow', 'pine', 'deciduous', 'conifer', 'bush'];
 
 export const TREE_DEFAULTS: Record<TreeKind, { height: number; spread: number }> = Object.fromEntries(
   Object.entries(SPECIES).map(([k, s]) => [k, { height: s.height, spread: s.spread }]),

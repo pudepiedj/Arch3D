@@ -126,3 +126,32 @@ describe('poplars and leaning trees', () => {
     expect(crownCentre(t, 90).y).toBeLessThan(-1);
   });
 });
+
+describe('pond', () => {
+  it('is round to start, with a gently irregular edge inside its size', async () => {
+    const { pondOutline, pondArea, pondPlanting } = await import('../src/model/pond');
+    const b = createBuilding();
+    const f = addFurniture(b.levels[0], 'pond', { x: 0, y: 0 });
+    expect(f.width).toBe(f.depth);
+    const ring = pondOutline(f);
+    const radii = ring.map((p) => Math.hypot(p.x, p.y));
+    expect(Math.max(...radii)).toBeLessThanOrEqual(f.width / 2 + 1e-9);
+    expect(Math.max(...radii) - Math.min(...radii)).toBeGreaterThan(0.05);
+    expect(pondArea(f)).toBeGreaterThan(Math.PI * (f.width / 2) ** 2 * 0.7);
+    const plants = pondPlanting(f);
+    expect(plants.marginals.length).toBeGreaterThan(2);
+    expect(plants.lilies.length).toBeGreaterThan(1);
+    // The same pond looks the same every time.
+    expect(pondPlanting(f)).toEqual(plants);
+  });
+
+  it('builds in 3D, keeps the walker out and is costed', async () => {
+    const { buildFurniture } = await import('../src/three/furniture3d');
+    const { estimate } = await import('../src/model/estimate');
+    const b = createBuilding();
+    const f = addFurniture(b.levels[0], 'pond', { x: 0, y: 0 });
+    expect(meshes(buildFurniture(f))).toBeGreaterThan(20);
+    expect(new WalkWorld(b).move({ x: -4, y: 0 }, 0, { x: 3, y: 0 }).p.x).toBeLessThan(-1.4);
+    expect(estimate(b, null).some((l) => l.price === 'pond' && l.qty > 5)).toBe(true);
+  });
+});

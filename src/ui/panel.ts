@@ -9,6 +9,7 @@ import { BALCONY_SLAB, PATIO_DEFAULTS, patioArea, setPatioSurface } from '../mod
 import { SPECIES, TREE_DEFAULTS, TREE_ORDER, speciesOf } from '../model/trees';
 import { forget, remember, remembered } from './sizes';
 import { MAX_LEAF, gateLeaves, isGate } from '../model/gates';
+import { COURT, COURT_ENCLOSURE } from '../model/tennis';
 import { HEDGE_DEFAULTS, HEDGE_NAMES, hedgeClosed, hedgeLength } from '../model/hedges';
 import { GRAND_MODELS, TANK_STAND, catalogueItem, tankLitres } from '../model/furniture';
 import { stretchSummary } from '../model/stretch';
@@ -682,18 +683,18 @@ export class Panel {
     if (c?.finishes) {
       // For the clothes dryer the "finish" is whether the washing is out.
       const names: Record<string, string> = f.kind === 'rotary' ? { empty: 'None (empty lines)', washing: 'Hung out' } : {};
-      this.select(f.kind === 'rotary' ? 'Washing' : 'Finish', f.finish ?? c.finishes[0], c.finishes.map((v): [string, string] => [v, names[v] ?? v[0].toUpperCase() + v.slice(1)]), (v) => {
+      this.select(f.kind === 'rotary' ? 'Washing' : (c.finishLabel ?? 'Finish'), f.finish ?? c.finishes[0], c.finishes.map((v): [string, string] => [v, names[v] ?? v[0].toUpperCase() + v.slice(1)]), (v) => {
         f.finish = v;
         keep();
         this.done();
       });
     }
-    this.number(c?.labels?.width ?? 'Width', f.width, 0.01, 0.2, 6, (v) => {
+    this.number(c?.labels?.width ?? 'Width', f.width, 0.01, 0.2, c?.maxSize ?? 6, (v) => {
       f.width = v;
       keep();
       this.done();
     }, 'm');
-    this.number(c?.labels?.depth ?? (f.kind === 'grand' ? 'Length' : 'Depth'), f.depth, 0.01, 0.2, 6, (v) => {
+    this.number(c?.labels?.depth ?? (f.kind === 'grand' ? 'Length' : 'Depth'), f.depth, 0.01, 0.2, c?.maxSize ?? 6, (v) => {
       f.depth = v;
       // A tank's height is its diameter on its stand.
       if (f.kind === 'oiltank') f.height = v + TANK_STAND;
@@ -702,7 +703,7 @@ export class Panel {
     }, 'm');
     if (f.kind === 'oiltank') this.note(`Holds about ${Math.round(tankLitres(f.width, f.depth) / 100) * 100} litres (brim-full).`);
     if (!c?.flat && f.kind !== 'grand' && !c?.fixedHeight) {
-      this.number(c?.labels?.height ?? 'Height', f.height, 0.01, 0.2, 3, (v) => {
+      this.number(c?.labels?.height ?? 'Height', f.height, 0.01, c?.noHeight ? 0 : 0.2, c?.maxHeight ?? 3, (v) => {
         f.height = v;
         keep();
         this.done();
@@ -720,7 +721,11 @@ export class Panel {
           ? `Set on a hedge, fence or garden wall, it sits in its line and makes its own gap; drag it along. ${f.kind === 'gate5' ? `Wider than ${MAX_LEAF + 0.3} m it becomes a pair of gates. ` : ''}Turn 180° to make it open the other way. Open, you can walk through it.`
           : f.kind === 'rotary'
             ? 'Open or folded, with or without washing (Finish): with the Sun study on, see where its shadow falls and when the lines are in sun through the day.'
-            : f.kind === 'oiltank'
+            : f.kind === 'pond'
+              ? 'A natural pond: its edge is gently irregular, with stones round part of it, reeds and irises in the shallows along the rest, and water lilies. Set its size across each way (equal for a round one) and the depth of water at the deepest; a wildlife pond wants a shallow, sloping side too. Keep it in sun for part of the day and away from overhanging trees.'
+            : f.kind === 'tennis'
+              ? `A regulation doubles court (${COURT.length} × ${COURT.width} m, with singles sidelines) and its net, ${COURT.netPost} m high at the posts and ${COURT.netCentre} m in the middle, in the usual ${COURT_ENCLOSURE.width} × ${COURT_ENCLOSURE.length} m enclosure. The gate is in the fence beside the net. Courts are best laid out north–south, so the low sun is not in a player's eyes. A fence height of 0 leaves the fence off.${f.width < COURT.width + 2 || f.depth < COURT.length + 6 ? ' This enclosure leaves less run-off than a court needs.' : ''}`
+              : f.kind === 'oiltank'
               ? 'A horizontal tank on its stand. Set its length and diameter; its height follows. Regulations want it on a base extending 300 mm all round, and away from boundaries and buildings.'
               : 'Drag to move; it keeps tight to a wall it is square to. [ and ] turn it; Ctrl/⌘+D puts a copy alongside.',
     );

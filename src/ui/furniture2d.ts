@@ -4,6 +4,8 @@
 import { grandOutline } from '../model/furniture';
 import { gateLeaves, gatePost } from '../model/gates';
 import type { Vec2 } from '../model/geom';
+import { pondEdgePoint, pondOutline, pondPlanting } from '../model/pond';
+import { COURT, COURT_GATE, courtGate, courtLines, fencePosts, fenceRuns } from '../model/tennis';
 import type { Furniture } from '../model/types';
 
 type Ctx = CanvasRenderingContext2D;
@@ -154,7 +156,85 @@ function gate(ctx: Ctx, f: Furniture, w: number) {
   }
 }
 
+const COURT_COLOURS: Record<string, string> = { tarmac: '#8e9396', clay: '#cf8158', grass: '#8dbb6d' };
+
+/** A tennis court: its surface, white lines, the net on its posts, the fence and its gate. */
+function tennis(ctx: Ctx, f: Furniture, w: number, d: number) {
+  rect(ctx, -w / 2, -d / 2, w, d, COURT_COLOURS[f.finish ?? 'tarmac'] ?? COURT_COLOURS.tarmac);
+  // Lines at least a pixel wide, so they show at any zoom.
+  const px = ctx.lineWidth;
+  ctx.save();
+  ctx.fillStyle = '#ffffff';
+  for (const l of courtLines()) {
+    const grow = (a: number, b: number) => (b - a < px ? [(a + b) / 2 - px / 2, px] : [a, b - a]);
+    const [x, lw] = grow(l.x0, l.x1);
+    const [y, lh] = grow(l.y0, l.y1);
+    ctx.fillRect(x, y, lw, lh);
+  }
+  ctx.restore();
+  const p = COURT.posts / 2;
+  ctx.save();
+  ctx.lineWidth *= 2.5;
+  line(ctx, -p, 0, p, 0);
+  ctx.restore();
+  for (const s of [-1, 1]) circle(ctx, s * p, 0, 0.08, '#2c3a30');
+  const runs = fenceRuns(f);
+  if (!runs.length) return;
+  ctx.save();
+  ctx.strokeStyle = '#2f5a36';
+  ctx.lineWidth *= 2;
+  for (const [a, b] of runs) {
+    line(ctx, a.x, a.y, b.x, b.y);
+    for (const q of fencePosts(a, b)) ctx.fillRect(q.x - 0.06, q.y - 0.06, 0.12, 0.12);
+  }
+  // The gate, standing open outwards, with its swing.
+  const g = courtGate(f);
+  ctx.lineWidth *= 1.5;
+  line(ctx, g.hinge.x, g.hinge.y, g.hinge.x + COURT_GATE, g.hinge.y);
+  ctx.restore();
+  ctx.save();
+  ctx.setLineDash([0.08, 0.06]);
+  ctx.beginPath();
+  ctx.arc(g.hinge.x, g.hinge.y, COURT_GATE, 0, Math.PI / 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** A pond: the water inside its wavy edge, stones, clumps of reeds and irises, and lilies. */
+function pond(ctx: Ctx, f: Furniture) {
+  poly(ctx, pondOutline(f), '#7fb2c4');
+  const plants = pondPlanting(f);
+  for (const st of plants.stones) {
+    const p = pondEdgePoint(f, st.t, 1.04);
+    circle(ctx, p.x, p.y, st.size / 2, '#a9a49a');
+  }
+  for (const m of plants.marginals) {
+    const p = pondEdgePoint(f, m.t, 0.93);
+    if (m.kind === 'reeds') circle(ctx, p.x, p.y, 0.22, 'rgba(110, 140, 60, 0.85)');
+    else {
+      // Iris: a fan of sword-shaped leaves.
+      for (const a of [-0.6, 0, 0.6]) line(ctx, p.x, p.y, p.x + Math.cos(m.t + Math.PI + a) * 0.3, p.y + Math.sin(m.t + Math.PI + a) * 0.3);
+    }
+  }
+  for (const l of plants.lilies) {
+    const p = pondEdgePoint(f, l.t, l.out);
+    ctx.save();
+    ctx.lineWidth *= 0.6;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.arc(p.x, p.y, l.size, l.t + 0.3, l.t + Math.PI * 2 - 0.3);
+    ctx.closePath();
+    ctx.fillStyle = '#5c8a42';
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    if (l.flower) circle(ctx, p.x, p.y, 0.05, '#f4e6ee');
+  }
+}
+
 const SYMBOLS: Record<string, Symbol> = {
+  pond: (ctx, f) => pond(ctx, f),
+  tennis: (ctx, f, w, d) => tennis(ctx, f, w, d),
   // Oil tank: a long rounded shape with its centre line, on a dashed base.
   oiltank: (ctx, _f, w, d, fill) => {
     ctx.save();
