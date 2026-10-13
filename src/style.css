@@ -283,7 +283,8 @@ button.icon {
   margin: 5px 0;
 }
 
-.panel .field select {
+.panel .field select,
+.panel .field input.coord {
   grid-column: 2 / 6;
 }
 

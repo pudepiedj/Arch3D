@@ -2,6 +2,7 @@
 // the day) and see where the sun and the shadows fall; set where the house is and which
 // way it faces.
 
+import { formatDMS, parseCoordinate, parsePair } from '../model/dms';
 import { DEFAULT_SITE, compassPoint, siteOf, sunTimes } from '../model/sun';
 import type { View3D } from '../three/view3d';
 import type { Store } from './store';
@@ -161,8 +162,8 @@ export class SunPanel {
     sum.textContent = 'Location and orientation';
     site.append(sum);
     const fields: ['latitude' | 'longitude' | 'north', string, number, number, string, string][] = [
-      ['latitude', 'Latitude', -89, 89, '°', 'Degrees north (negative for south)'],
-      ['longitude', 'Longitude', -180, 180, '°', 'Degrees east (negative for west)'],
+      ['latitude', 'Latitude', -89, 89, '', 'Degrees, minutes and seconds (51 30 26 N, or 51°30′26″N) or decimal degrees (51.5072; negative for south). A pair copied from a map sets both.'],
+      ['longitude', 'Longitude', -180, 180, '', 'Degrees, minutes and seconds (0 7 39 W, or 0°07′39″W) or decimal degrees (-0.1276; negative for west). A pair copied from a map sets both.'],
       ['north', 'Plan top faces', -180, 360, '°', 'Compass bearing the top of the plan faces: 0 north, 90 east, 180 south, 270 west'],
     ];
     for (const [key, label, min, max, unit, title] of fields) {
@@ -172,9 +173,35 @@ export class SunPanel {
       const span = document.createElement('span');
       span.textContent = label;
       const input = document.createElement('input');
+      if (key !== 'north') {
+        // Typed as text: degrees, minutes and seconds with N/S/E/W, or decimal degrees.
+        input.type = 'text';
+        input.className = 'coord';
+        input.autocomplete = 'off';
+        input.spellcheck = false;
+        input.addEventListener('change', () => {
+          const pair = parsePair(input.value);
+          const v = pair ? null : parseCoordinate(input.value, key);
+          if (pair) this.setSite(pair);
+          else if (v !== null) this.setSite({ [key]: Math.min(max, Math.max(min, v)) });
+          else {
+            this.message.textContent = `Couldn’t read “${input.value}” as a ${key}. Type it as degrees, minutes and seconds (${key === 'latitude' ? '51 30 26 N' : '0 7 39 W'}) or decimal degrees (${key === 'latitude' ? '51.5072' : '-0.1276'}).`;
+            this.sync();
+          }
+          input.blur();
+        });
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') input.blur();
+          e.stopPropagation();
+        });
+        row.append(span, input);
+        site.append(row);
+        this.siteFields.set(key, input);
+        continue;
+      }
       input.type = 'number';
       input.inputMode = 'decimal';
-      input.step = key === 'north' ? '1' : '0.0001';
+      input.step = '1';
       input.min = String(min);
       input.max = String(max);
       input.addEventListener('change', () => {
@@ -200,7 +227,7 @@ export class SunPanel {
     this.message = document.createElement('p');
     this.message.className = 'note';
     this.message.textContent =
-      'Find the latitude and longitude on any online map (right-click or long-press a point). ' +
+      'Find the latitude and longitude on any online map (right-click or long-press a point) and type or paste them in, as degrees, minutes and seconds (51 30 26 N) or decimal degrees (51.5072). Pasting both at once (51°30′26″N 0°07′39″W, or 51.5072, -0.1276) into either box sets both. ' +
       'For the orientation, see which way the top of the plan faces; the plan shows a north arrow.';
     site.append(this.message);
     el.append(site);
@@ -312,7 +339,13 @@ export class SunPanel {
     this.dateInput.value = String(Math.round((new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime() - start.getTime()) / DAY));
     this.timeInput.value = String(t.getHours() * 60 + t.getMinutes());
     const site = siteOf(this.store.building);
-    for (const [key, input] of this.siteFields) input.value = String(site[key]);
+    for (const [key, input] of this.siteFields) {
+      if (key === 'north') input.value = String(site[key]);
+      else {
+        input.value = formatDMS(site[key], key);
+        input.title = `${input.value} = ${site[key]}° (${key === 'latitude' ? 'negative for south' : 'negative for west'}). Type degrees, minutes and seconds or decimal degrees; a pair copied from a map sets both.`;
+      }
+    }
 
     const pos = this.view.sunNow();
     const { rise, set } = sunTimes(t, site.latitude, site.longitude);
