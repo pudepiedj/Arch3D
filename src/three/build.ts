@@ -1558,6 +1558,44 @@ function buildSpeciesTree(add: AddFn, t: Tree, sp: Species, season: Season) {
       }
       break;
     }
+    case 'weeping': {
+      // Weeping willow: a short trunk forking into limbs that arch up and out, a low dome
+      // of foliage over them, and curtains of hanging shoots round it down almost to the
+      // ground. In winter the bare shoots still hang, golden.
+      const fork = Math.max(1.2, base);
+      limb(V(0, 0, 0), V(0, fork, 0), r, r * 0.75);
+      const limbs = 5;
+      for (let i = 0; i < limbs; i++) {
+        const a = ((i + rand() * 0.5) / limbs) * Math.PI * 2;
+        const crest = V(Math.cos(a) * R * 0.4, H * (0.85 + rand() * 0.1), Math.sin(a) * R * 0.4);
+        const end = V(Math.cos(a) * R * 0.75, H * (0.7 + rand() * 0.08), Math.sin(a) * R * 0.75);
+        limb(V(0, fork, 0), crest, r * 0.55, r * 0.3);
+        limb(crest, end, r * 0.3, r * 0.1);
+      }
+      fill(H * 0.8, R * 0.75, H * 0.16, count(12), R * 0.3, 0.4);
+      const shoots = treeMat(0xc9a64a, false);
+      const strands = count(52);
+      for (let i = 0; i < strands; i++) {
+        const a = i * 2.39996 + rand() * 0.3;
+        const rr = R * (0.7 + rand() * 0.25);
+        const top = H * (0.7 + rand() * 0.12);
+        const bottom = 0.25 + rand() * Math.min(1.5, H * 0.12);
+        const x = Math.cos(a) * rr;
+        const z = Math.sin(a) * rr;
+        if (leaf >= 0.05) {
+          // A tall narrow clump: a curtain of leafy shoots.
+          const size = R * 0.1;
+          clump(x, (top + bottom) / 2, z, size, (top - bottom) / 2 / (size * s));
+        } else {
+          for (let k = 0; k < 3; k++) {
+            const dx = (rand() - 0.5) * 0.6;
+            const dz = (rand() - 0.5) * 0.6;
+            limb(V(x * 0.9 + dx, top + 0.3, z * 0.9 + dz), V(x + dx, bottom + 0.6, z + dz), 0.015, 0.005, shoots);
+          }
+        }
+      }
+      break;
+    }
     case 'multistem': {
       // Hazel: several stems from the ground, fanning out, with a rounded crown over them.
       const stems = 7;

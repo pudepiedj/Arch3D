@@ -171,7 +171,7 @@ export interface Awning {
 }
 
 /** 'deciduous' and 'conifer' are the generic kinds; the rest are species, plus a bush. */
-export type TreeKind = 'deciduous' | 'conifer' | 'oak' | 'ash' | 'beech' | 'hazel' | 'birch' | 'rowan' | 'pine' | 'poplar' | 'bush';
+export type TreeKind = 'deciduous' | 'conifer' | 'oak' | 'ash' | 'beech' | 'hazel' | 'birch' | 'rowan' | 'pine' | 'poplar' | 'willow' | 'bush';
 
 /** A tree in the garden: shade in summer, and (if deciduous) far less in winter. */
 export interface Tree {

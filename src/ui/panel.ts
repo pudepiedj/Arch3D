@@ -721,6 +721,8 @@ export class Panel {
           ? `Set on a hedge, fence or garden wall, it sits in its line and makes its own gap; drag it along. ${f.kind === 'gate5' ? `Wider than ${MAX_LEAF + 0.3} m it becomes a pair of gates. ` : ''}Turn 180° to make it open the other way. Open, you can walk through it.`
           : f.kind === 'rotary'
             ? 'Open or folded, with or without washing (Finish): with the Sun study on, see where its shadow falls and when the lines are in sun through the day.'
+            : f.kind === 'pond'
+              ? 'A natural pond: its edge is gently irregular, with stones round part of it, reeds and irises in the shallows along the rest, and water lilies. Set its size across each way (equal for a round one) and the depth of water at the deepest; a wildlife pond wants a shallow, sloping side too. Keep it in sun for part of the day and away from overhanging trees.'
             : f.kind === 'tennis'
               ? `A regulation doubles court (${COURT.length} × ${COURT.width} m, with singles sidelines) and its net, ${COURT.netPost} m high at the posts and ${COURT.netCentre} m in the middle, in the usual ${COURT_ENCLOSURE.width} × ${COURT_ENCLOSURE.length} m enclosure. The gate is in the fence beside the net. Courts are best laid out north–south, so the low sun is not in a player's eyes. A fence height of 0 leaves the fence off.${f.width < COURT.width + 2 || f.depth < COURT.length + 6 ? ' This enclosure leaves less run-off than a court needs.' : ''}`
               : f.kind === 'oiltank'

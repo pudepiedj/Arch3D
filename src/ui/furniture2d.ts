@@ -4,6 +4,7 @@
 import { grandOutline } from '../model/furniture';
 import { gateLeaves, gatePost } from '../model/gates';
 import type { Vec2 } from '../model/geom';
+import { pondEdgePoint, pondOutline, pondPlanting } from '../model/pond';
 import { COURT, COURT_GATE, courtGate, courtLines, fencePosts, fenceRuns } from '../model/tennis';
 import type { Furniture } from '../model/types';
 
@@ -199,7 +200,40 @@ function tennis(ctx: Ctx, f: Furniture, w: number, d: number) {
   ctx.restore();
 }
 
+/** A pond: the water inside its wavy edge, stones, clumps of reeds and irises, and lilies. */
+function pond(ctx: Ctx, f: Furniture) {
+  poly(ctx, pondOutline(f), '#7fb2c4');
+  const plants = pondPlanting(f);
+  for (const st of plants.stones) {
+    const p = pondEdgePoint(f, st.t, 1.04);
+    circle(ctx, p.x, p.y, st.size / 2, '#a9a49a');
+  }
+  for (const m of plants.marginals) {
+    const p = pondEdgePoint(f, m.t, 0.93);
+    if (m.kind === 'reeds') circle(ctx, p.x, p.y, 0.22, 'rgba(110, 140, 60, 0.85)');
+    else {
+      // Iris: a fan of sword-shaped leaves.
+      for (const a of [-0.6, 0, 0.6]) line(ctx, p.x, p.y, p.x + Math.cos(m.t + Math.PI + a) * 0.3, p.y + Math.sin(m.t + Math.PI + a) * 0.3);
+    }
+  }
+  for (const l of plants.lilies) {
+    const p = pondEdgePoint(f, l.t, l.out);
+    ctx.save();
+    ctx.lineWidth *= 0.6;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.arc(p.x, p.y, l.size, l.t + 0.3, l.t + Math.PI * 2 - 0.3);
+    ctx.closePath();
+    ctx.fillStyle = '#5c8a42';
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    if (l.flower) circle(ctx, p.x, p.y, 0.05, '#f4e6ee');
+  }
+}
+
 const SYMBOLS: Record<string, Symbol> = {
+  pond: (ctx, f) => pond(ctx, f),
   tennis: (ctx, f, w, d) => tennis(ctx, f, w, d),
   // Oil tank: a long rounded shape with its centre line, on a dashed base.
   oiltank: (ctx, _f, w, d, fill) => {

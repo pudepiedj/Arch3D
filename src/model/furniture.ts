@@ -106,6 +106,8 @@ export const CATALOGUE: CatalogueItem[] = [
   { kind: 'planter', name: 'Planter', category: 'Garden', width: 0.6, depth: 0.6, height: 1.1 },
   { kind: 'oiltank', name: 'Oil tank (horizontal)', category: 'Garden', width: 2.0, depth: 1.2, height: 1.5, finishes: ['green', 'black', 'steel'], labels: { width: 'Length', depth: 'Diameter' }, fixedHeight: true },
   { kind: 'rotary', name: 'Rotary clothes dryer', category: 'Garden', width: 3.0, depth: 3.0, height: 1.8, finishes: ['empty', 'washing'], openable: true, walkUnder: true, labels: { width: 'Across', depth: 'Across (other way)', height: 'Line height' } },
+  // A wildlife pond; "height" is the depth of water.
+  { kind: 'pond', name: 'Pond (natural, planted)', category: 'Garden', width: 3.5, depth: 3.5, height: 0.9, labels: { width: 'Across', depth: 'Across (other way)', height: 'Depth of water' }, maxSize: 20, maxHeight: 2 },
   // A regulation court in its fenced enclosure; "height" is the fence's.
   { kind: 'tennis', name: 'Tennis court', category: 'Garden', width: 18.29, depth: 36.58, height: 2.75, finishes: ['tarmac', 'clay', 'grass'], finishLabel: 'Surface', labels: { width: 'Enclosure width', depth: 'Enclosure length', height: 'Fence height' }, maxSize: 50, maxHeight: 4, noHeight: true },
   { kind: 'gate5', name: 'Five-bar gate', category: 'Garden', width: 3.0, depth: 0.15, height: 1.2, finishes: GATE_FINISHES, openable: true },

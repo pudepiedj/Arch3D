@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { TANK_STAND, grandOutline } from '../model/furniture';
 import { gateLeaves, gatePost } from '../model/gates';
 import type { Vec2 } from '../model/geom';
+import { pondEdgePoint, pondOutline, pondPlanting } from '../model/pond';
 import { COURT, COURT_GATE, courtGate, courtLines, fencePosts, fenceRuns, netTop } from '../model/tennis';
 import type { Furniture } from '../model/types';
 
@@ -531,7 +532,87 @@ function tennisCourt(k: Kit, f: Furniture, w: number, d: number, h: number) {
   panel(g.hinge, q, 0.05, leafH);
 }
 
+/** A flat shape lying on the ground at height z, from points on the plan (with holes). */
+function flatShape(k: Kit, outer: Vec2[], holes: Vec2[][], z: number, m: THREE.Material) {
+  const shape = new THREE.Shape(outer.map((p) => new THREE.Vector2(p.x, -p.y)));
+  for (const h of holes) shape.holes.push(new THREE.Path(h.map((p) => new THREE.Vector2(p.x, -p.y))));
+  const mesh = k.mesh(new THREE.ShapeGeometry(shape), m, 0, 0, z);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.castShadow = false;
+  return mesh;
+}
+
+/**
+ * A natural pond: dark water inside a muddy, pebbly margin, flat stones half sunk round
+ * part of the rim, reeds (some with bulrush heads) and irises in the shallows along the
+ * rest, and water lilies, a few in flower, floating on it.
+ */
+function gardenPond(k: Kit, f: Furniture) {
+  const edge = pondOutline(f, 64);
+  // A muddy, pebbly margin 25 cm wide round the water.
+  const margin = edge.map((p) => {
+    const k = (Math.hypot(p.x, p.y) + 0.25) / (Math.hypot(p.x, p.y) || 1);
+    return { x: p.x * k, y: p.y * k };
+  });
+  flatShape(k, margin, [edge], 0.012, plain(0x6c6250, 0.95));
+  const water = mat('pond-water', () => new THREE.MeshStandardMaterial({ color: 0x2c4f4d, roughness: 0.08, metalness: 0.25 }));
+  flatShape(k, edge, [], 0.02, water);
+  const plants = pondPlanting(f);
+  const rand = (() => {
+    let seed = 97;
+    return () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  })();
+  const stone = plain(0x9d988c, 0.85);
+  for (const st of plants.stones) {
+    const p = pondEdgePoint(f, st.t, 1.04);
+    const m = k.mesh(new THREE.IcosahedronGeometry(st.size / 2, 0), stone, p.x, p.y, 0.02);
+    m.scale.set(1.2, 0.45, 1);
+    m.rotation.y = st.t;
+  }
+  const reed = plain(0x6f8a3c, 0.8);
+  const iris = plain(0x4f7a3a, 0.8);
+  const head = plain(0x5a3a22, 0.9);
+  const flowerIris = plain(0x5b4fa8, 0.6);
+  for (const c of plants.marginals) {
+    const at = pondEdgePoint(f, c.t, 0.93);
+    if (c.kind === 'reeds') {
+      for (let i = 0; i < 9; i++) {
+        const x = at.x + (rand() - 0.5) * 0.4;
+        const y = at.y + (rand() - 0.5) * 0.4;
+        const h = 0.9 + rand() * 0.7;
+        const tip = { x: x + (rand() - 0.5) * 0.25, y: y + (rand() - 0.5) * 0.25, z: h };
+        k.rod({ x, y, z: 0.02 }, tip, 0.01, reed);
+        if (i % 3 === 0) k.rod({ x: tip.x, y: tip.y, z: h - 0.25 }, { ...tip, z: h - 0.05 }, 0.025, head);
+      }
+    } else {
+      // Iris: a fan of flat sword leaves, and a flower or two.
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 6 - 0.5) * 1.2 + c.t;
+        const h = 0.6 + rand() * 0.3;
+        const blade = k.box(0.04, 0.008, h, at.x + Math.cos(a) * 0.05, at.y + Math.sin(a) * 0.05, 0.02, iris);
+        blade.rotation.y = -a;
+        blade.rotation.z = (i / 6 - 0.5) * 0.35;
+      }
+      k.sphere(0.05, at.x, at.y, 0.85, flowerIris);
+    }
+  }
+  const pad = plain(0x4f7d3a, 0.6);
+  const bloom = plain(0xf6e8f0, 0.5);
+  for (const l of plants.lilies) {
+    const p = pondEdgePoint(f, l.t, l.out);
+    const m = k.mesh(new THREE.CircleGeometry(l.size, 16, 0.3, Math.PI * 2 - 0.6), pad, p.x, p.y, 0.025);
+    m.rotation.x = -Math.PI / 2;
+    m.rotation.z = l.t;
+    m.castShadow = false;
+    if (l.flower) {
+      const b = k.mesh(new THREE.ConeGeometry(0.06, 0.07, 7, 1, true), bloom, p.x + 0.03, p.y, 0.06);
+      b.rotation.x = Math.PI;
+    }
+  }
+}
+
 const BUILDERS: Record<string, Builder> = {
+  pond: (k, f) => gardenPond(k, f),
   tennis: (k, f, w, d, h) => tennisCourt(k, f, w, d, h),
   oiltank: (k, f, w, d) => oilTank(k, f, w, d),
   rotary: (k, f, w, d, h) => rotaryDryer(k, f, w, d, h),

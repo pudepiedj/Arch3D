@@ -118,11 +118,13 @@ for (const cat of CATEGORIES) {
   $('#catalogueList').append(h, grid);
 }
 const openCatalogue = () => catalogue.showModal();
-$('#tennisTool').addEventListener('click', () => {
-  editor.furnitureKind = 'tennis';
-  editor.furnitureAngle = 0;
-  editor.setTool('furniture');
-});
+for (const [id, kind] of [['#tennisTool', 'tennis'], ['#pondTool', 'pond']]) {
+  $(id).addEventListener('click', () => {
+    editor.furnitureKind = kind;
+    editor.furnitureAngle = 0;
+    editor.setTool('furniture');
+  });
+}
 $('#furnitureBtn').addEventListener('click', openCatalogue);
 editor.onOpenCatalogue = openCatalogue;
 for (const b of $$('#drainKind button')) {
