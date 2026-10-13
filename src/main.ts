@@ -118,7 +118,7 @@ for (const cat of CATEGORIES) {
   $('#catalogueList').append(h, grid);
 }
 const openCatalogue = () => catalogue.showModal();
-for (const [id, kind] of [['#tennisTool', 'tennis'], ['#pondTool', 'pond']]) {
+for (const [id, kind] of [['#tennisTool', 'tennis'], ['#pondTool', 'pond'], ['#vineyardTool', 'vineyard']]) {
   $(id).addEventListener('click', () => {
     editor.furnitureKind = kind;
     editor.furnitureAngle = 0;

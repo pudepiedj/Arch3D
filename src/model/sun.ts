@@ -87,9 +87,14 @@ export function compassPoint(azimuth: number): string {
   return POINTS[Math.round(azimuth / (Math.PI / 4)) % 8];
 }
 
-/** Leaf cover for broad-leaved trees, and whether the leaves are turning (after midsummer). */
-export function seasonAt(date: Date, latitude: number): { leaf: number; autumn: boolean } {
+/**
+ * Leaf cover for broad-leaved trees, whether the leaves are turning (after midsummer), and
+ * how far on fruit is: small and green in June and July, ripening from August, picked by
+ * the end of October.
+ */
+export function seasonAt(date: Date, latitude: number): { leaf: number; autumn: boolean; fruit: 'none' | 'green' | 'ripe' } {
   const leaf = leafiness(date, latitude);
   const month = (date.getMonth() + (latitude < 0 ? 6 : 0)) % 12;
-  return { leaf, autumn: leaf < 0.95 && month >= 7 };
+  const fruit = month === 5 || month === 6 ? 'green' : month >= 7 && month <= 9 ? 'ripe' : 'none';
+  return { leaf, autumn: leaf < 0.95 && month >= 7, fruit };
 }

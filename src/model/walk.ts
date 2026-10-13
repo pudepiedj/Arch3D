@@ -16,6 +16,7 @@ import { solidRadius } from './trees';
 import { hedgeFootprints } from './hedges';
 import { isGate } from './gates';
 import { isPond, pondOnPlan } from './pond';
+import { isVineyard, vineBarriers } from './vineyard';
 import { courtBarriers, isTennis } from './tennis';
 import { catalogueItem, footprint, standingHeight } from './furniture';
 import { detectRooms } from './rooms';
@@ -82,6 +83,11 @@ export class WalkWorld {
         if (c?.flat || c?.walkUnder || (isGate(f.kind) && f.open)) continue;
         const base = elevation + standingHeight(level, f);
         // A tennis court: you walk on it, in through the gate; its fence and net are in the way.
+        // A vineyard: you walk down between the rows, not through them.
+        if (isVineyard(f)) {
+          for (const poly of vineBarriers(f)) this.blocks.push({ poly, bottom: base, top: base + f.height });
+          continue;
+        }
         // A pond: you don't walk into it.
         if (isPond(f)) {
           this.blocks.push({ poly: pondOnPlan(f, 24), bottom: base, top: base + 1 });

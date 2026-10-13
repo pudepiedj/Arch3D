@@ -4,6 +4,7 @@
 import { grandOutline } from '../model/furniture';
 import { gateLeaves, gatePost } from '../model/gates';
 import type { Vec2 } from '../model/geom';
+import { CANOPY, vinePosts, vineRows, vinesAlong } from '../model/vineyard';
 import { pondEdgePoint, pondOutline, pondPlanting } from '../model/pond';
 import { COURT, COURT_GATE, courtGate, courtLines, fencePosts, fenceRuns } from '../model/tennis';
 import type { Furniture } from '../model/types';
@@ -232,7 +233,30 @@ function pond(ctx: Ctx, f: Furniture) {
   }
 }
 
+/** A vineyard: its edge dashed, each row as a strip of leaves with its posts and vines. */
+function vineyard(ctx: Ctx, f: Furniture, w: number, d: number) {
+  ctx.save();
+  ctx.setLineDash([0.3, 0.2]);
+  rect(ctx, -w / 2, -d / 2, w, d, 'rgba(196, 180, 140, 0.18)');
+  ctx.restore();
+  const rows = vineRows(f);
+  const along = vinesAlong(f);
+  const px = ctx.lineWidth;
+  ctx.save();
+  ctx.fillStyle = 'rgba(95, 135, 60, 0.55)';
+  for (const x of rows) ctx.fillRect(x - CANOPY / 2, -d / 2, CANOPY, d);
+  ctx.fillStyle = '#5a4232';
+  // Vines as dots, if they are far enough apart on screen to see.
+  if ((along[1] ?? 1) - (along[0] ?? 0) > 4 * px) {
+    for (const x of rows) for (const y of along) ctx.fillRect(x - 0.05, y - 0.05, 0.1, 0.1);
+  }
+  ctx.fillStyle = '#6a5640';
+  for (const x of rows) for (const y of vinePosts(f)) ctx.fillRect(x - 0.07, y - 0.07, 0.14, 0.14);
+  ctx.restore();
+}
+
 const SYMBOLS: Record<string, Symbol> = {
+  vineyard: (ctx, f, w, d) => vineyard(ctx, f, w, d),
   pond: (ctx, f) => pond(ctx, f),
   tennis: (ctx, f, w, d) => tennis(ctx, f, w, d),
   // Oil tank: a long rounded shape with its centre line, on a dashed base.

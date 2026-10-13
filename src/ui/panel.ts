@@ -10,6 +10,7 @@ import { SPECIES, TREE_DEFAULTS, TREE_ORDER, speciesOf } from '../model/trees';
 import { forget, remember, remembered } from './sizes';
 import { MAX_LEAF, gateLeaves, isGate } from '../model/gates';
 import { COURT, COURT_ENCLOSURE } from '../model/tennis';
+import { cordonHeight, rowGap, vineCount, vineGap } from '../model/vineyard';
 import { HEDGE_DEFAULTS, HEDGE_NAMES, hedgeClosed, hedgeLength } from '../model/hedges';
 import { GRAND_MODELS, TANK_STAND, catalogueItem, tankLitres } from '../model/furniture';
 import { stretchSummary } from '../model/stretch';
@@ -709,6 +710,16 @@ export class Panel {
         this.done();
       }, 'm');
     }
+    if (f.kind === 'vineyard') {
+      this.number('Row spacing', rowGap(f), 0.05, 0.6, 4, (v) => {
+        f.rowGap = v;
+        this.done();
+      }, 'm', 'Distance between the rows, centre to centre');
+      this.number('Vine spacing', vineGap(f), 0.05, 0.5, 3, (v) => {
+        f.vineGap = v;
+        this.done();
+      }, 'm', 'Distance between vines along a row');
+    }
     const deg = ((Math.round((f.angle * 180) / Math.PI) % 360) + 360) % 360;
     this.number('Turned', deg, 5, 0, 359, (v) => {
       f.angle = (v * Math.PI) / 180;
@@ -721,6 +732,11 @@ export class Panel {
           ? `Set on a hedge, fence or garden wall, it sits in its line and makes its own gap; drag it along. ${f.kind === 'gate5' ? `Wider than ${MAX_LEAF + 0.3} m it becomes a pair of gates. ` : ''}Turn 180° to make it open the other way. Open, you can walk through it.`
           : f.kind === 'rotary'
             ? 'Open or folded, with or without washing (Finish): with the Sun study on, see where its shadow falls and when the lines are in sun through the day.'
+            : f.kind === 'vineyard'
+              ? (() => {
+                  const n = vineCount(f);
+                  return `${n.rows} rows of ${n.perRow} vines: ${n.vines} vines, ${Math.round(n.rowLength)} m of row. Each vine has a trunk up to the fruiting wire at ${cordonHeight(f).toFixed(2)} m, with its shoots trained up between the wires above. The leaves come in May, grapes show from midsummer and ripen in autumn, when the leaves turn (red or gold), and in winter the vines are bare: set the date in Sun to see. Rows usually run north–south for even sun on both sides; 1 m apart suits hand work, 2–2.5 m a tractor.`;
+                })()
             : f.kind === 'pond'
               ? 'A natural pond: its edge is gently irregular, with stones round part of it, reeds and irises in the shallows along the rest, and water lilies. Set its size across each way (equal for a round one) and the depth of water at the deepest; a wildlife pond wants a shallow, sloping side too. Keep it in sun for part of the day and away from overhanging trees.'
             : f.kind === 'tennis'

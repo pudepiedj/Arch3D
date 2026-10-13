@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { TANK_STAND, grandOutline } from '../model/furniture';
 import { gateLeaves, gatePost } from '../model/gates';
 import type { Vec2 } from '../model/geom';
+import { CANOPY, cordonHeight, vineGap, vinePosts, vineRows, vinesAlong } from '../model/vineyard';
 import { pondEdgePoint, pondOutline, pondPlanting } from '../model/pond';
 import { COURT, COURT_GATE, courtGate, courtLines, fencePosts, fenceRuns, netTop } from '../model/tennis';
 import type { Furniture } from '../model/types';
@@ -99,17 +100,24 @@ class Kit {
 
 // ---------------------------------------------------------------- the models
 
-export function buildFurniture(f: Furniture): THREE.Group {
+/** The time of year, for anything that grows: how far in leaf, and whether autumn. */
+export interface FurnitureSeason {
+  leaf: number;
+  autumn: boolean;
+  fruit?: 'none' | 'green' | 'ripe';
+}
+
+export function buildFurniture(f: Furniture, season: FurnitureSeason = { leaf: 1, autumn: false }): THREE.Group {
   const k = new Kit();
   const { width: w, depth: d, height: h } = f;
   const build = BUILDERS[f.kind];
-  if (build) build(k, f, w, d, h);
+  if (build) build(k, f, w, d, h, season);
   else k.box(w, d, h, 0, 0, 0, plain(0xcccccc));
   k.g.name = `furniture:${f.id}`;
   return k.g;
 }
 
-type Builder = (k: Kit, f: Furniture, w: number, d: number, h: number) => void;
+type Builder = (k: Kit, f: Furniture, w: number, d: number, h: number, season: FurnitureSeason) => void;
 
 /** A dining chair at (x, y) whose seat faces direction `a` (radians, in the piece's frame). */
 function chair(k: Kit, x: number, y: number, a: number, m: THREE.Material) {
@@ -611,7 +619,150 @@ function gardenPond(k: Kit, f: Furniture) {
   }
 }
 
+/** One mesh drawn many times: at each (x, y, z) in the piece's frame, scaled and turned. */
+function instances(
+  k: Kit,
+  geo: THREE.BufferGeometry,
+  m: THREE.Material,
+  at: { x: number; y: number; z: number; sx?: number; sy?: number; sz?: number; ry?: number }[],
+  shadow = true,
+) {
+  if (!at.length) return;
+  const mesh = new THREE.InstancedMesh(geo, m, at.length);
+  const o = new THREE.Object3D();
+  at.forEach((p, i) => {
+    o.position.set(p.x, p.z, p.y);
+    o.scale.set(p.sx ?? 1, p.sz ?? 1, p.sy ?? 1);
+    o.rotation.set(0, p.ry ?? 0, 0);
+    o.updateMatrix();
+    mesh.setMatrixAt(i, o.matrix);
+  });
+  mesh.castShadow = shadow;
+  mesh.receiveShadow = true;
+  k.g.add(mesh);
+}
+
+/**
+ * One vine's share of the wall of leaves: a unit block (centred, 1 m each way) with its
+ * surface roughened, so that side by side they make a trained, slightly unruly hedge.
+ */
+let leafWallGeo: THREE.BufferGeometry | null = null;
+function leafWall(): THREE.BufferGeometry {
+  if (leafWallGeo) return leafWallGeo;
+  const g = new THREE.BoxGeometry(1, 1, 1, 2, 4, 3);
+  const pos = g.attributes.position;
+  let seed = 3;
+  const rand = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  // Move each distinct corner by the same amount wherever it appears, so no cracks open.
+  const moved = new Map<string, [number, number, number]>();
+  for (let i = 0; i < pos.count; i++) {
+    const key = `${pos.getX(i).toFixed(3)},${pos.getY(i).toFixed(3)},${pos.getZ(i).toFixed(3)}`;
+    let d = moved.get(key);
+    if (!d) moved.set(key, (d = [(rand() - 0.5) * 0.25, (rand() - 0.5) * 0.12, (rand() - 0.5) * 0.06]));
+    // Ends along the row stay put, so neighbouring vines meet.
+    const end = Math.abs(pos.getZ(i)) > 0.49;
+    pos.setXYZ(i, pos.getX(i) + d[0], pos.getY(i) + d[1], pos.getZ(i) + (end ? 0 : d[2]));
+  }
+  g.computeVertexNormals();
+  return (leafWallGeo = g);
+}
+
+/**
+ * A vineyard: rows of vines on a trellis. Each row has a strainer post at each end and
+ * line posts between, three wires, and its vines: a gnarled trunk up to the fruiting wire,
+ * the cordon along it, and above it a narrow wall of leaves up to the top wire, a little
+ * uneven from vine to vine. Grapes hang under the leaves from midsummer (dark for red
+ * grapes, yellow-green for white), the leaves turn in autumn (red or gold), and in winter
+ * the vines are bare canes.
+ */
+function vineyard(k: Kit, f: Furniture, _w: number, d: number, h: number, season: FurnitureSeason) {
+  let seed = [...f.id].reduce((a, c) => a * 31 + c.charCodeAt(0), 5) >>> 0;
+  const rand = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  const rows = vineRows(f);
+  const along = vinesAlong(f);
+  const posts = vinePosts(f);
+  const cordon = cordonHeight(f);
+  const gap = vineGap(f);
+  const red = f.finish !== 'white';
+  const wood = plain(0x6a5640, 0.9);
+  const vineWood = plain(0x5a4232, 0.95);
+  const wire = plain(0x9ea3a8, 0.4, 0.6);
+
+  // Posts: strainers at the ends, line posts between; wires along each row.
+  const strainers: { x: number; y: number; z: number; sz: number }[] = [];
+  const line: { x: number; y: number; z: number; sz: number }[] = [];
+  for (const x of rows) {
+    posts.forEach((y, i) => (i === 0 || i === posts.length - 1 ? strainers : line).push({ x, y, z: 0, sz: h + 0.1 }));
+  }
+  instances(k, new THREE.BoxGeometry(0.1, 1, 0.1).translate(0, 0.5, 0), wood, strainers);
+  instances(k, new THREE.BoxGeometry(0.065, 1, 0.065).translate(0, 0.5, 0), wood, line);
+  for (const x of rows) {
+    for (const z of [cordon, (cordon + h) / 2, h - 0.05]) k.rod({ x, y: -d / 2, z }, { x, y: d / 2, z }, 0.004, wire).castShadow = false;
+  }
+
+  // Trunks and cordons.
+  const trunks: { x: number; y: number; z: number; sz: number; ry: number }[] = [];
+  for (const x of rows) for (const y of along) trunks.push({ x: x + (rand() - 0.5) * 0.04, y, z: 0, sz: cordon, ry: rand() * Math.PI });
+  instances(k, new THREE.CylinderGeometry(0.03, 0.045, 1, 6).translate(0, 0.5, 0), vineWood, trunks);
+  for (const x of rows) k.rod({ x, y: along[0] - gap * 0.45, z: cordon + 0.02 }, { x, y: along[along.length - 1] + gap * 0.45, z: cordon + 0.02 }, 0.022, vineWood);
+
+  const leaf = season.leaf;
+  if (leaf < 0.08) {
+    // Winter: bare canes up from the cordon.
+    const canes: { x: number; y: number; z: number; sz: number; ry: number }[] = [];
+    for (const x of rows) {
+      for (const y of along) {
+        for (let i = 0; i < 3; i++) canes.push({ x: x + (rand() - 0.5) * 0.1, y: y + (i - 1) * gap * 0.25, z: cordon, sz: (h - cordon) * (0.5 + rand() * 0.4), ry: rand() * Math.PI });
+      }
+    }
+    instances(k, new THREE.CylinderGeometry(0.006, 0.01, 1, 4).translate(0, 0.5, 0), plain(0x8a6a48, 0.9), canes, false);
+    return;
+  }
+
+  // The wall of leaves: one block per vine, a little uneven, growing as the leaves come.
+  const colour = !season.autumn ? 0x557f32 : red ? 0xa0402a : 0xc4a23e;
+  const leaves = mat(`vine-leaf-${colour}`, () => new THREE.MeshStandardMaterial({ color: colour, roughness: 0.9, flatShading: true }));
+  // Leaves from just above the fruit zone (stripped round the bunches) to the top wire.
+  const zone = 0.18;
+  const tall = (h - cordon - zone + 0.1) * (0.35 + 0.65 * leaf);
+  const blocks: { x: number; y: number; z: number; sx: number; sy: number; sz: number; ry: number }[] = [];
+  for (const x of rows) {
+    for (const y of along) {
+      blocks.push({
+        x: x + (rand() - 0.5) * 0.06,
+        y,
+        z: cordon + zone + (tall * (1 + (rand() - 0.5) * 0.15)) / 2,
+        sx: CANOPY * (0.75 + rand() * 0.35) * (0.6 + 0.4 * leaf),
+        sy: gap * (1.02 + rand() * 0.12),
+        sz: tall * (1 + (rand() - 0.5) * 0.15),
+        ry: (rand() - 0.5) * 0.1,
+      });
+    }
+  }
+  instances(k, leafWall(), leaves, blocks);
+
+  // Grapes: a couple of bunches each side of every vine, under the leaves; small and green
+  // in early summer, coloured as they ripen, and picked before the leaves fall.
+  const fruit = season.fruit ?? 'ripe';
+  if (leaf > 0.6 && fruit !== 'none') {
+    const ripe = fruit === 'ripe';
+    const grape = plain(red ? (ripe ? 0x3a1d3f : 0x5f7a3a) : ripe ? 0xc8c560 : 0x8fae4a, 0.35);
+    const bunches: { x: number; y: number; z: number; sx: number; sy: number; sz: number }[] = [];
+    for (const x of rows) {
+      for (const y of along) {
+        for (const side of [-1, 1]) {
+          const size = ripe ? 1 : 0.7;
+          bunches.push({ x: x + side * 0.07, y: y + side * gap * 0.2 + (rand() - 0.5) * gap * 0.3, z: cordon + 0.07, sx: size, sy: size, sz: size * 1.3 });
+        }
+      }
+    }
+    // A bunch: broad at the stalk, tapering to its tip.
+    instances(k, new THREE.ConeGeometry(0.06, 0.13, 7).rotateX(Math.PI), grape, bunches);
+  }
+}
+
 const BUILDERS: Record<string, Builder> = {
+  vineyard: (k, f, w, d, h, season) => vineyard(k, f, w, d, h, season),
   pond: (k, f) => gardenPond(k, f),
   tennis: (k, f, w, d, h) => tennisCourt(k, f, w, d, h),
   oiltank: (k, f, w, d) => oilTank(k, f, w, d),
@@ -1081,7 +1232,7 @@ const BUILDERS: Record<string, Builder> = {
     void h;
   },
   // The garden chair: the bench, one seat wide.
-  gardenchair: (k, f, w, d, h) => BUILDERS.bench(k, f, w, d, h),
+  gardenchair: (k, f, w, d, h, season) => BUILDERS.bench(k, f, w, d, h, season),
   parasol: (k, f, w, _d, h) => {
     const c = FABRIC[f.finish ?? 'cream'] ?? FABRIC.cream;
     k.box(0.5, 0.5, 0.06, 0, 0, 0, dark());

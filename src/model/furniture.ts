@@ -106,6 +106,8 @@ export const CATALOGUE: CatalogueItem[] = [
   { kind: 'planter', name: 'Planter', category: 'Garden', width: 0.6, depth: 0.6, height: 1.1 },
   { kind: 'oiltank', name: 'Oil tank (horizontal)', category: 'Garden', width: 2.0, depth: 1.2, height: 1.5, finishes: ['green', 'black', 'steel'], labels: { width: 'Length', depth: 'Diameter' }, fixedHeight: true },
   { kind: 'rotary', name: 'Rotary clothes dryer', category: 'Garden', width: 3.0, depth: 3.0, height: 1.8, finishes: ['empty', 'washing'], openable: true, walkUnder: true, labels: { width: 'Across', depth: 'Across (other way)', height: 'Line height' } },
+  // Rows of trellised vines; "height" is the top of the trellis, the finish the grapes'.
+  { kind: 'vineyard', name: 'Vineyard (rows of vines)', category: 'Garden', width: 10, depth: 20, height: 1.8, finishes: ['red', 'white'], finishLabel: 'Grapes', labels: { width: 'Width (across rows)', depth: 'Length of rows', height: 'Trellis height' }, maxSize: 150, maxHeight: 3 },
   // A wildlife pond; "height" is the depth of water.
   { kind: 'pond', name: 'Pond (natural, planted)', category: 'Garden', width: 3.5, depth: 3.5, height: 0.9, labels: { width: 'Across', depth: 'Across (other way)', height: 'Depth of water' }, maxSize: 20, maxHeight: 2 },
   // A regulation court in its fenced enclosure; "height" is the fence's.
