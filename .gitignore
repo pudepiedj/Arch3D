@@ -2,3 +2,4 @@ node_modules
 dist
 *.log
 drawings
+vite.config_original.ts

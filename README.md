@@ -1,25 +1,62 @@
+---
+location: post
+title: Architecture 2D-to-3D Modeller
+author: John Puddefoot and Claude Opus 5.5
+date: 2026-09-30
+---
 # Arch3D
+
+[TOC]
 
 Draw a floor plan in 2D and walk through it in 3D, in the browser (desktop or iPad).
 Built with TypeScript, [three.js](https://threejs.org) and Vite.
 
+## Installation
+To download and install the latest version from `GitHub` first open **terminal** (press Cmd+Space simultaneously then type "Term" into the box) and run
+
+> https://github.com/pudepiedj/Arch3D.git
+
+That will create a folder `Arch3D` and the latest version of the **User Guide** will be there.
+
 ```sh
+cd Arch3D
 npm install
 npm run dev      # http://localhost:5173
+```
+That will show something like this but the IP addresses on your network will almost certainly be different:
+```sh
+Arch3D % npm run dev        
+
+> arch3d@0.1.0 dev
+> vite
+
+
+  VITE v8.3.1  ready in 223 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.1.174:5173/  en0
+  ➜  Network: http://192.168.1.221:5173/  en1
+  ➜  press h + enter to show help
+
+```
+That is all there is to it! Now go to a browser, open a new tab and enter/paste `http://localhost:5173/` (on the same machine) or `http://192.168.1.174:5173/` on an iPad (changing the `174` to whatever nymber the **vite** display shows).
+For administrative purposes two other **npm** commands are provided, but they are not necessary for the installation and should usually not be used.
+
+```sh
 npm test         # model unit tests
 npm run build    # static site in dist/
 ```
 
-**On an iPad (or phone):** keep `npm run dev` running on your computer. As well as the Local address, it prints a **Network:** address such as `http://192.168.1.23:5173/`. With the iPad on the same Wi-Fi, type that address into Safari. Tip: Share → **Add to Home Screen** gives it an app icon.
+**On an iPad (or phone):** keep `npm run dev` running on your main computer (desktop or laptop). As well as the Local address, when you type `npm run dev` it will show an address on the network (as above): it prints a **Network:** address such as `http://192.168.1.23:5173/`. With the iPad on the same Wi-Fi, type that address into a new tab in Safari, Chrome or whichever browser you use. **Tip**: Share → **Add to Home Screen** gives it an app icon.
 - Each browser keeps its own working copy. To move a drawing between computer and iPad, use **File → Save to computer…** on one and **File → Open from computer…** on the other.
-  - Saves go into the `drawings` folder of this project on the computer running `npm run dev`. That folder is not committed to git.
-  - Every save is a new, dated file: nothing is ever overwritten. The list shows which device each one came from.
+  - **Saves** go into the `drawings` folder of this project ***on the computer running `npm run dev`*** (the main desktop or laptop. That folder is not committed to git.
+  - Every save is a new, dated file: **nothing is ever overwritten**. The list shows which device each one came from.
   - Opening a drawing replaces what is on screen, but **Undo** brings it back.
   - Anyone on your home Wi-Fi who opens the app could also see the saved drawings.
 - **Automatic backup:** while the computer is reachable, each device's drawing is backed up to it a few seconds after every change (one file per device, `drawings/autosave-<device>.json`, listed in **Open from computer…** as *Automatic backup*). The light next to **File** shows *Backed up 14:32*, *Backing up…* or *Not connected*.
 - **If the computer stops answering** (`npm run dev` stopped, Wi-Fi dropped), a red banner says so at once. Your changes are then kept only in that browser: start `npm run dev` again and the app backs up straight away (the page reloads itself), or press **Download a copy**. **Save to computer…** checks first and says plainly **NOT SAVED** rather than seeming to work, and the browser asks before you close or reload a page whose changes the computer hasn't got.
 - `npm run dev` always uses port 5173. If something else has it, it stops with a message rather than moving to another port, because the browser keeps its working copy per address, and on a new port your work would seem to have vanished.
-- **Export/Import JSON** save and open a file on the device you are using, for keeping or sending a copy elsewhere. Chrome and Edge ask where to put it; Safari always uses `Downloads` (a web page can't choose the folder there). **Save to computer** is the one that goes into this project's `drawings` folder, and its message shows the full path.
+- **Export/Import JSON** save and open a file ***on the device you are using***, such as an iPad or iPhone, for keeping or sending a copy elsewhere. **Chrome** and **Edge** ask where to put it; **Safari** always uses `Downloads` (a web page can't choose the folder there). **Save to computer** is the one that goes into this project's `drawings` folder on the main computer, and its message shows the full path.
 - If the iPad can't connect, the computer's firewall may be asking whether to allow incoming connections to `node`. Allow it.
 
 **If a drawing won't open, or breaks the 3D view:** `npm run check-drawing` lists what is in every drawing in the `drawings` folder (newest first) and anything odd: numbers that aren't numbers, very long hedges or fences, things far from the house. `npm run check-drawing -- drawings/autosave-iPad.json` checks just one.
@@ -178,10 +215,15 @@ Select a piece to change its finish, width, depth and height, or to turn, duplic
 - **Seeing it in 3D:** in orbit view with **Cutaway** on, the roofs of the floor you are editing are lifted off with its ceiling. With it off (the default) you see the whole house.
 
 **Floors:** the floor list at the top right of the plan switches between storeys (Page Up/Page Down also work).
-- **+ Floor** adds a storey on top of the one you are editing, starting with a copy of its outside walls. **Add floor below** (in the floor's settings) adds one underneath: a basement, or the lower floor of a house half in the ground.
+- **+ Floor** adds a storey on top of the one you are editing, starting with a copy of its outside walls.
+- **Add floor below** (in the floor's settings) adds one underneath: a basement, or the lower floor of a house half in the ground.
 - The floor below shows faintly under the plan, and new walls snap to its joints, so walls line up from floor to floor.
 - Click the current floor's name for its settings: name, floor-to-floor height and floor depth (the resulting ceiling height is shown), plus add or delete floors.
-- **Floor level**: a floor can sit at its own height above the ground, and the floors on top of it follow: **0.6** for a house on a plinth, **−1.5** for one half below ground. So one drawing can hold two houses at different levels (a small one on a plinth beside a large one half sunk into the ground); each is its own stack, with its own roofs, and the list shows every floor from the highest down. The ground is cut away under any floor below the ground, so a basement shows. The first floor in the list is always at the ground: keep the garden (patios, hedges, walls, trees, drains) on it. If both buildings are drawn on the same floor, **Build → Move to its own floor…** gives one of them its own: drag a box round the whole building, name it, and its walls, doors and windows, stairs, furniture and roofs move to a new floor at the same height (the garden stays). Set that floor's **Floor level**, and **+ Floor** on it adds a floor on top of just that building, named after it. It works for part of a house too (a room or two set lower or higher: a split level). While you drag the box, the walls that will move turn the accent colour and the box says how many: a wall goes if its middle is inside the box, so a loosely drawn box still takes exactly the room's walls. The wall between the part and the rest goes with the part; the rest keeps a pale, dashed **party wall** copy of it, which closes its rooms but is built and costed with the part (if the part is set higher, the party wall fills the step under it). Where the part opens into the rest through a gap in a wall (an archway), an **open side** (a dotted line) is drawn across the gap on both floors: it closes the rooms either side, so each has its floor and roof, but nothing is built there and you walk straight through. A floor that is part of a house moved to a floor of its own has **Put back into …** in its panel, which returns everything on it to the floor it came from, as one floor again: to split it differently, or to redo a split made before these improvements. Every floor within half a storey of the one you're on shows as a dashed ghost, labelled with its name and how much higher or lower it is, so the parts of a split level read together. **Changing the level** in a floor's panel says what its Floor level moves: for a part of a building, **just the floor** (its walls stretch or shrink and its top, ceiling and roof stay where they are, so nothing opens up above), for a building on its own, **all of it**. **Build → Room on top…** adds a small floor on top of part of the one you're on (a stair-head over a spiral stair, giving access to the roof): drag a box where it goes and it gets walls round the box, a flat roof, and stands on top of this floor; this floor's roof turns flat so you can walk on it (change it back in the floor's panel if not). A stair under it that rises to the next floor cuts its stairwell in the room's floor; add a door out onto the roof. When a Floor level changes, the walls follow: a floor whose walls no longer reach the floor above (part of a house sunk a further 0.3 m on a floor of its own, under a floor that spans both parts) gets its storey height and full-height walls stretched or shortened to meet it. Walls you've set to a different height are left alone.
+- **Floor level**: a floor can sit at its own height above the ground, and the floors on top of it follow: **0.6** for a house on a plinth, **−1.5** for one half below ground. So one drawing can hold two houses at different levels (a small one on a plinth beside a large one half sunk into the ground); each is its own stack, with its own roofs, and the list shows every floor from the highest down. The ground is cut away under any floor below the ground, so a basement shows. The first floor in the list is always at the ground: keep the garden (patios, hedges, walls, trees, drains) on it. If both buildings are drawn on the same floor,
+
+- **Build → Move to its own floor…** gives one of them its own: drag a box round the whole building, name it, and its walls, doors and windows, stairs, furniture and roofs move to a new floor at the same height (the garden stays). Set that floor's **Floor level**, and **+ Floor** on it adds a floor on top of just that building, named after it. It works for part of a house too (a room or two set lower or higher: a split level). While you drag the box, the walls that will move turn the accent colour and the box says how many: a wall goes if its middle is inside the box, so a loosely drawn box still takes exactly the room's walls. The wall between the part and the rest goes with the part; the rest keeps a pale, dashed **party wall** copy of it, which closes its rooms but is built and costed with the part (if the part is set higher, the party wall fills the step under it). Where the part opens into the rest through a gap in a wall (an archway), an **open side** (a dotted line) is drawn across the gap on both floors: it closes the rooms either side, so each has its floor and roof, but nothing is built there and you walk straight through. A floor that is part of a house moved to a floor of its own has **Put back into …** in its panel, which returns everything on it to the floor it came from, as one floor again: to split it differently, or to redo a split made before these improvements. Every floor within half a storey of the one you're on shows as a dashed ghost, labelled with its name and how much higher or lower it is, so the parts of a split level read together.
+- **Changing the level** in a floor's panel says what its Floor level moves: for a part of a building, **just the floor** (its walls stretch or shrink and its top, ceiling and roof stay where they are, so nothing opens up above), for a building on its own, **all of it**.
+- **Build → Room on top…** adds a small floor on top of part of the one you're on (a stair-head over a spiral stair, giving access to the roof): drag a box where it goes and it gets walls round the box, a flat roof, and stands on top of this floor; this floor's roof turns flat so you can walk on it (change it back in the floor's panel if not). A stair under it that rises to the next floor cuts its stairwell in the room's floor; add a door out onto the roof. When a Floor level changes, the walls follow: a floor whose walls no longer reach the floor above (part of a house sunk a further 0.3 m on a floor of its own, under a floor that spans both parts) gets its storey height and full-height walls stretched or shortened to meet it. Walls you've set to a different height are left alone.
 - In 3D, **View → Cutaway** lifts off the roof and ceilings of the floor you are editing and hides the floors above it in the same building, doll's-house style, so you can see the shape of the rooms (on a one-storey drawing too). The other buildings and the garden stay in view. It is also the **Cutaway** button beside Orbit and Walk: turn it off to see everything. It starts off (the whole house is shown), and each device remembers whether you last had it on. Walk mode puts you on the floor you are editing, with ceilings overhead.
 - Walls run the full floor-to-floor height by default. Changing a floor's height takes those walls with it.
 
@@ -279,3 +321,90 @@ Choose the wall build, the roof covering, the foundation depth and underfloor he
 - A sun-hours map: how many hours of direct sun each part of a patio gets on a given day.
 - Curved walls.
 - Snapping openings to exact positions from a room's inside corner on either side.
+- Drawing directly from specified dimensions.
+
+[INDEX{
+2D,
+3D,
+Arch3D,
+browser,
+build,
+bush,
+chimney,
+copy,
+cost,
+cutaway,
+date,
+deck,
+desktop,
+dimension,
+ditch,
+door,
+door!shown shut,
+door!shown open,
+drain,
+duplicate,
+elevation,
+floor,
+furniture,
+garage,
+garden,
+git,
+heating,
+heating!boiler,
+heating!radiator,
+hedge,
+install,
+iPad,
+iPhone,
+junction,
+laptop,
+level,
+location,
+main computer,
+materials,
+node,
+npm,
+opening,
+orbit,
+orientation,
+paint,
+paint!painting,
+parapet,
+patio,
+patio!gravel,
+patio!paved,
+pillar,
+plan,
+play the day,
+play the year,
+print,
+roof,
+roof!flat,
+roof!gable,
+roof!hipped,
+roof!rooflight,
+save,
+select,
+sewage,
+shadow,
+sill,
+slice,
+stairs,
+stairs!balustrade,
+stairs!handrail,
+stairs!spiral,
+stone,
+stretch,
+structure,
+sun,
+swimming-pool,
+toolbar,
+tree,
+underground,
+vite,
+walk,
+wall,
+window,
+wrought iron,
+}]
