@@ -12,11 +12,19 @@ Draw a floor plan in 2D and walk through it in 3D, in the browser (desktop or iP
 Built with TypeScript, [three.js](https://threejs.org) and Vite.
 
 ## Installation
-**The quick way (a Mac):** open **Terminal** (press Cmd+Space, type "Term" and press Return) and run these two lines:
+**The quick way (a Mac):** nothing needs installing first: `curl` comes with every Mac, and the installer sets up the rest. Get the installer in either of these ways, then run it.
+
+*Either* open **Terminal** (press Cmd+Space, type "Term" and press Return) and run these two lines (copy them from this page on GitHub rather than typing them: the capitals matter):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/pudepiedj/Arch3D/master/Arch3D_installer.sh -o Arch3D_installer.sh
+curl -fsSLO https://raw.githubusercontent.com/pudepiedj/Arch3D/master/Arch3D_installer.sh
 bash Arch3D_installer.sh
+```
+
+*Or* download it in the browser: go to **github.com/pudepiedj/Arch3D**, click `Arch3D_installer.sh` in the list of files, and use the download button (**Download raw file**) at the top right of the file. It goes into your Downloads folder. Then open **Terminal** and run
+
+```sh
+bash ~/Downloads/Arch3D_installer.sh
 ```
 
 The installer installs **Homebrew** and **Node.js** if they are missing (it asks for your password for Homebrew), downloads Arch3D into a folder `Arch3D` in your home folder (or brings it up to date if it is already there), installs what it needs, starts it and opens it in the browser. Run it again any time to update to the latest version. Closing the Terminal window (or Ctrl-C) stops the app.
