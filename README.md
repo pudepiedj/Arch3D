@@ -56,8 +56,9 @@ That is all there is to it! Now go to a browser, open a new tab and enter/paste 
 For administrative purposes two other **npm** commands are provided, but they are not necessary for the installation and should usually not be used.
 
 ```sh
-npm test         # model unit tests
-npm run build    # static site in dist/
+npm test                # model unit tests
+npm run build           # static site in dist/
+npm run check-drawing.  # use when a 3D drawing breaks for some unknown reason (to analyse)
 ```
 
 **On an iPad (or phone):** keep `npm run dev` running on your main computer (desktop or laptop). As well as the Local address, when you type `npm run dev` it will show an address on the network (as above): it prints a **Network:** address such as `http://192.168.1.23:5173/`. With the iPad on the same Wi-Fi, type that address into a new tab in Safari, Chrome or whichever browser you use. **Tip**: Share → **Add to Home Screen** gives it an app icon.
@@ -416,6 +417,8 @@ Yes — you do need `brew install npm` (actually `brew install node`, which incl
 ---
 One practical tip: if you ever hit a `command not found: brew` error after installing Homebrew, it almost always means the PATH "Next steps" from step 1 weren't run or the Terminal wasn't restarted.
 
+## Index
+
 [INDEX{
 2D,
 3D,
@@ -458,6 +461,7 @@ main computer,
 materials,
 node,
 npm,
+npm!run,
 opening,
 orbit,
 orientation,
