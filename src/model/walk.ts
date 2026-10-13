@@ -10,7 +10,7 @@ import { levelElevation } from './building';
 import { allStairs, holesAt } from './stairholes';
 import { Vec2, pointInPolygon } from './geom';
 import { computeFootprints, type Footprint } from './joints';
-import { openingsOf } from './openings';
+import { openingsWithGates } from './openings';
 import { patioShapes } from './patios';
 import { solidRadius } from './trees';
 import { hedgeFootprints } from './hedges';
@@ -226,7 +226,7 @@ function buildColliders(plan: Plan): Collider[] {
     const u0 = Math.min(fp.uL0, fp.uR0);
     const u1 = Math.max(fp.uL1, fp.uR1);
     let cursor = u0;
-    for (const o of openingsOf(plan, fp.wallId)) {
+    for (const o of openingsWithGates(plan, fp.wallId)) {
       // Doors, and garage and glazed doors shown open, can be walked through.
       if (o.kind !== 'door' && !(o.kind === 'open' && o.sill < 0.2) && !((o.kind === 'garage' || o.kind === 'glazed') && o.open)) continue;
       out.push({ fp, u0: cursor, u1: o.offset - o.width / 2 });

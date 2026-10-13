@@ -37,6 +37,7 @@ import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
 import {
   type OpeningTemplate,
   duplicateOpening,
+  gateGaps,
   matchOpening,
   moveOpening,
   placeOpening,
@@ -2828,6 +2829,10 @@ export class Editor2D {
     for (const o of Object.values(plan.openings)) {
       const fp = this.fps.get(o.wallId);
       if (fp) this.drawOpening(fp, o, this.selection?.kind === 'opening' && this.selection.id === o.id, C);
+    }
+    // The gaps gates cut in walls they stand in.
+    if (Object.values(plan.furniture ?? {}).some((f) => isGate(f.kind))) {
+      for (const fp of this.fps.values()) for (const g of gateGaps(plan, fp.wallId)) this.drawOpening(fp, g, false, C);
     }
 
     // Stairs going up from here, and the stairwells of the stairs coming up from below.

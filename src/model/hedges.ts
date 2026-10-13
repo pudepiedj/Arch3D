@@ -141,6 +141,16 @@ export function onHedge(level: Level, p: Vec2, reach: number): { at: Vec2; angle
       best = { at: pr.point, angle: Math.atan2(b.y - a.y, b.x - a.x), d };
     }
   }
+  // ...or into a wall drawn with the Wall tool (a garden wall), which it cuts its gap in.
+  for (const w of Object.values(level.walls)) {
+    const a = level.nodes[w.a];
+    const b = level.nodes[w.b];
+    if (w.virtual || !a || !b) continue;
+    const pr = projectOnSegment(p, a, b);
+    const d = pr.dist - w.thickness / 2;
+    if (d > reach || (best && d >= best.d)) continue;
+    best = { at: pr.point, angle: Math.atan2(b.y - a.y, b.x - a.x), d };
+  }
   return best && { at: best.at, angle: best.angle };
 }
 

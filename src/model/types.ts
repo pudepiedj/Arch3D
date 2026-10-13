@@ -241,7 +241,8 @@ export interface Stair {
 export type StairStyle = 'solid' | 'stone' | 'cantilever' | 'metal';
 export type RailStyle = 'timber' | 'iron' | 'glass' | 'none';
 
-export type RoofKind = 'gable' | 'hip' | 'flat' | 'none';
+/** 'lean' is a single slope (a lean-to), rising to its high side. */
+export type RoofKind = 'gable' | 'hip' | 'lean' | 'flat' | 'none';
 
 export interface Roof {
   kind: RoofKind;
@@ -270,7 +271,10 @@ export interface Roof {
 export interface RoofEdgeSetting {
   x: number;
   y: number;
-  /** Pitched roofs: a sloping eave or a gable end. Flat roofs: 'open' for no parapet on this edge. */
+  /**
+   * Pitched roofs: a sloping eave or a gable end. Single slopes: 'gable' marks the high side.
+   * Flat roofs: 'open' for no parapet on this edge.
+   */
   type: 'eave' | 'gable' | 'open';
 }
 

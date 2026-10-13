@@ -3,8 +3,9 @@
 // mitred corners), and never overlap each other. Every edit re-clamps them, which is what
 // keeps openings valid when walls are shortened, split, merged or re-joined.
 
+import { isGate } from './gates';
 import { computeFootprints, type Footprint } from './joints';
-import { DEFAULTS, type FrameColour, type GlazedStyle, type Opening, type OpeningKind, type Plan } from './types';
+import { DEFAULTS, type FrameColour, type GlazedStyle, type Level, type Opening, type OpeningKind, type Plan } from './types';
 
 /** Minimum solid wall kept between openings, and between an opening and a corner. */
 export const OPENING_GAP = 0.05;
@@ -15,6 +16,38 @@ export function openingsOf(plan: Plan, wallId: string): Opening[] {
   return Object.values(plan.openings)
     .filter((o) => o.wallId === wallId)
     .sort((p, q) => p.offset - q.offset);
+}
+
+/**
+ * The gaps gates cut in a wall they stand in the line of (a garden wall drawn with the Wall
+ * tool): full-height openings with nothing in them, where each gate is. They aren't stored,
+ * so they follow the gates as they move and go when a gate does.
+ */
+export function gateGaps(plan: Plan, wallId: string): Opening[] {
+  const w = plan.walls[wallId];
+  if (!w || w.virtual) return [];
+  const a = plan.nodes[w.a];
+  const b = plan.nodes[w.b];
+  const L = Math.hypot(b.x - a.x, b.y - a.y);
+  if (!a || !b || L < 1e-6) return [];
+  const ux = (b.x - a.x) / L;
+  const uy = (b.y - a.y) / L;
+  const out: Opening[] = [];
+  for (const f of Object.values((plan as Partial<Level>).furniture ?? {})) {
+    if (!isGate(f.kind)) continue;
+    const u = (f.x - a.x) * ux + (f.y - a.y) * uy;
+    const off = Math.abs(-(f.x - a.x) * uy + (f.y - a.y) * ux);
+    const square = Math.abs(Math.sin(f.angle - Math.atan2(uy, ux))) < 0.15;
+    if (!square || off > w.thickness / 2 + 0.2 || u < 0 || u > L) continue;
+    out.push({ id: `gate:${f.id}`, wallId, kind: 'open', offset: u, width: f.width, height: w.height, sill: 0 });
+  }
+  return out;
+}
+
+/** A wall's doors and windows, and the gaps gates cut in it, in order along it. */
+export function openingsWithGates(plan: Plan, wallId: string): Opening[] {
+  const gates = gateGaps(plan, wallId);
+  return gates.length ? [...openingsOf(plan, wallId), ...gates].sort((p, q) => p.offset - q.offset) : openingsOf(plan, wallId);
 }
 
 /**
@@ -30,7 +63,7 @@ export function freeInterval(
   let lo = fp.uMin + OPENING_GAP;
   let hi = fp.uMax - OPENING_GAP;
   if (u < lo || u > hi) return null;
-  for (const o of openingsOf(plan, fp.wallId)) {
+  for (const o of openingsWithGates(plan, fp.wallId)) {
     if (o.id === excludeId) continue;
     const s = o.offset - o.width / 2 - OPENING_GAP;
     const e = o.offset + o.width / 2 + OPENING_GAP;
@@ -192,7 +225,7 @@ export function freeGaps(plan: Plan, fp: Footprint, excludeId?: string): [number
   const gaps: [number, number][] = [];
   let cursor = fp.uMin + OPENING_GAP;
   const end = fp.uMax - OPENING_GAP;
-  for (const o of openingsOf(plan, fp.wallId)) {
+  for (const o of openingsWithGates(plan, fp.wallId)) {
     if (o.id === excludeId) continue;
     const s = o.offset - o.width / 2 - OPENING_GAP;
     if (s > cursor) gaps.push([cursor, Math.min(s, end)]);

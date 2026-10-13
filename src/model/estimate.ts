@@ -263,7 +263,7 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
           const n = { x: -(e1.y - e0.y) / len, y: (e1.x - e0.x) / len };
           const depth = Math.max(...ring.map((q) => Math.abs((q.x - e0.x) * n.x + (q.y - e0.y) * n.y)));
           const role = r.roles[i];
-          const pitched = r.roof.kind === 'gable' || r.roof.kind === 'hip';
+          const pitched = r.roof.kind === 'gable' || r.roof.kind === 'hip' || r.roof.kind === 'lean';
           const cos = Math.cos(((pitched ? r.roof.pitch : 0) * Math.PI) / 180) || 1;
           const dead = pitched ? (ROOF_DEAD[a.covering] + (r.roof.vaulted ? VAULT_LINING : 0)) / cos : FLAT_DEAD;
           if (role === 'eave') {
@@ -288,7 +288,7 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
     const ridges: { a: Vec2; b: Vec2; L: number; g: number; q: number; roofId: string }[] = [];
     for (const r of roofs) {
       const g = r.geometry;
-      const pitched = r.roof.kind === 'gable' || r.roof.kind === 'hip';
+      const pitched = r.roof.kind === 'gable' || r.roof.kind === 'hip' || r.roof.kind === 'lean';
       if (!g || !pitched || !r.roof.vaulted) continue;
       const pts = g.faces.flatMap((f) => f.pts);
       const top = Math.max(...pts.map((p) => p.z));
@@ -461,7 +461,7 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
         const along = ring.map((q) => (q.x - e0.x) * dir.x + (q.y - e0.y) * dir.y);
         const width = Math.max(...along) - Math.min(...along);
         const depth = Math.max(...ring.map((q) => Math.abs((q.x - e0.x) * -dir.y + (q.y - e0.y) * dir.x)));
-        const pitched = r.roof.kind === 'gable' || r.roof.kind === 'hip';
+        const pitched = r.roof.kind === 'gable' || r.roof.kind === 'hip' || r.roof.kind === 'lean';
         for (let k = 0; k + 1 < supports.length; k++) {
           const s0 = supports[k];
           const s1 = supports[k + 1];
