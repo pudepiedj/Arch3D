@@ -11,6 +11,13 @@ date: 2026-09-30
 Draw a floor plan in 2D and walk through it in 3D, in the browser (desktop or iPad).
 Built with TypeScript, [three.js](https://threejs.org) and Vite.
 
+<div style="text-align: center; margin: 20px auto; max-width: 95%;">
+    <img src="Southfield.png" alt="Curve of y² = x²(1-x)" style="width: 100%; height: auto;">
+    <p style="margin-top: 8px; font-style: italic; color: #555;">
+        Sketch of Southfield House
+    </p>
+</div>
+
 ## Installation
 **The quick way (a Mac):** open **Terminal** (press Cmd+Space, type "Term" and press Return) and run these two lines:
 
