@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { createBuilding } from '../src/model/building';
 import { HEDGE_DEFAULTS, addHedge, hedgeAt, hedgeClosed, hedgeLength, hedgeRuns, onHedge } from '../src/model/hedges';
 import { addFurniture } from '../src/model/furniture';
+import { gateGaps } from '../src/model/openings';
+import { addWall } from '../src/model/plan';
 import { gateLeaves } from '../src/model/gates';
 import { stretch } from '../src/model/stretch';
 import { WalkWorld } from '../src/model/walk';
@@ -135,5 +137,34 @@ describe('damaged or extreme drawings', () => {
     });
     expect(boards).toBeLessThanOrEqual(3000);
     expect(verts).toBeLessThan(200000);
+  });
+});
+
+describe('gates in a garden wall', () => {
+  function setup() {
+    const b = createBuilding();
+    const l = b.levels[0];
+    addWall(l, { x: 0, y: 10 }, { x: 10, y: 10 }, { thickness: 0.2, height: 1.8 });
+    const spot = onHedge(l, { x: 5, y: 10.4 }, 0.8)!;
+    const g = addFurniture(l, 'pathgate', spot.at, spot.angle);
+    return { b, l, g };
+  }
+
+  it('snap onto the wall and cut a gap in it as wide as the gate', () => {
+    const { l, g } = setup();
+    expect(g.y).toBeCloseTo(10, 6);
+    const wall = Object.keys(l.walls)[0];
+    const gaps = gateGaps(l, wall);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].offset).toBeCloseTo(5, 6);
+    expect(gaps[0].width).toBeCloseTo(g.width, 6);
+  });
+
+  it('let the walker through the wall when open', () => {
+    const { b, g } = setup();
+    const through = () => new WalkWorld(b).move({ x: 5, y: 9 }, 0, { x: 0, y: 2 }).p.y;
+    expect(through()).toBeLessThan(10);
+    g.open = true;
+    expect(through()).toBeGreaterThan(10.5);
   });
 });

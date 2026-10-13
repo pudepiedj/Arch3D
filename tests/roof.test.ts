@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addLevelOnTop, createBuilding } from '../src/model/building';
+import { addLevelOnTop, createBuilding, createLevel } from '../src/model/building';
 import { addWall } from '../src/model/plan';
 import { DEFAULT_ROOF, type LevelRoof, levelRoofs, outerFaces, toggleEdge } from '../src/model/roof';
 import type { Building, Level, Roof } from '../src/model/types';
@@ -393,5 +393,76 @@ describe('ridge straightening', () => {
     ]);
     const [r] = levelRoofs(b, g);
     expect(r.ring).toHaveLength(6);
+  });
+});
+
+describe('single-slope roof', () => {
+  const lean: Roof = { kind: 'lean', pitch: 20, overhang: 0.3 };
+  const tan20 = Math.tan((20 * Math.PI) / 180);
+
+  it('free-standing: one slope from a high gable side down to one eave, with two sloping ends', () => {
+    const { b, g } = house(lean);
+    const [r] = levelRoofs(b, g);
+    expect(faces(r, 'slope')).toHaveLength(1);
+    expect(r.roles.filter((x) => x === 'eave')).toHaveLength(1);
+    expect(r.roles.filter((x) => x === 'gable')).toHaveLength(3);
+    expect(faces(r, 'gable')).toHaveLength(3);
+    // Rises across the 6.3 m depth, from the wall plate at the low wall.
+    expect(top(r)).toBeCloseTo(g.height + 6.3 * tan20, 6);
+    expect(r.geometry!.eaves).toHaveLength(1);
+    expect(r.geometry!.eaves[0][0].z).toBeCloseTo(g.height - 0.3 * tan20, 6);
+    // The ends never hang below the wall plate, even out under the eaves.
+    for (const f of faces(r, 'gable')) for (const p of f.pts) expect(p.z).toBeGreaterThanOrEqual(g.height - 1e-6);
+  });
+
+  it('clicking an edge makes that the high side', () => {
+    const { b, g } = house(lean);
+    const [r] = levelRoofs(b, g);
+    const side = r.ring.findIndex((a, i) => Math.abs(a.x - r.ring[(i + 1) % r.ring.length].x) < 1e-6);
+    g.roof = { ...lean, edges: toggleEdge(r, side) };
+    const [r2] = levelRoofs(b, g);
+    expect(r2.roles[side]).toBe('gable');
+    expect(top(r2)).toBeCloseTo(g.height + 10.3 * tan20, 6);
+  });
+
+  it('rises to the wall of a taller storey it is built against', () => {
+    const b = createBuilding();
+    const g = b.levels[0];
+    box(g, [
+      [0, 0],
+      [14, 0],
+      [14, 6],
+      [0, 6],
+    ]);
+    addWall(g, { x: 10, y: 0 }, { x: 10, y: 6 }, { thickness: 0.3, height: g.height });
+    const first = addLevelOnTop(b, false);
+    box(first, rect);
+    g.roofAreas = [{ x: 12, y: 3, roof: lean }];
+    const r = levelRoofs(b, g).find((x) => x.roof.kind === 'lean')!;
+    expect(r.roles.filter((x) => x === 'wall')).toHaveLength(1);
+    const wall = r.ring[r.roles.indexOf('wall')];
+    expect(wall.x).toBeCloseTo(10.15, 6);
+    // Highest against the wall, falling 4 m to the far wall's outside face.
+    expect(top(r)).toBeCloseTo(g.height + 4 * tan20, 6);
+    expect(faces(r, 'gable')).toHaveLength(2);
+  });
+
+  it('rises against a taller part of the house kept on a floor of its own', () => {
+    const { b } = house();
+    addLevelOnTop(b, true);
+    const ext = createLevel(b, 'Extension');
+    b.levels.push(ext);
+    ext.base = 0;
+    box(ext, [
+      [10.3, 0],
+      [14, 0],
+      [14, 6],
+      [10.3, 6],
+    ]);
+    ext.roof = lean;
+    const [r] = levelRoofs(b, ext);
+    const wall = r.roles.indexOf('wall');
+    expect(wall).toBeGreaterThanOrEqual(0);
+    expect(r.ring[wall].x).toBeCloseTo(10.15, 6);
   });
 });

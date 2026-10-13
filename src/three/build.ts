@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { Vec2, add, dot, pointInPolygon, polygonArea, projectOnSegment, scale, sub } from '../model/geom';
 import { computeFootprints, type Footprint, wallPoint } from '../model/joints';
-import { openingsOf } from '../model/openings';
+import { openingsWithGates } from '../model/openings';
 import { detectRooms } from '../model/rooms';
 import { ceilingHeight, levelElevation, sameStack } from '../model/building';
 import { type Shape, intersectAll, subtract } from '../model/clip';
@@ -605,7 +605,7 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
       if (!step) continue;
       fp = { ...fp, height: step };
     }
-    const ops = w.party ? [] : openingsOf(plan, w.id);
+    const ops = w.party ? [] : openingsWithGates(plan, w.id);
     const where = sidesOf.get(w.id) ?? { left: 'outside', right: 'outside' };
     const left = w.faces?.left ?? finishes[where.left];
     const right = w.faces?.right ?? finishes[where.right];

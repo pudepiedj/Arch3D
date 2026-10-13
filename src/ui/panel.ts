@@ -573,7 +573,13 @@ export class Panel {
           ' Where it joins another flat roof there is none anyway.',
       );
     }
-    if (found && roof.kind !== 'flat' && roof.kind !== 'none') {
+    if (found && roof.kind === 'lean') {
+      const against = found.roles.some((r) => r === 'wall');
+      this.note(
+        (against ? 'The slope rises to the taller wall it is built against (shown without a line)' : 'The slope rises to the side drawn as a solid line') +
+          '. Click another edge of this roof on the plan to make that the high side instead.',
+      );
+    } else if (found && roof.kind !== 'flat' && roof.kind !== 'none') {
       const gables = found.roles.filter((r) => r === 'gable').length;
       const walls = found.roles.filter((r) => r === 'wall').length;
       this.note(
@@ -711,7 +717,7 @@ export class Panel {
       f.kind === 'grand'
         ? 'The keyboard end is the front. The dashed box in front is the stool. Drag to move; [ and ] turn it.'
         : isGate(f.kind)
-          ? `Set on a hedge or fence, it sits in its line and makes its own gap; drag it along. ${f.kind === 'gate5' ? `Wider than ${MAX_LEAF + 0.3} m it becomes a pair of gates. ` : ''}Turn 180° to make it open the other way. Open, you can walk through it.`
+          ? `Set on a hedge, fence or garden wall, it sits in its line and makes its own gap; drag it along. ${f.kind === 'gate5' ? `Wider than ${MAX_LEAF + 0.3} m it becomes a pair of gates. ` : ''}Turn 180° to make it open the other way. Open, you can walk through it.`
           : f.kind === 'rotary'
             ? 'Open or folded, with or without washing (Finish): with the Sun study on, see where its shadow falls and when the lines are in sun through the day.'
             : f.kind === 'oiltank'
@@ -1341,18 +1347,19 @@ export class Panel {
     const kinds: [string, string][] = [
       ['gable', 'Gable'],
       ['hip', 'Hipped'],
+      ['lean', 'Single slope (lean-to)'],
       ['flat', 'Flat'],
     ];
     if (allowNone) kinds.push(['none', 'None']);
     this.select(label, roof.kind, kinds, (v) => set({ kind: v as RoofKind }));
-    if (roof.kind === 'gable' || roof.kind === 'hip') {
+    if (roof.kind === 'gable' || roof.kind === 'hip' || roof.kind === 'lean') {
       this.number('Roof pitch', roof.pitch, 1, 5, 70, (v) => set({ pitch: v }), '°');
       this.select('Ceiling', roof.vaulted ? 'vaulted' : 'flat', [
         ['flat', 'Flat ceiling'],
         ['vaulted', 'Vaulted (open to the roof)'],
       ], (v) => set({ vaulted: v === 'vaulted' || undefined }));
       this.select('Covering', roof.covering ?? 'tiles', Object.entries(ROOF_COVERINGS).map(([k, v]): [string, string] => [k, v.name]), (v) => set({ covering: v === 'tiles' ? undefined : (v as RoofCovering) }));
-      this.select('Gable ends', roof.glazedGables ? 'glazed' : 'wall', [
+      this.select(roof.kind === 'lean' ? 'Ends' : 'Gable ends', roof.glazedGables ? 'glazed' : 'wall', [
         ['wall', 'Solid wall'],
         ['glazed', 'Glazed (triangular window)'],
       ], (v) => set({ glazedGables: v === 'glazed' || undefined }));

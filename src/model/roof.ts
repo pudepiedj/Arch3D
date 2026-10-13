@@ -13,7 +13,7 @@
 // wall of a taller storey are treated the same way, without drawing a gable wall.
 
 import { SkeletonBuilder } from 'straight-skeleton';
-import { levelAbove } from './building';
+import { levelAbove, levelElevation } from './building';
 import { intersectAll, subtract, unionAll } from './clip';
 import {
   Vec2,
@@ -227,6 +227,23 @@ export function levelRoofs(b: Building, level: Level): LevelRoof[] {
     const m = { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 };
     return aboveFaces.some((ring) => ring.some((p, i) => projectOnSegment(m, p, ring[(i + 1) % ring.length]).dist < 2e-3));
   };
+  // Faces of taller parts of the building on other floors (a house next to an extension
+  // that has its own floor): a single-slope roof rises against them.
+  const myTop = levelElevation(b, level.id) + level.height;
+  let taller: Vec2[][] | null = null;
+  const abutting = (ring: Vec2[]) => {
+    taller ??= b.levels
+      .filter((l) => l.id !== level.id && levelElevation(b, l.id) + l.height > myTop + 0.1 && levelElevation(b, l.id) < myTop + 1)
+      .flatMap((l) => outerFaces(l));
+    return ring.map((a, k) => {
+      const c = ring[(k + 1) % ring.length];
+      const out = scale(perp(normalize(sub(c, a))), -0.1);
+      return [0.25, 0.5, 0.75].filter((t) => {
+        const p = { x: a.x + (c.x - a.x) * t + out.x, y: a.y + (c.y - a.y) * t + out.y };
+        return taller!.some((f) => pointInPolygon(p, f));
+      }).length >= 2;
+    });
+  };
   const out: LevelRoof[] = [];
 
   const def = defaultRoof(b, level);
@@ -236,7 +253,7 @@ export function levelRoofs(b: Building, level: Level): LevelRoof[] {
     const roof = setting ? setting.roof : def;
     if (!roof || roof.kind === 'none') return;
     const walls = ring.map((p, k) => onAboveWall(p, ring[(k + 1) % ring.length]));
-    out.push(makeRoof(`area:${i}`, ring, walls, roof, level.height));
+    out.push(makeRoof(`area:${i}`, ring, walls, roof, level.height, roof.kind === 'lean' ? abutting(ring) : undefined));
   });
 
   for (const s of Object.values(level.roofSections ?? {})) {
@@ -311,7 +328,7 @@ export function levelRoofs(b: Building, level: Level): LevelRoof[] {
       }
     }
     const walls = ring.map((p, k) => attached[k] || onAboveWall(p, ring[(k + 1) % ring.length]));
-    out.push(makeRoof(`section:${s.id}`, ring, walls, s.roof, s.base ?? level.height));
+    out.push(makeRoof(`section:${s.id}`, ring, walls, s.roof, s.base ?? level.height, s.roof.kind === 'lean' ? abutting(ring) : undefined));
   }
   joinParapets(out);
   return out;
@@ -354,9 +371,11 @@ export function straighten(ring: Vec2[], walls: boolean[], tol = STRAIGHTEN_TOL)
   return { ring: pts, walls: flags };
 }
 
-function makeRoof(id: string, rawRing: Vec2[], rawWalls: boolean[], roof: Roof, height: number): LevelRoof {
+function makeRoof(id: string, rawRing: Vec2[], rawWalls: boolean[], roof: Roof, height: number, abuts?: boolean[]): LevelRoof {
   const { ring, walls } = straighten(rawRing, rawWalls);
-  const roles = edgeRoles(ring, walls, roof);
+  // Straightening drops corners: carry the abutting flags across by edge midpoint.
+  const against = abuts ? ring.map((a, k) => abuts[findEdge(rawRing, mid(a, ring[(k + 1) % ring.length]), 0.1)] ?? false) : undefined;
+  const roles = edgeRoles(ring, walls, roof, against);
   let geometry: RoofGeometry | null = null;
   try {
     geometry = buildRoof(ring, roles, roof, height);
@@ -422,9 +441,53 @@ export function findEdge(ring: Vec2[], at: { x: number; y: number }, tol = 0.35)
   return best;
 }
 
-/** Decide which edges slope (eaves) and which are gable ends or run against a wall. */
-export function edgeRoles(ring: Vec2[], walls: boolean[], roof: Roof): EdgeRole[] {
+const mid = (a: Vec2, b: Vec2): Vec2 => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+
+/**
+ * The high side of a single-slope roof: the edge set by hand, else the longest edge
+ * against a taller wall, else the longest edge against a taller part of the building on
+ * another floor, else the longest edge.
+ */
+export function leanHighEdge(ring: Vec2[], walls: boolean[], roof: Roof, abuts?: boolean[]): number {
   const n = ring.length;
+  const set = (roof.edges ?? []).filter((e) => e.type === 'gable').map((e) => findEdge(ring, e)).find((i) => i >= 0);
+  if (set !== undefined) return set;
+  const longest = (ok: (i: number) => boolean) => {
+    let best = -1;
+    for (let i = 0; i < n; i++) if (ok(i) && (best < 0 || dist(ring[i], ring[(i + 1) % n]) > dist(ring[best], ring[(best + 1) % n]))) best = i;
+    return best;
+  };
+  const w = longest((i) => walls[i]);
+  if (w >= 0) return w;
+  const a = longest((i) => !!abuts?.[i]);
+  return a >= 0 ? a : longest(() => true);
+}
+
+/**
+ * A single slope's roles: the high side against its wall (or a gable end if free), the low
+ * edges facing it eaves, and everything else a vertical end (a verge).
+ */
+function leanRoles(ring: Vec2[], walls: boolean[], roof: Roof, abuts?: boolean[]): EdgeRole[] {
+  const n = ring.length;
+  const h = leanHighEdge(ring, walls, roof, abuts);
+  const a = ring[h];
+  const d = normalize(sub(ring[(h + 1) % n], a));
+  const inward = perp(d);
+  const depth = Math.max(...ring.map((p) => dot(sub(p, a), inward)));
+  return ring.map((p, i) => {
+    if (i === h) return walls[i] || abuts?.[i] ? 'wall' : 'gable';
+    if (walls[i]) return 'wall';
+    const e = normalize(sub(ring[(i + 1) % n], p));
+    // Only the lowest edges are eaves: a step in from them would leave a gap over the wall.
+    const low = Math.abs(dot(sub(p, a), inward) - depth) < 0.05;
+    return dot(d, e) < -0.95 && low ? 'eave' : 'gable';
+  });
+}
+
+/** Decide which edges slope (eaves) and which are gable ends or run against a wall. */
+export function edgeRoles(ring: Vec2[], walls: boolean[], roof: Roof, abuts?: boolean[]): EdgeRole[] {
+  const n = ring.length;
+  if (roof.kind === 'lean') return leanRoles(ring, walls, roof, abuts);
   const roles: EdgeRole[] = walls.map((w) => (w ? 'wall' : 'eave'));
   if (roof.kind === 'gable') {
     if (walls.some(Boolean)) {
@@ -540,6 +603,7 @@ export function buildRoof(ring: Vec2[], roles: EdgeRole[], roof: Roof, height: n
 
   const tan = Math.tan((Math.max(5, Math.min(70, roof.pitch)) * Math.PI) / 180);
   const zEave = height - roof.overhang * tan;
+  if (roof.kind === 'lean') return leanRoof(ring, roles, eave, out, height, tan, zEave);
   // Push the edges that don't slope far away so they don't shape the roof, then trim back.
   const extent = Math.max(1, ...eave.map((p) => dist(p, eave[0])));
   let faces: SkFace[] | null = null;
@@ -610,6 +674,65 @@ export function buildRoof(ring: Vec2[], roles: EdgeRole[], roof: Roof, height: n
     } else if (roles[i] === 'gable') {
       const g = gableWall(a, b, pieces);
       if (g) out.faces.push({ pts: g, kind: 'gable' });
+    }
+  });
+  return out;
+}
+
+/**
+ * A single slope: one plane falling from the high side (the edge that isn't an eave and
+ * faces the eaves) to the eaves, at the wall plate over the low walls, with vertical
+ * ends filling in under it along every other open edge.
+ */
+function leanRoof(ring: Vec2[], roles: EdgeRole[], eave: Vec2[], out: RoofGeometry, height: number, tan: number, zEave: number): RoofGeometry | null {
+  const n = ring.length;
+  // The high side: the edge facing the eaves, furthest from them (a wall edge if no eaves).
+  const low = roles.findIndex((r) => r === 'eave');
+  let h = Math.max(0, roles.findIndex((r) => r === 'wall'));
+  if (low >= 0) {
+    const dl = normalize(sub(ring[(low + 1) % n], ring[low]));
+    let far = -Infinity;
+    ring.forEach((p, i) => {
+      if (roles[i] === 'eave' || dot(normalize(sub(ring[(i + 1) % n], p)), dl) > -0.95) return;
+      const gap = -dot(sub(p, ring[low]), perp(dl));
+      if (gap > far) [far, h] = [gap, i];
+    });
+  }
+  const a = ring[h];
+  const inward = perp(normalize(sub(ring[(h + 1) % n], a)));
+  const depth = Math.max(...ring.map((p) => dot(sub(p, a), inward)));
+  const z = (p: Vec2) => height + tan * (depth - dot(sub(p, a), inward));
+  out.faces.push({ pts: eave.map((p) => ({ ...p, z: z(p) })), kind: 'slope' });
+  eave.forEach((p, i) => {
+    const q = eave[(i + 1) % n];
+    if (roles[i] === 'eave') {
+      out.eaves.push([
+        { ...p, z: zEave },
+        { ...q, z: zEave },
+      ]);
+      return;
+    }
+    if (roles[i] !== 'gable') return;
+    // From the wall plate up to the slope; where the slope runs on out over the eaves, the
+    // end stops at the wall line.
+    const along = [p];
+    const zp = z(p) - height;
+    const zq = z(q) - height;
+    if (zp * zq < 0) {
+      const t = zp / (zp - zq);
+      along.push({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t });
+    }
+    along.push(q);
+    const up = along.filter((v) => z(v) >= height - 1e-6);
+    const pts: Point3[] = [...up.map((v) => ({ ...v, z: height })), ...up.reverse().map((v) => ({ ...v, z: z(v) }))].filter(
+      (v, k, all) => {
+        const w = all[(k + 1) % all.length];
+        return Math.hypot(v.x - w.x, v.y - w.y, v.z - w.z) > 1e-6;
+      },
+    );
+    const dir = normalize(sub(q, p));
+    if (pts.length >= 3 && Math.abs(polygonArea(pts.map((v) => ({ x: dot(sub(v, p), dir), y: v.z })))) > 1e-4) {
+      out.faces.push({ pts, kind: 'gable' });
     }
   });
   return out;
@@ -757,6 +880,8 @@ export function pointInside(ring: Vec2[]): Vec2 {
 export function toggleEdge(r: LevelRoof, edge: number): RoofEdgeSetting[] {
   const a = r.ring[edge];
   const b = r.ring[(edge + 1) % r.ring.length];
+  // A single slope has just one setting: which side is high.
+  if (r.roof.kind === 'lean') return [{ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, type: 'gable' }];
   const kept = (r.roof.edges ?? []).filter((e) => findEdge(r.ring, e) !== edge);
   return [...kept, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, type: r.roles[edge] === 'gable' ? 'eave' : 'gable' }];
 }
