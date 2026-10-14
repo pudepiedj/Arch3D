@@ -3,7 +3,7 @@
 
 import { type Vec2, pointInPolygon } from './geom';
 import { type Point3, roofRangeOver, roofSurfaceAt } from './roof';
-import type { Building, Chimney, Level, Rooflight, SolarArray } from './types';
+import type { Building, Chimney, Dormer, Level, Rooflight, SolarArray } from './types';
 
 export const PANEL_LONG = 1.72;
 export const PANEL_SHORT = 1.13;
@@ -209,4 +209,105 @@ export function rooflightGeometry(b: Building, level: Level, r: Rooflight): Roof
     });
   }
   return { kind: onFlat ? 'kerb' : 'slope', footprint: top.map((p) => ({ x: p.x, y: p.y })), roofZ, top, windows };
+}
+
+export function addDormer(level: Level, p: Vec2): Dormer {
+  const d: Dormer = { id: `dm${level.nextId++}`, x: p.x, y: p.y, width: 1.6, height: 1.3, roof: 'gable', pitch: 40 };
+  level.dormers ??= {};
+  level.dormers[d.id] = d;
+  return d;
+}
+
+export interface DormerGeometry {
+  /** Where it stands on the main roof (cut out of the covering there), on the plan. */
+  footprint: Vec2[];
+  /** Its roof slopes (or flat top), and its walls (the front first, then the cheeks), in 3D. */
+  roof: Point3[][];
+  walls: Point3[][];
+  /** The window in the front wall: frame outline and glass, in 3D. */
+  frame: Point3[];
+  glass: Point3[];
+  /** Fascia along the front of its roof. */
+  eaves: [Point3, Point3][];
+  /** The front wall on the plan (for drawing it), and which way it faces. */
+  front: [Vec2, Vec2];
+  out: Vec2;
+}
+
+/** Dormers stand on slopes at least this steep. */
+const MIN_DORMER_SLOPE = Math.tan((15 * Math.PI) / 180);
+/** Its roof overhangs its front and sides by this much. */
+const DORMER_OVERHANG = 0.1;
+
+/**
+ * Lay out a dormer on the slope under its point. The front wall stands across the slope
+ * there, rising from the roof to the dormer's eaves; the dormer runs back up the slope
+ * until its roof (flat, or a gable whose ridge runs back level) meets the main roof.
+ * Null if the point isn't on a sloping roof.
+ */
+export function dormerGeometry(b: Building, level: Level, d: Dormer): DormerGeometry | null {
+  const foot = { x: d.x, y: d.y };
+  const surf = roofSurfaceAt(b, level, foot);
+  if (!surf || surf.tan < MIN_DORMER_SLOPE) return null;
+  const up = surf.up;
+  const side = { x: -up.y, y: up.x };
+  const tan = surf.tan;
+  const z0 = surf.z(foot);
+  const zf = z0 + d.height;
+  const w = d.width / 2;
+  const at = (s: number, t: number, z: number): Point3 => ({ x: foot.x + side.x * s + up.x * t, y: foot.y + side.y * s + up.y * t, z });
+  // How far back (horizontally, up the slope) the main roof reaches a height.
+  const back = (z: number) => (z - z0) / tan;
+  const tEave = back(zf);
+  const o = DORMER_OVERHANG;
+  const walls: Point3[][] = [];
+  const roof: Point3[][] = [];
+  const eaves: [Point3, Point3][] = [];
+  let footprint: Point3[];
+  if (d.roof === 'flat') {
+    const top = zf + 0.15;
+    // Cheeks: triangles from the foot of the front up to the eaves and back to the roof.
+    walls.push([at(-w, 0, z0), at(w, 0, z0), at(w, 0, zf), at(-w, 0, zf)]);
+    for (const s of [-w, w]) walls.push([at(s, 0, z0), at(s, 0, zf), at(s, tEave, zf)]);
+    const tTop = back(top);
+    roof.push([at(-w - o, -o, top), at(w + o, -o, top), at(w + o, tTop, top), at(-w - o, tTop, top)]);
+    eaves.push([at(-w - o, -o, top), at(w + o, -o, top)]);
+    footprint = [at(-w, 0, 0), at(w, 0, 0), at(w, tEave, 0), at(-w, tEave, 0)];
+  } else {
+    const dt = Math.tan((Math.max(15, Math.min(60, d.pitch)) * Math.PI) / 180);
+    const zr = zf + w * dt;
+    const tRidge = back(zr);
+    // The front: a wall up to the eaves with a gable over it.
+    walls.push([at(-w, 0, z0), at(w, 0, z0), at(w, 0, zf), at(0, 0, zr), at(-w, 0, zf)]);
+    for (const s of [-w, w]) walls.push([at(s, 0, z0), at(s, 0, zf), at(s, tEave, zf)]);
+    // Each slope: from its eave (running back level until it meets the main roof) up to the
+    // ridge, with the valley where it meets the main roof. A little overhang at the front
+    // and side, in the slope's own plane.
+    for (const s of [-1, 1]) {
+      const e = s * (w + o);
+      const ze = zf - o * dt;
+      // The valley runs from the back of the ridge, through where the eave line meets the
+      // main roof over the cheek, to where the overhanging eave meets it.
+      roof.push([at(e, -o, ze), at(0, -o, zr), at(0, tRidge, zr), at(e, back(ze), ze)]);
+      eaves.push([at(e, -o, ze), at(e, back(ze), ze)]);
+    }
+    footprint = [at(-w, 0, 0), at(w, 0, 0), at(w, tEave, 0), at(0, tRidge, 0), at(-w, tEave, 0)];
+  }
+  // The window: most of the front wall below the eaves.
+  const ww = Math.max(0.3, d.width - 0.3) / 2;
+  const sill = z0 + 0.12;
+  const head = zf - 0.12;
+  const frame = [at(-ww, 0.01, sill), at(ww, 0.01, sill), at(ww, 0.01, head), at(-ww, 0.01, head)];
+  const glass = [at(-ww + 0.06, 0.02, sill + 0.06), at(ww - 0.06, 0.02, sill + 0.06), at(ww - 0.06, 0.02, head - 0.06), at(-ww + 0.06, 0.02, head - 0.06)];
+  const flat = (p: Point3): Vec2 => ({ x: p.x, y: p.y });
+  return {
+    footprint: footprint.map(flat),
+    roof,
+    walls,
+    frame,
+    glass,
+    eaves,
+    front: [flat(at(-w, 0, 0)), flat(at(w, 0, 0))],
+    out: { x: -up.x, y: -up.y },
+  };
 }

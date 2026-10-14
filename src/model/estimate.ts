@@ -10,7 +10,7 @@ import { levelAbove, levelBelow } from './building';
 import { type Vec2, dist, projectOnSegment } from './geom';
 import { computeFootprints, wallPoint } from './joints';
 import { levelRoofs, type Point3 } from './roof';
-import { rooflightGeometry } from './roofitems';
+import { dormerGeometry, rooflightGeometry } from './roofitems';
 import { pillarHeight } from './pillars';
 import { guardLength, patioArea } from './patios';
 import { detectRooms } from './rooms';
@@ -121,6 +121,8 @@ export const DEFAULT_PRICES: Record<string, number> = {
   hedge: 4,
   'gate-5bar': 380,
   'gate-path': 220,
+  dormer: 9500,
+  palisade: 45,
   // A tennis court: base and surface over the whole enclosure, its fence, and net and posts.
   'court-tarmac': 55,
   'court-clay': 75,
@@ -624,6 +626,12 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
       add({ id: `gableglass:${level.id}:${r.id}`, price: 'gable-glazing', group: 'Glazing, doors and windows', item: `Glazed gable (triangular), ${tag}`, detail: 'structural glazing filling the gable', qty: gableGlass * 0.85, unit: 'm²', key: true });
     }
 
+    // ---- Dormers.
+    const dormers = Object.values(level.dormers ?? {}).filter((d) => inside(d) && dormerGeometry(b, level, d));
+    if (dormers.length) {
+      add({ id: `dormers:${level.id}`, price: 'dormer', group: 'Roof', item: 'Dormers, framed, roofed and clad, with a window', detail: dormers.map((d) => `${d.width.toFixed(1)} m wide, ${d.roof === 'flat' ? 'flat' : 'gabled'}`).join('; '), qty: dormers.length, unit: 'no.', key: true });
+    }
+
     // ---- Roof windows.
     let windows = 0;
     const sizes = new Map<string, number>();
@@ -670,6 +678,7 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
         if (!mid || !inside(mid) || h.kind === 'ditch') continue;
         const L = hedgeLength(h);
         if (h.kind === 'wall') add({ id: `gardenwall:${h.id}`, price: 'garden-wall', group: 'Garden and drains', item: `Garden wall, ${h.finish && h.finish !== 'stone' ? h.finish.replace('-', ' ') : 'stone'}`, detail: `${L.toFixed(1)} m long, ${h.height} m high, ${Math.round(h.width * 100)} cm thick, with coping and footing`, qty: L * h.height, unit: 'm²' });
+        else if (h.kind === 'palisade') add({ id: `fence:${h.id}`, price: 'palisade', group: 'Garden and drains', item: 'Palisade fence', detail: `${L.toFixed(1)} m, ${h.height} m high`, qty: L, unit: 'm' });
         else if (h.kind === 'fence') add({ id: `fence:${h.id}`, price: 'fence', group: 'Garden and drains', item: 'Close-board fence', detail: `${L.toFixed(1)} m, ${h.height} m high`, qty: L, unit: 'm' });
         else add({ id: `hedge:${h.id}`, price: 'hedge', group: 'Garden and drains', item: `${h.kind[0].toUpperCase()}${h.kind.slice(1)} hedge plants`, detail: `${L.toFixed(1)} m, 5 a metre in a double row`, qty: Math.ceil(L * 5), unit: 'no.' });
       }

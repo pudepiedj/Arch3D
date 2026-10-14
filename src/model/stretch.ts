@@ -39,7 +39,7 @@ export function stretchSummary(b: Building, box: Box, onlyLevel?: string) {
       if (inBox(box, { x: a.x + ((e.x - a.x) / len) * o.offset, y: a.y + ((e.y - a.y) / len) * o.offset })) c.openings++;
     }
     c.furniture += Object.values(level.furniture ?? {}).filter((f) => inBox(box, f)).length;
-    for (const list of [level.stairs, level.pillars, level.chimneys, level.solar, level.rooflights, level.trees]) {
+    for (const list of [level.stairs, level.pillars, level.chimneys, level.solar, level.rooflights, level.dormers, level.trees]) {
       c.other += Object.values(list ?? {}).filter((it) => inBox(box, it)).length;
     }
   }
@@ -128,7 +128,7 @@ export function stretchLevel(level: Level, box: Box, d: Vec2, picked?: Picked, m
   }
 
   // Everything placed by a point.
-  for (const list of [level.stairs, level.pillars, level.chimneys, level.solar, level.rooflights, level.furniture, level.trees]) {
+  for (const list of [level.stairs, level.pillars, level.chimneys, level.solar, level.rooflights, level.dormers, level.furniture, level.trees]) {
     for (const item of Object.values(list ?? {})) move(item);
   }
   // Outlines drawn corner by corner: each corner inside the box moves.

@@ -36,9 +36,15 @@ export interface CatalogueItem {
   finishLabel?: string;
   /** Only ever in the garden: always put on the ground floor. */
   groundOnly?: boolean;
+  /** Its height is set to the room's ceiling when it is put down (a floor-to-ceiling cupboard, a downlight). */
+  toCeiling?: boolean;
+  /** Hung on the wall this high above the floor (to its underside). */
+  lift?: number;
+  /** Names for its finishes in the panel, where the word alone won't do. */
+  finishNames?: Record<string, string>;
 }
 
-export const CATEGORIES = ['Music', 'Living', 'Heating', 'Dining', 'Office', 'Bedroom', 'Kitchen', 'Bathroom', 'Garage', 'Garden'];
+export const CATEGORIES = ['Music', 'Living', 'Heating', 'Dining', 'Office', 'Bedroom', 'Kitchen', 'Lighting', 'Bathroom', 'Garage', 'Garden'];
 
 const WOODS = ['oak', 'walnut', 'white'];
 const GATE_FINISHES = ['oak', 'grey', 'green', 'white', 'black'];
@@ -87,8 +93,16 @@ export const CATALOGUE: CatalogueItem[] = [
   { kind: 'hob', name: 'Hob and oven', category: 'Kitchen', width: 0.6, depth: 0.6, height: 0.9, finishes: ['white', 'sage', 'navy', 'oak'] },
   { kind: 'tall', name: 'Tall unit', category: 'Kitchen', width: 0.6, depth: 0.6, height: 2.2, finishes: ['white', 'sage', 'navy', 'oak'] },
   { kind: 'fridge', name: 'Fridge freezer', category: 'Kitchen', width: 0.7, depth: 0.7, height: 1.85 },
+  // A range cooker: two ovens on the left, two on the right, two hotplates under domed lids.
+  { kind: 'aga', name: 'Range cooker (Aga type)', category: 'Kitchen', width: 0.99, depth: 0.68, height: 0.91, finishes: ['cream', 'red', 'black', 'blue', 'green', 'white'] },
+  { kind: 'larder', name: 'Floor-to-ceiling cupboard', category: 'Kitchen', width: 0.6, depth: 0.6, height: 2.4, finishes: ['white', 'sage', 'navy', 'oak'], toCeiling: true, labels: { height: 'Height (to the ceiling)' }, maxHeight: 4 },
+  // Wall cupboard: "open" is its lights underneath, on.
+  { kind: 'wallunit', name: 'Wall cupboard', category: 'Kitchen', width: 0.6, depth: 0.33, height: 0.72, finishes: ['white', 'sage', 'navy', 'oak'], lift: 1.45, walkUnder: true, openable: true },
   { kind: 'island', name: 'Island', category: 'Kitchen', width: 1.8, depth: 0.9, height: 0.9, finishes: ['white', 'sage', 'navy', 'oak'] },
 
+  // Set into the ceiling: its height is the ceiling's.
+  { kind: 'downlight', name: 'Ceiling downlight', category: 'Lighting', width: 0.09, depth: 0.09, height: 2.4, toCeiling: true, walkUnder: true, finishes: ['white', 'chrome', 'black'], labels: { height: 'Ceiling height' }, maxHeight: 6 },
+  { kind: 'downlightrow', name: 'Row of downlights', category: 'Lighting', width: 2.4, depth: 0.09, height: 2.4, toCeiling: true, walkUnder: true, finishes: ['white', 'chrome', 'black'], labels: { width: 'Length of the row', height: 'Ceiling height' }, maxHeight: 6 },
   { kind: 'bath', name: 'Bath', category: 'Bathroom', width: 1.7, depth: 0.75, height: 0.58 },
   { kind: 'shower', name: 'Shower', category: 'Bathroom', width: 0.9, depth: 0.9, height: 2.0 },
   { kind: 'wc', name: 'WC', category: 'Bathroom', width: 0.4, depth: 0.68, height: 0.8 },
@@ -110,6 +124,9 @@ export const CATALOGUE: CatalogueItem[] = [
   { kind: 'rotary', name: 'Rotary clothes dryer', category: 'Garden', width: 3.0, depth: 3.0, height: 1.8, finishes: ['empty', 'washing'], openable: true, walkUnder: true, labels: { width: 'Across', depth: 'Across (other way)', height: 'Line height' } },
   // Rows of trellised vines; "height" is the top of the trellis, the finish the grapes'.
   { kind: 'vineyard', name: 'Vineyard (rows of vines)', category: 'Garden', width: 10, depth: 20, height: 1.8, finishes: ['red', 'white'], finishLabel: 'Grapes', labels: { width: 'Width (across rows)', depth: 'Length of rows', height: 'Trellis height' }, maxSize: 150, maxHeight: 3, groundOnly: true },
+  { kind: 'pagoda', name: 'Pagoda (octagonal summerhouse)', category: 'Garden', width: 3.2, depth: 3.2, height: 3.6, finishes: ['red', 'oak', 'green', 'white'], walkUnder: true, labels: { width: 'Across', depth: 'Across (other way)', height: 'Height to the top' }, maxSize: 8, maxHeight: 6 },
+  { kind: 'jetty', name: 'Jetty (over a pond)', category: 'Garden', width: 1.2, depth: 4.0, height: 0.2, finishes: ['oak', 'grey'], walkUnder: true, labels: { depth: 'Length', height: 'Deck height' }, maxSize: 20 },
+  { kind: 'flagpole', name: 'Flagpole', category: 'Garden', width: 0.4, depth: 0.4, height: 6.0, finishes: ['stgeorge', 'white', 'red', 'blue', 'green', 'none'], labels: { height: 'Height of the pole' }, finishLabel: 'Flag', finishNames: { stgeorge: 'St George’s cross', none: 'None (bare pole)' }, maxHeight: 15 },
   // A wildlife pond; "height" is the depth of water.
   { kind: 'pond', name: 'Pond (natural, planted)', category: 'Garden', width: 3.5, depth: 3.5, height: 0.9, labels: { width: 'Across', depth: 'Across (other way)', height: 'Depth of water' }, maxSize: 20, maxHeight: 2, groundOnly: true },
   // A regulation court in its fenced enclosure; "height" is the fence's.
@@ -143,6 +160,8 @@ export function addFurniture(level: Level, kind: string, at: Vec2, angle = 0): F
     f.stool = true;
   }
   if (kind === 'rotary') f.open = true;
+  if (c.lift !== undefined) f.lift = c.lift;
+  if (kind === 'wallunit') f.open = true;
   level.furniture ??= {};
   level.furniture[id] = f;
   return f;

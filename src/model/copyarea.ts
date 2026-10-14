@@ -19,6 +19,7 @@ import type {
   RoofAreaSetting,
   RoofSection,
   Rooflight,
+  Dormer,
   SolarArray,
   Stair,
   Tree,
@@ -45,6 +46,8 @@ export interface Clip {
   chimneys: Chimney[];
   solar: SolarArray[];
   rooflights: Rooflight[];
+  /** Older clips have none. */
+  dormers?: Dormer[];
   patios: Patio[];
   trees: Tree[];
   hedges: Hedge[];
@@ -144,6 +147,7 @@ export function copyArea(level: Level, box: Box): Clip | null {
     chimneys: at(level.chimneys),
     solar: at(level.solar),
     rooflights: at(level.rooflights),
+    dormers: at(level.dormers),
     trees: at(level.trees),
     furniture: at(level.furniture),
     patios: within(level.patios),
@@ -169,6 +173,7 @@ export function clipSize(c: Clip): number {
     c.chimneys.length +
     c.solar.length +
     c.rooflights.length +
+    (c.dormers?.length ?? 0) +
     c.patios.length +
     c.trees.length +
     c.hedges.length +
@@ -192,7 +197,7 @@ export function describeClip(c: Clip): string {
   count(c.trees.length, 'a tree', 'trees');
   count(c.hedges.length, 'a hedge', 'hedges');
   count(c.furniture.length, 'a piece of furniture', 'pieces of furniture');
-  count(c.chimneys.length + c.solar.length + c.rooflights.length, 'a roof fitting', 'roof fittings');
+  count(c.chimneys.length + c.solar.length + c.rooflights.length + (c.dormers?.length ?? 0), 'a roof fitting', 'roof fittings');
   if (parts.length < 2) return parts[0] ?? 'nothing';
   return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
 }
@@ -249,6 +254,7 @@ export function pasteClip(level: Level, clip: Clip, at: Vec2): void {
   put('chimneys', 'c', clip.chimneys, pt);
   put('solar', 'sa', clip.solar, pt);
   put('rooflights', 'rl', clip.rooflights, pt);
+  put('dormers', 'dm', clip.dormers ?? [], pt);
   put('trees', 'tr', clip.trees, pt);
   put('furniture', 'f', clip.furniture, pt);
   put('patios', 'pt', clip.patios, poly);

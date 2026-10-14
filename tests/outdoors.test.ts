@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addLevelOnTop, createBuilding } from '../src/model/building';
 import { addFurniture } from '../src/model/furniture';
-import { gardenLevel, openDrawing } from '../src/model/outdoors';
+import { gardenLevel, inGarden, openDrawing } from '../src/model/outdoors';
 import { addPatio } from '../src/model/patios';
 import { addWall } from '../src/model/plan';
 import { levelRoofs } from '../src/model/roof';
@@ -54,6 +54,22 @@ describe('garden things on the right floor', () => {
     const kinds = (l: Level) => Object.values(l.furniture ?? {}).map((f) => f.kind);
     expect(kinds(opened.levels[0])).toContain('tennis');
     expect(kinds(opened.levels[1])).toEqual(['sofa3']);
+  });
+});
+
+describe('walls, hedges and patios drawn with an upper floor showing', () => {
+  it('go in the garden only when clear of the building', () => {
+    const { b, g } = house();
+    const first = addLevelOnTop(b, false, g); // an empty floor: no walls of its own yet
+    expect(inGarden(b, first, [{ x: 30, y: 0 }, { x: 40, y: 0 }])).toBe(true); // a garden wall
+    expect(inGarden(b, first, [{ x: 0, y: 0 }, { x: 10, y: 0 }])).toBe(false); // over the house: a first-floor wall
+    expect(inGarden(b, first, [{ x: 14, y: 0 }, { x: 20, y: 0 }])).toBe(false); // running out from the house
+    expect(inGarden(b, first, [{ x: 30, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 10 }])).toBe(true); // a hedge
+    // A balcony against the house stays upstairs; a patio out in the garden doesn't.
+    expect(inGarden(b, first, [{ x: 0, y: 6.2 }, { x: 4, y: 6.2 }, { x: 4, y: 8 }, { x: 0, y: 8 }], true)).toBe(false);
+    expect(inGarden(b, first, [{ x: 20, y: 20 }, { x: 24, y: 20 }, { x: 24, y: 24 }, { x: 20, y: 24 }], true)).toBe(true);
+    // On the ground floor nothing moves.
+    expect(inGarden(b, g, [{ x: 30, y: 0 }, { x: 40, y: 0 }])).toBe(false);
   });
 });
 

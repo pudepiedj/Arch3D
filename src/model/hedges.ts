@@ -9,6 +9,7 @@ export const HEDGE_DEFAULTS: Record<HedgeKind, { height: number; width: number }
   hawthorn: { height: 1.5, width: 0.7 },
   beech: { height: 1.8, width: 0.6 },
   fence: { height: 1.8, width: 0.1 },
+  palisade: { height: 1.2, width: 0.1 },
   ditch: { height: 0.9, width: 1.8 },
   wall: { height: 2.0, width: 0.3 },
 };
@@ -18,9 +19,13 @@ export const HEDGE_NAMES: Record<HedgeKind, string> = {
   hawthorn: 'Hawthorn hedge',
   beech: 'Beech hedge',
   fence: 'Close-board fence',
+  palisade: 'Palisade fence (spaced pointed pales)',
   ditch: 'Drainage ditch',
   wall: 'Garden wall (stone)',
 };
+
+/** Either kind of timber fence (close-board, or palisade). */
+export const isFence = (kind: HedgeKind) => kind === 'fence' || kind === 'palisade';
 
 /** Fence posts are no further apart than this. */
 export const FENCE_BAY = 1.8;

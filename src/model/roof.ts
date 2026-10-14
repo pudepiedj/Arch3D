@@ -491,11 +491,23 @@ export function edgeRoles(ring: Vec2[], walls: boolean[], roof: Roof, abuts?: bo
   const roles: EdgeRole[] = walls.map((w) => (w ? 'wall' : 'eave'));
   if (roof.kind === 'gable') {
     if (walls.some(Boolean)) {
-      // A roof built against a taller wall: its ridge runs into the wall, with the gable
-      // on the far side, facing away from it.
+      // A roof built against a taller wall. Off a projecting part (an extension sticking
+      // out from the wall), its ridge runs into the wall with the gable on the far side,
+      // facing away. Along a strip wider than it is deep (a porch, a full-width extension,
+      // or a part wrapping round the floor above), that ridge would climb too high: it
+      // becomes a single slope against the wall (a catslide), gabled at its ends.
+      const single = walls.filter(Boolean).length === 1;
       ring.forEach((a, i) => {
         if (!walls[i]) return;
         const d = normalize(sub(ring[(i + 1) % n], a));
+        const depth = Math.max(...ring.map((c) => dot(sub(c, a), perp(d))));
+        if (!single || dist(a, ring[(i + 1) % n]) / 2 > depth + 1e-6) {
+          for (const j of [(i - 1 + n) % n, (i + 1) % n]) {
+            const e = normalize(sub(ring[(j + 1) % n], ring[j]));
+            if (!walls[j] && Math.abs(dot(d, e)) < 0.2) roles[j] = 'gable';
+          }
+          return;
+        }
         let far = -1;
         let farDist = 0;
         ring.forEach((c, j) => {
@@ -604,32 +616,49 @@ export function buildRoof(ring: Vec2[], roles: EdgeRole[], roof: Roof, height: n
   const tan = Math.tan((Math.max(5, Math.min(70, roof.pitch)) * Math.PI) / 180);
   const zEave = height - roof.overhang * tan;
   if (roof.kind === 'lean') return leanRoof(ring, roles, eave, out, height, tan, zEave);
-  // Push the edges that don't slope far away so they don't shape the roof, then trim back.
+  // The edges that don't slope mustn't shape the roof. Several ways of arranging that are
+  // tried in turn (see levelledSkeleton), keeping the first whose slopes cover the whole
+  // outline, or failing that the one that covers most.
   const extent = Math.max(1, ...eave.map((p) => dist(p, eave[0])));
-  let faces: SkFace[] | null = null;
+  const attempts: (() => SkFace[] | null)[] = [];
   if (roles.some((r) => r !== 'eave')) {
+    for (const far of [extent * 4, extent * 2, extent * 10]) attempts.push(() => levelledSkeleton(eave, level, far));
     for (const far of [extent * 20, extent * 5, extent * 2]) {
-      const pushed = outsetLoop(eave, eave.map((_, i) => (level(i) ? far : 0)));
-      if (isSimple(pushed) && polygonArea(pushed) > 0) faces = skeleton(pushed);
-      if (faces) break;
+      attempts.push(() => {
+        const pushed = outsetLoop(eave, eave.map((_, i) => (level(i) ? far : 0)));
+        return isSimple(pushed) && polygonArea(pushed) > 0 ? skeleton(pushed) : null;
+      });
     }
   }
-  faces ??= skeleton(eave);
-  if (!faces) return null;
-
-  const pieces: Point3[][] = [];
-  const planes: { plane: (p: Vec2) => number; pts: Point3[] }[] = [];
-  for (const f of faces) {
-    if (level(f.edge)) continue;
-    const plane = planeOf(f.pts.map((p) => ({ x: p.x, y: p.y, z: zEave + p.d * tan })));
-    if (!plane) continue;
-    for (const shape of intersectAll(f.pts, eave)) {
-      const pts = shape[0].map((p) => ({ x: p.x, y: p.y, z: plane(p) }));
-      if (Math.abs(polygonArea(pts)) < 1e-6) continue;
-      pieces.push(pts);
-      planes.push({ plane, pts });
+  attempts.push(() => skeleton(eave));
+  const want = Math.abs(polygonArea(eave));
+  let best: { pieces: Point3[][]; planes: { plane: (p: Vec2) => number; pts: Point3[] }[]; covered: number } | null = null;
+  for (const attempt of attempts) {
+    const faces = attempt();
+    if (!faces) continue;
+    try {
+      const pieces: Point3[][] = [];
+      const planes: { plane: (p: Vec2) => number; pts: Point3[] }[] = [];
+      for (const f of faces) {
+        if (level(f.edge)) continue;
+        const plane = planeOf(f.pts.map((p) => ({ x: p.x, y: p.y, z: zEave + p.d * tan })));
+        if (!plane) continue;
+        for (const shape of intersectAll(f.pts, eave)) {
+          const pts = shape[0].map((p) => ({ x: p.x, y: p.y, z: plane(p) }));
+          if (Math.abs(polygonArea(pts)) < 1e-6) continue;
+          pieces.push(pts);
+          planes.push({ plane, pts });
+        }
+      }
+      const covered = pieces.reduce((sum, p) => sum + Math.abs(polygonArea(p)), 0);
+      if (!best || covered > best.covered) best = { pieces, planes, covered };
+      if (Math.abs(covered - want) < want * 0.002) break;
+    } catch {
+      // The clipping library gave up on this arrangement: try the next.
     }
   }
+  if (!best) return null;
+  const { pieces, planes } = best;
   // The skeleton library occasionally leaves part of a face out, notably where two lined-up
   // edges (a wall either side of a bay) merge. Fill any uncovered part of the outline with
   // the lowest of the neighbouring slopes, which is what the roof there must be.
@@ -738,6 +767,80 @@ function leanRoof(ring: Vec2[], roles: EdgeRole[], eave: Vec2[], out: RoofGeomet
   return out;
 }
 
+/**
+ * The straight skeleton of an outline in which some edges don't slope (gable ends, edges
+ * against a wall): each run of such edges is replaced by carrying the sloping edges either
+ * side of it on along their own lines, far out, and joining them there. The sloping edges
+ * then rise exactly as they would, with nothing from the level ones, and the outline can't
+ * fold over itself as it can when the level edges themselves are pushed out (two of them
+ * meeting at an inside corner). Faces come back numbered by the original edges; those of
+ * the far joins get the number of one of the level edges they replace.
+ */
+function levelledSkeleton(ring: Vec2[], level: (i: number) => boolean, far: number): SkFace[] | null {
+  const n = ring.length;
+  const eaves = ring.map((_, i) => i).filter((i) => !level(i));
+  if (!eaves.length) return null;
+  const dir = (i: number) => normalize(sub(ring[(i + 1) % n], ring[i]));
+  const pts: Vec2[] = [];
+  const edgeOf: number[] = [];
+  if (eaves.length === 1) {
+    // One sloping edge: a single slope, its far side a long way off.
+    const i = eaves[0];
+    const d = dir(i);
+    const a = sub(ring[i], scale(d, far));
+    const b2 = { x: ring[(i + 1) % n].x + d.x * far, y: ring[(i + 1) % n].y + d.y * far };
+    const inward = perp(d);
+    pts.push(a, b2, { x: b2.x + inward.x * far, y: b2.y + inward.y * far }, { x: a.x + inward.x * far, y: a.y + inward.y * far });
+    edgeOf.push(i, (i + 1) % n, (i + 1) % n, (i + 1) % n);
+  } else {
+    // Across each run of level edges, from the sloping edge before it (k) to the one after
+    // (i): where their lines meet beyond the run, if they converge (a part wrapping round an
+    // inside corner), else nowhere (they are carried on far out and joined there).
+    const meet = new Map<number, Vec2>();
+    const joined = new Set<number>();
+    let lined = false;
+    eaves.forEach((i, m) => {
+      if (!level((i - 1 + n) % n)) return;
+      const k = eaves[(m - 1 + eaves.length) % eaves.length];
+      // Sloping edges in line either side of the run. If the run lies on that line too (a
+      // gable end set in the middle of an eave, for a cross gable over a bay), this way
+      // can't shape it: leave it to the next. If it goes round something (the two arms of
+      // a part wrapped round three sides of the floor above), join them straight across.
+      if (dot(dir(k), dir(i)) > 0.999 && Math.abs(cross(dir(k), sub(ring[i], ring[k]))) < 1e-6) {
+        let onLine = true;
+        for (let j = (k + 1) % n; j !== i; j = (j + 1) % n) if (Math.abs(cross(dir(k), sub(ring[j], ring[k]))) > 1e-6) onLine = false;
+        if (onLine) lined = true;
+        else joined.add(i);
+        return;
+      }
+      const end = ring[(k + 1) % n];
+      const x = lineIntersect(end, dir(k), ring[i], dir(i));
+      if (x && dot(sub(x, end), dir(k)) > 1e-6 && dot(sub(ring[i], x), dir(i)) > 1e-6 && dist(x, end) < far) meet.set(i, x);
+    });
+    if (lined) return null;
+    eaves.forEach((i, m) => {
+      const d = dir(i);
+      // Where this edge starts: its own corner, where it meets the edge before across a
+      // run of level ones, or carried back far along its line.
+      // (Joined straight across to the one before: that edge carries on to here.)
+      if (!joined.has(i)) {
+        pts.push(!level((i - 1 + n) % n) ? ring[i] : (meet.get(i) ?? sub(ring[i], scale(d, far))));
+        edgeOf.push(i);
+      }
+      const next = eaves[(m + 1) % eaves.length];
+      if (level((i + 1) % n) && !meet.has(next) && !joined.has(next)) {
+        const end = ring[(i + 1) % n];
+        pts.push({ x: end.x + d.x * far, y: end.y + d.y * far });
+        edgeOf.push((i + 1) % n);
+      }
+    });
+  }
+  if (!isSimple(pts) || polygonArea(pts) <= 0) return null;
+  const faces = skeleton(pts);
+  if (!faces) return null;
+  return faces.map((f) => ({ edge: edgeOf[f.edge], pts: f.pts }));
+}
+
 /** The vertical wall filling a gable end: the roof's profile along a-b, closed along the bottom. */
 function gableWall(a: Vec2, b: Vec2, pieces: Point3[][]): Point3[] | null {
   const along = normalize(sub(b, a));
@@ -746,7 +849,7 @@ function gableWall(a: Vec2, b: Vec2, pieces: Point3[][]): Point3[] | null {
   for (const piece of pieces) {
     for (const p of piece) if (projectOnSegment(p, a, b).dist < 1e-5) profile.push({ t: dot(sub(p, a), along), p });
   }
-  if (profile.length < 3) return null;
+  if (profile.length < 2) return null;
   profile.sort((u, v) => u.t - v.t);
   const pts: Point3[] = [];
   let lastT = -Infinity;
@@ -759,8 +862,13 @@ function gableWall(a: Vec2, b: Vec2, pieces: Point3[][]): Point3[] | null {
     pts.push({ ...q.p });
     lastT = q.t;
   }
-  if (pts.length < 3 || profile[0].t > 1e-4 || profile[profile.length - 1].t < len - 1e-4) return null;
-  return pts;
+  if (profile[0].t > 1e-4 || profile[profile.length - 1].t < len - 1e-4) return null;
+  // The end of a single slope (a catslide against a wall) rises from one end to the other:
+  // close it along the bottom, level with its lower end.
+  const zb = Math.min(pts[0].z, pts[pts.length - 1].z);
+  if (pts[pts.length - 1].z > zb + 1e-4) pts.push({ ...pts[pts.length - 1], z: zb });
+  if (pts[0].z > zb + 1e-4) pts.unshift({ ...pts[0], z: zb });
+  return pts.length >= 3 ? pts : null;
 }
 
 /** z = f(x, y) for the plane through a planar polygon (null if degenerate). */
