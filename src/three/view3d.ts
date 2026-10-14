@@ -425,12 +425,19 @@ export class View3D {
     this.onModeChange?.(mode);
   }
 
-  /** Start walking in the middle of the biggest room, facing its longest direction. */
+  /** Where to start the next walk: a point on the plan of a floor (the last place clicked). */
+  walkFrom: { p: { x: number; y: number }; levelId: string } | null = null;
+
+  /**
+   * Start walking from the last place clicked on this floor's plan, indoors or out, facing
+   * the middle of the floor; failing that, in the middle of the biggest room.
+   */
   private placeWalker() {
     const rooms = this.plan ? detectRooms(this.plan) : [];
     rooms.sort((a, b) => b.area - a.area);
     const b = this.plan && planBounds(this.plan);
-    let start = rooms[0]?.centroid ?? (b ? { x: (b.min.x + b.max.x) / 2, y: b.max.y + 3 } : { x: 0, y: 0 });
+    const from = this.walkFrom?.levelId === this.activeId ? this.walkFrom.p : null;
+    let start = from ?? rooms[0]?.centroid ?? (b ? { x: (b.min.x + b.max.x) / 2, y: b.max.y + 3 } : { x: 0, y: 0 });
     // Not inside the piano (or anything else) standing in the middle of the room.
     if (this.world) start = this.world.clearSpot(start, this.floorY);
     this.foot = this.world ? this.world.groundAt(start, this.floorY) : this.floorY;
@@ -438,6 +445,12 @@ export class View3D {
     this.walkLevelId = this.activeId;
     this.camera.position.set(start.x, this.eyeY, start.y);
     this.yaw = rooms[0] ? 0 : Math.PI;
+    if (from && b) {
+      // Facing the middle of the floor (looking (dx, dy) on the plan is yaw atan2(-dx, -dy)).
+      const dx = (b.min.x + b.max.x) / 2 - start.x;
+      const dy = (b.min.y + b.max.y) / 2 - start.y;
+      if (Math.hypot(dx, dy) > 1) this.yaw = Math.atan2(-dx, -dy);
+    }
     this.pitch = 0;
     this.applyYawPitch();
   }

@@ -17,6 +17,7 @@ import { solidRadius } from './trees';
 import { hedgeFootprints } from './hedges';
 import { isGate } from './gates';
 import { isPond, pondOnPlan } from './pond';
+import { isPorch, porchBarriers } from './porch';
 import { isVineyard, vineBarriers } from './vineyard';
 import { courtBarriers, isTennis } from './tennis';
 import { catalogueItem, footprint, standingHeight } from './furniture';
@@ -80,6 +81,12 @@ export class WalkWorld {
       // Furniture is in the way (except rugs); you walk round it.
       for (const f of Object.values(level.furniture ?? {})) {
         const c = catalogueItem(f.kind);
+        // A porch: in through its door (when open), not through its walls.
+        if (isPorch(f)) {
+          const base = elevation + standingHeight(level, f);
+          for (const poly of porchBarriers(f)) this.blocks.push({ poly, bottom: base, top: base + f.height });
+          continue;
+        }
         // A jetty: you walk out along it, over the water.
         if (f.kind === 'jetty') {
           this.surfaces.push({ poly: footprint(f), holes: [], z: elevation + standingHeight(level, f) + f.height });

@@ -123,6 +123,8 @@ export const DEFAULT_PRICES: Record<string, number> = {
   'gate-path': 220,
   dormer: 9500,
   palisade: 45,
+  // A porch: footing, walls, roof, door and floor, per m² of floor.
+  porch: 2800,
   // A tennis court: base and surface over the whole enclosure, its fence, and net and posts.
   'court-tarmac': 55,
   'court-clay': 75,
@@ -683,6 +685,10 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
         else add({ id: `hedge:${h.id}`, price: 'hedge', group: 'Garden and drains', item: `${h.kind[0].toUpperCase()}${h.kind.slice(1)} hedge plants`, detail: `${L.toFixed(1)} m, 5 a metre in a double row`, qty: Math.ceil(L * 5), unit: 'no.' });
       }
       for (const f of Object.values(level.furniture ?? {})) {
+        if (f.kind === 'porch' && inside(f)) {
+          add({ id: `porch:${f.id}`, price: 'porch', group: 'Garden and drains', item: 'Porch: footings, walls, gabled roof, door and tiled floor', detail: `${f.width.toFixed(1)} × ${f.depth.toFixed(1)} m`, qty: f.width * f.depth, unit: 'm²', key: true });
+          continue;
+        }
         if (isVineyard(f) && inside(f)) {
           const n = vineCount(f);
           add({ id: `vines:${f.id}`, price: 'vine', group: 'Garden and drains', item: `Vines (${f.finish === 'white' ? 'white' : 'red'} grapes), planted with stakes and guards`, detail: `${n.rows} rows of ${n.perRow}, ${rowGap(f)} m between rows`, qty: n.vines, unit: 'no.' });

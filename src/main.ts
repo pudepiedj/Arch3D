@@ -262,6 +262,8 @@ for (const b of $$('#mode button[data-mode]')) {
   b.addEventListener('click', () => {
     const m = b.dataset.mode as ViewMode;
     if (layout === 'plan') setLayout(window.innerWidth < 700 ? '3d' : 'split');
+    // Walk from the last place clicked on the plan.
+    if (m === 'walk') view.walkFrom = editor.walkFrom;
     view.setMode(m);
   });
 }

@@ -119,3 +119,38 @@ describe('palisade fence', () => {
     expect(pales).toBeGreaterThan(40);
   });
 });
+
+describe('flags, hot tub, sauna and porch', () => {
+  it('every flag, the hot tub (cover on and off), the sauna and the porch build', () => {
+    const lvl = createBuilding().levels[0];
+    for (const flag of ['union', 'stgeorge', 'scotland', 'wales', 'norfolk', 'white', 'none']) {
+      const f = addFurniture(lvl, 'flagpole', { x: 0, y: 0 });
+      f.finish = flag;
+      expect(new THREE.Box3().setFromObject(buildFurniture(f)).isEmpty()).toBe(false);
+    }
+    for (const kind of ['hottub', 'sauna', 'porch']) {
+      const f = addFurniture(lvl, kind, { x: 0, y: 0 });
+      for (const open of [false, true]) {
+        f.open = open;
+        expect(new THREE.Box3().setFromObject(buildFurniture(f)).isEmpty(), kind).toBe(false);
+      }
+    }
+  });
+
+  it('the porch roof rises to a ridge over its walls', () => {
+    const f = addFurniture(createBuilding().levels[0], 'porch', { x: 0, y: 0 });
+    const box = new THREE.Box3().setFromObject(buildFurniture(f));
+    expect(box.max.y).toBeGreaterThan(f.height + (f.width / 2) * Math.tan((40 * Math.PI) / 180) - 0.01);
+  });
+
+  it('you walk into the porch through its open door, but not through its walls', () => {
+    const b = createBuilding();
+    const f = addFurniture(b.levels[0], 'porch', { x: 0, y: 0 });
+    const into = () => new WalkWorld(b).move({ x: 0, y: 2 }, 0, { x: 0, y: -2 }).p.y;
+    expect(into()).toBeGreaterThan(0.6); // the door is shut
+    f.open = true;
+    expect(into()).toBeLessThan(0.3);
+    // Through a side wall: no.
+    expect(new WalkWorld(b).move({ x: 2, y: 0 }, 0, { x: -2, y: 0 }).p.x).toBeGreaterThan(1);
+  });
+});
