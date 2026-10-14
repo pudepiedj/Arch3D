@@ -578,6 +578,7 @@ const HINTS: Record<Tool, string> = {
   pillar: 'Click to place a pillar; it rises to the roof above it',
   chimney: 'Click on the roof to place a chimney stack (on the floor whose roof it goes through)',
   solar: 'Click on a roof slope to lay a solar array on it (on the floor the roof belongs to)',
+  dormer: 'Click on a roof slope where the front of the dormer stands: it rises out of the slope there, with a window, and runs back into the roof · drag it to move it',
   rooflight: 'Click on a roof: a flat roof gets a rooflight box, a sloping roof a window in the slope',
   drain: 'Click to lay a pipe run (it falls at 1 in 60 as it goes) · click a chamber or pipe to join it · double-click, Enter or Esc to finish · set fittings and depths in the panel',
   stretch: 'Drag a box round the part to move · then drag inside it (straight; Shift for any direction), or type the distance in the panel · Esc clears the box',

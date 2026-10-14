@@ -18,11 +18,11 @@ import {
 import { type Clip, copyArea, describeClip, pasteClip } from '../model/copyarea';
 import { moveToOwnFloor, wallsToMove } from '../model/separate';
 import { FLOOR_FINISHES, WALL_FINISHES, clearFloorFinish, faceSides, materialsOf, paintRoomWalls, setFloorFinish } from '../model/materials';
-import { addLevelOnTop, addRoomOnTop, getLevel, levelBelow, levelElevation, roomsInBox } from '../model/building';
+import { addLevelOnTop, addRoomOnTop, ceilingHeight, getLevel, levelBelow, levelElevation, roomsInBox } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
 import { addPatio, patioShapes } from '../model/patios';
 import { addTree, crownCentre, speciesOf, treeAt, trunkRadius } from '../model/trees';
-import { FENCE_BAY, addHedge, ditchOutline, hedgeAt, hedgeRuns, onHedge, runFootprint } from '../model/hedges';
+import { FENCE_BAY, addHedge, isFence, ditchOutline, hedgeAt, hedgeRuns, onHedge, runFootprint } from '../model/hedges';
 import { isGate } from '../model/gates';
 import { siteOf } from '../model/sun';
 import { type Box, type Picked, boxFrom, inBox, stretch } from '../model/stretch';
@@ -30,7 +30,7 @@ import { addDrainNode, addDrainPipe, deleteDrainNode, drainNodeAt, drainPipeAt, 
 import { addFurniture, againstWall, catalogueItem, footprint } from '../model/furniture';
 import { gardenLevel, inGarden } from '../model/outdoors';
 import { drawFurnitureSymbol } from './furniture2d';
-import { addChimney, addRooflight, addSolarArray, chimneyFootprint, rooflightGeometry, solarGeometry } from '../model/roofitems';
+import { addChimney, addDormer, addRooflight, addSolarArray, chimneyFootprint, dormerGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { roofSurfaceAt } from '../model/roof';
 import { DEFAULT_ROOF, type LevelRoof, levelRoofs, parapetHeight, roofAreaRings, setAreaRoof, toggleEdge, toggleParapet } from '../model/roof';
 import { DEFAULT_GOING, DEFAULT_STAIR_WIDTH, type StairGeometry, addStair, reachesFloorAbove, stairAt, placedStair, stairEnds, stairGeometry, stairRise } from '../model/stairs';
@@ -61,9 +61,9 @@ import { remembered } from './sizes';
 import type { DrainKind, FloorFinish, Furniture, Hedge, HedgeKind, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind, WallFinish } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'open' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain' | 'hedge' | 'copyArea' | 'pasteArea' | 'moveArea' | 'roomOnTop' | 'floorOver' | 'paint';
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'open' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'dormer' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain' | 'hedge' | 'copyArea' | 'pasteArea' | 'moveArea' | 'roomOnTop' | 'floorOver' | 'paint';
 export type Selection = {
-  kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'drainNode' | 'drainPipe' | 'hedge';
+  kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'dormer' | 'patio' | 'tree' | 'furniture' | 'drainNode' | 'drainPipe' | 'hedge';
   id: string;
 } | null;
 
@@ -82,7 +82,7 @@ type Gesture =
   | { kind: 'stretchMove'; start: Vec2 }
   | { kind: 'dragFurniture'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'dragPatio'; id: string; start: Vec2; pts0: Vec2[]; hedge?: boolean }
-  | { kind: 'dragRoofItem'; what: 'chimney' | 'solar' | 'rooflight' | 'tree'; id: string; start: Vec2; x0: number; y0: number }
+  | { kind: 'dragRoofItem'; what: 'chimney' | 'solar' | 'rooflight' | 'dormer' | 'tree'; id: string; start: Vec2; x0: number; y0: number }
   | { kind: 'click' };
 
 interface Snap {
@@ -627,6 +627,10 @@ export class Editor2D {
       const g = solarGeometry(this.store.building, plan, sa);
       if (g && pointInPolygon(w, g.outline)) out.push({ kind: 'solar', id: sa.id });
     }
+    for (const dm of Object.values(plan.dormers ?? {})) {
+      const g = dormerGeometry(this.store.building, plan as Level, dm);
+      if (g && pointInPolygon(w, g.footprint)) out.push({ kind: 'dormer', id: dm.id });
+    }
     for (const t of Object.values(plan.trees ?? {})) {
       if (t.id !== trunk && dist(crownCentre(t, siteOf(this.store.building).north), w) <= t.spread / 2) out.push({ kind: 'tree', id: t.id });
     }
@@ -724,7 +728,7 @@ export class Editor2D {
       this.select(hit);
       if (hit?.kind === 'node') this.gesture = { kind: 'dragNode', id: hit.id };
       else if (hit?.kind === 'pillar') this.gesture = { kind: 'dragPillar', id: hit.id };
-      else if (hit?.kind === 'chimney' || hit?.kind === 'solar' || hit?.kind === 'rooflight' || hit?.kind === 'tree') {
+      else if (hit?.kind === 'chimney' || hit?.kind === 'solar' || hit?.kind === 'rooflight' || hit?.kind === 'dormer' || hit?.kind === 'tree') {
         const item = this.roofItem(hit.kind, hit.id)!;
         this.gesture = { kind: 'dragRoofItem', what: hit.kind, id: hit.id, start: this.toWorld(s), x0: item.x, y0: item.y };
       }
@@ -844,7 +848,7 @@ export class Editor2D {
         const snapTo = (v: number) => Math.round(v / this.gridStep) * this.gridStep;
         item.x = cur.x0 + snapTo(w.x - cur.start.x);
         item.y = cur.y0 + snapTo(w.y - cur.start.y);
-        if (cur.what !== 'tree') {
+        if (cur.what !== 'tree' && cur.what !== 'dormer') {
           const aligned = this.alignRoofItem(item, cur.id);
           item.x = aligned.p.x;
           item.y = aligned.p.y;
@@ -1034,8 +1038,9 @@ export class Editor2D {
   }
 
   /** A chimney, solar array, rooflight or tree: things placed by a point and dragged about. */
-  private roofItem(what: 'chimney' | 'solar' | 'rooflight' | 'tree', id: string): { x: number; y: number } | undefined {
+  private roofItem(what: 'chimney' | 'solar' | 'rooflight' | 'dormer' | 'tree', id: string): { x: number; y: number } | undefined {
     const p = this.plan;
+    if (what === 'dormer') return p.dormers?.[id];
     if (what === 'chimney') return p.chimneys?.[id];
     if (what === 'solar') return p.solar?.[id];
     if (what === 'rooflight') return p.rooflights?.[id];
@@ -1280,6 +1285,17 @@ export class Editor2D {
         this.select({ kind: 'chimney', id: c.id });
         break;
       }
+      case 'dormer': {
+        const surf = roofSurfaceAt(this.store.building, plan, w);
+        if (!surf || surf.tan < 0.25) {
+          this.flash('Dormers go on a sloping roof: click on a slope of this floor\'s roof', w);
+          break;
+        }
+        const dm = addDormer(plan, this.snap(w).p);
+        this.store.commit();
+        this.select({ kind: 'dormer', id: dm.id });
+        break;
+      }
       case 'rooflight': {
         if (!roofSurfaceAt(this.store.building, plan, w)) {
           this.flash('No roof here on this floor: switch to the floor the roof belongs to', w);
@@ -1374,6 +1390,8 @@ export class Editor2D {
         const f = addFurniture(level, this.furnitureKind, at.at, at.angle);
         // The size and finish last given to this kind of piece, if changed from the catalogue's.
         Object.assign(f, remembered<Furniture>(`furniture:${f.kind}`) ?? {});
+        // Up to the ceiling of the room it's in (a floor-to-ceiling cupboard, a downlight).
+        if (catalogueItem(f.kind)?.toCeiling) f.height = Math.round(ceilingHeight(this.store.building, level) * 100) / 100;
         this.store.commit();
         this.toGround(level, catalogueItem(f.kind)?.name ?? 'It', w);
         this.select({ kind: 'furniture', id: f.id });
@@ -1841,7 +1859,7 @@ export class Editor2D {
     const h = addHedge(level, pts, this.hedgeKind);
     Object.assign(h, remembered<Hedge>(`hedge:${h.kind}`) ?? {});
     this.store.commit();
-    this.toGround(level, h.kind === 'fence' ? 'The fence' : h.kind === 'wall' ? 'The wall' : h.kind === 'ditch' ? 'The ditch' : 'The hedge', pts[0]);
+    this.toGround(level, isFence(h.kind) ? 'The fence' : h.kind === 'wall' ? 'The wall' : h.kind === 'ditch' ? 'The ditch' : 'The hedge', pts[0]);
     this.select({ kind: 'hedge', id: h.id });
   }
 
@@ -2399,6 +2417,7 @@ export class Editor2D {
       hawthorn: ['#9cc07e', '#56803f'],
       beech: ['#aab06a', '#6d6a34'],
       fence: ['#9b7550', '#6f5237'],
+      palisade: ['#b08a60', '#7d5e3e'],
       ditch: ['#b9a77e', '#7a6644'],
       wall: ['#d8c6a0', '#8a7a5c'],
     };
@@ -2429,7 +2448,7 @@ export class Editor2D {
     // Outlines first, then fills, so where runs overlap at a corner no line crosses the hedge.
     for (const pass of ['ink', 'fill'] as const) {
       for (const { h, runs, sel } of hedges) {
-        if (h.kind === 'fence' || h.kind === 'ditch') continue;
+        if (isFence(h.kind) || h.kind === 'ditch') continue;
         const [fill, ink] = colour[h.kind];
         for (const r of runs) {
           const q = runFootprint(r, h.width);
@@ -2447,11 +2466,13 @@ export class Editor2D {
       }
     }
     for (const { h, runs, sel } of hedges) {
-      if (h.kind !== 'fence') continue;
-      const ink = colour.fence[1];
+      if (!isFence(h.kind)) continue;
+      const ink = colour[h.kind][1];
       ctx.strokeStyle = sel ? C.accent : ink;
       ctx.fillStyle = sel ? C.accent : ink;
       ctx.lineWidth = Math.max(2, h.width * this.view.scale);
+      // A palisade, with gaps between its pales, drawn dashed.
+      ctx.setLineDash(h.kind === 'palisade' ? [Math.max(2, 0.075 * this.view.scale), Math.max(1.5, 0.05 * this.view.scale)] : []);
       const r = Math.max(2.5, 0.05 * this.view.scale);
       for (const { a, b } of runs) {
         this.line(a, b);
@@ -2462,6 +2483,7 @@ export class Editor2D {
           ctx.fillRect(q.x - r, q.y - r, r * 2, r * 2);
         }
       }
+      ctx.setLineDash([]);
     }
     ctx.lineWidth = 1;
   }
@@ -2627,6 +2649,7 @@ export class Editor2D {
     else if (s.kind === 'chimney') delete this.plan.chimneys?.[s.id];
     else if (s.kind === 'solar') delete this.plan.solar?.[s.id];
     else if (s.kind === 'rooflight') delete this.plan.rooflights?.[s.id];
+    else if (s.kind === 'dormer') delete this.plan.dormers?.[s.id];
     else if (s.kind === 'patio') delete this.plan.patios?.[s.id];
     else if (s.kind === 'tree') delete this.plan.trees?.[s.id];
     else if (s.kind === 'hedge') delete this.plan.hedges?.[s.id];
@@ -2658,6 +2681,7 @@ export class Editor2D {
       (s.kind === 'chimney' && p.chimneys?.[s.id]) ||
       (s.kind === 'solar' && p.solar?.[s.id]) ||
       (s.kind === 'rooflight' && p.rooflights?.[s.id]) ||
+      (s.kind === 'dormer' && p.dormers?.[s.id]) ||
       (s.kind === 'patio' && p.patios?.[s.id]) ||
       (s.kind === 'tree' && p.trees?.[s.id]) ||
       (s.kind === 'hedge' && p.hedges?.[s.id]) ||
@@ -2904,6 +2928,21 @@ export class Editor2D {
         ctx.lineWidth = 1;
         ctx.stroke();
       }
+    }
+    // Dormers: where they stand on the roof, with the front wall drawn thick.
+    for (const dm of Object.values(plan.dormers ?? {})) {
+      const g = dormerGeometry(this.store.building, plan as Level, dm);
+      if (!g) continue;
+      const sel = this.selection?.kind === 'dormer' && this.selection.id === dm.id;
+      this.path(g.footprint);
+      ctx.fillStyle = sel ? hexAlpha(C.accent, 0.2) : 'rgba(150, 90, 70, 0.35)';
+      ctx.fill();
+      ctx.strokeStyle = sel ? C.accent : C.ink;
+      ctx.lineWidth = sel ? 2 : 1.2;
+      ctx.stroke();
+      ctx.lineWidth = sel ? 4 : 3;
+      this.line(g.front[0], g.front[1]);
+      ctx.lineWidth = 1;
     }
     // Rooflights: the box outline, and each window with the usual cross.
     for (const r of Object.values(plan.rooflights ?? {})) {

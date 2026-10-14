@@ -52,6 +52,7 @@ export function buildHedge(h: Hedge, runs: HedgeRun[], season: Season): THREE.Gr
   const g = new THREE.Group();
   g.name = `hedge:${h.id}`;
   if (h.kind === 'fence') buildFence(g, h, runs);
+  else if (h.kind === 'palisade') buildPalisade(g, h, runs);
   else if (h.kind === 'ditch') buildDitch(g, h);
   else if (h.kind === 'wall') buildGardenWall(g, h, runs);
   else {
@@ -147,6 +148,65 @@ function buildFence(g: THREE.Group, h: Hedge, runs: HedgeRun[]) {
   if (boards.length) {
     const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(boardW, H - 0.15, 0.018), material(TIMBER, false), boards.length);
     boards.forEach((m, i) => inst.setMatrixAt(i, m));
+    inst.castShadow = inst.receiveShadow = true;
+    g.add(inst);
+  }
+}
+
+/**
+ * A palisade fence: posts, two rails, and upright pales with pointed tops, a gap between
+ * each, so you see through it (a picket fence when low).
+ */
+function buildPalisade(g: THREE.Group, h: Hedge, runs: HedgeRun[]) {
+  const H = h.height;
+  const paleW = 0.075;
+  const gap = 0.05;
+  const point = 0.07;
+  const pales: THREE.Matrix4[] = [];
+  const tips: THREE.Matrix4[] = [];
+  const post = material(POST, false);
+  const add = (geo: THREE.BufferGeometry, x: number, y: number, z: number, angle: number) => {
+    const m = new THREE.Mesh(geo, post);
+    m.position.set(x, y, z);
+    m.rotation.y = -angle;
+    m.castShadow = m.receiveShadow = true;
+    g.add(m);
+  };
+  for (const { a, b } of runs) {
+    const L = Math.hypot(b.x - a.x, b.y - a.y);
+    if (L < 1e-6) continue;
+    const angle = Math.atan2(b.y - a.y, b.x - a.x);
+    const ux = (b.x - a.x) / L;
+    const uy = (b.y - a.y) / L;
+    const n = Math.min(400, Math.max(1, Math.ceil(L / FENCE_BAY)));
+    for (let k = 0; k <= n; k++) {
+      const t = (k / n) * L;
+      add(new THREE.BoxGeometry(0.09, H - 0.05, 0.09), a.x + ux * t, (H - 0.05) / 2, a.y + uy * t, angle);
+    }
+    // Two rails behind the pales.
+    for (const y of [Math.min(0.3, H * 0.25), H - Math.min(0.3, H * 0.25)]) {
+      add(new THREE.BoxGeometry(L, 0.07, 0.035), (a.x + b.x) / 2 - uy * 0.045, y, (a.y + b.y) / 2 + ux * 0.045, angle);
+    }
+    const count = Math.min(4000, Math.max(1, Math.floor(L / (paleW + gap))));
+    const step = L / count;
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -angle);
+    for (let k = 0; k < count; k++) {
+      const t = (k + 0.5) * step;
+      const x = a.x + ux * t + uy * 0.01;
+      const z = a.y + uy * t - ux * 0.01;
+      pales.push(new THREE.Matrix4().compose(new THREE.Vector3(x, 0.05 + (H - point - 0.05) / 2, z), q, new THREE.Vector3(1, 1, 1)));
+      tips.push(new THREE.Matrix4().compose(new THREE.Vector3(x, H - point / 2, z), q, new THREE.Vector3(1, 1, 1)));
+    }
+  }
+  const timber = material(TIMBER, false);
+  for (const [geo, list] of [
+    [new THREE.BoxGeometry(paleW, H - point - 0.05, 0.02), pales],
+    // A point: a flattened four-sided pyramid.
+    [new THREE.ConeGeometry(paleW / Math.SQRT2, point, 4).rotateY(Math.PI / 4).scale(1, 1, 0.27), tips],
+  ] as const) {
+    if (!list.length) continue;
+    const inst = new THREE.InstancedMesh(geo, timber, list.length);
+    list.forEach((m, i) => inst.setMatrixAt(i, m));
     inst.castShadow = inst.receiveShadow = true;
     g.add(inst);
   }

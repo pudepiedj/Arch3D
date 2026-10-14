@@ -102,6 +102,24 @@ export interface SolarArray {
 }
 
 /**
+ * A dormer: a box standing out of a sloping roof, with a window in its upright front wall,
+ * triangular cheeks either side, and its own small roof (gabled or flat) running back into
+ * the main roof. Placed by the middle of the foot of its front wall.
+ */
+export interface Dormer {
+  id: string;
+  x: number;
+  y: number;
+  /** Outside width of the front wall. */
+  width: number;
+  /** Height of the front wall, from where it rises out of the roof to the dormer's eaves. */
+  height: number;
+  roof: 'gable' | 'flat';
+  /** Pitch of a gabled dormer's roof, in degrees. */
+  pitch: number;
+}
+
+/**
  * Roof windows. On a sloping roof they lie in the slope; on a flat roof they sit on a
  * raised kerb box with a sloping top, over a light well down to the room below.
  */
@@ -187,7 +205,7 @@ export interface Tree {
   leanTo?: number;
 }
 
-export type HedgeKind = 'privet' | 'hawthorn' | 'beech' | 'fence' | 'ditch' | 'wall';
+export type HedgeKind = 'privet' | 'hawthorn' | 'beech' | 'fence' | 'palisade' | 'ditch' | 'wall';
 
 /**
  * A hedge, fence or open drainage ditch along a line of points (closed if its last point is
@@ -343,6 +361,8 @@ export interface Level extends Plan {
   solar?: Record<string, SolarArray>;
   /** Roof windows and rooflight boxes on this floor's roofs. */
   rooflights?: Record<string, Rooflight>;
+  /** Dormers on this floor's sloping roofs. */
+  dormers?: Record<string, Dormer>;
   /** Patios, decks and gravelled areas. */
   patios?: Record<string, Patio>;
   /** Trees (normally on the ground floor's plan). */
@@ -378,6 +398,8 @@ export interface Furniture {
   stool?: boolean;
   /** Mirrored: a gate hung on its right-hand post instead of its left. */
   flip?: boolean;
+  /** Hung on the wall: height of its underside above the floor (a wall cupboard). */
+  lift?: number;
   /** A vineyard: distance between rows, and between vines along a row (1 m if unset). */
   rowGap?: number;
   vineGap?: number;

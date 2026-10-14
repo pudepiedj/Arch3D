@@ -761,7 +761,202 @@ function vineyard(k: Kit, f: Furniture, _w: number, d: number, h: number, season
   }
 }
 
+/** Light-giving: a warm white glow (it shows in any light, as a lit lamp does). */
+const glow = () => mat('glow', () => new THREE.MeshStandardMaterial({ color: 0xfff4dc, emissive: 0xfff1d0, emissiveIntensity: 1.2, roughness: 0.4 }));
+const RANGE: Record<string, number> = { cream: 0xeee3c4, red: 0x9e2a24, black: 0x1d1e20, blue: 0x2e4a6e, green: 0x2f5b45, white: 0xf3f2ee };
+
+/**
+ * A range cooker (an Aga): an enamelled body on a black plinth, four oven doors with
+ * chrome hinges and latches, a chrome rail across the front, and two hotplates under
+ * domed chrome lids on the top.
+ */
+function rangeCooker(k: Kit, f: Furniture, w: number, d: number, h: number) {
+  const enamel = mat(`aga-${f.finish}`, () => new THREE.MeshPhysicalMaterial({ color: RANGE[f.finish ?? 'cream'] ?? RANGE.cream, roughness: 0.25, clearcoat: 0.8, clearcoatRoughness: 0.15 }));
+  const body = h - 0.06;
+  k.box(w - 0.04, d - 0.06, 0.08, 0, -0.02, 0, dark()); // plinth
+  k.box(w, d - 0.04, body - 0.08, 0, -0.02, 0.08, enamel);
+  k.box(w, d - 0.02, 0.02, 0, -0.01, body - 0.02, enamel); // top plate
+  // Doors: two columns of two, the left ones a little wider.
+  const front = d / 2 - 0.04;
+  const cols = [-w * 0.24, w * 0.18];
+  const dw = [w * 0.34, w * 0.3];
+  for (const [i, x] of cols.entries()) {
+    for (const z of [0.16, 0.48]) {
+      k.box(dw[i], 0.03, 0.27, x, front + 0.015, z, enamel);
+      k.box(0.03, 0.035, 0.05, x - dw[i] / 2 + 0.03, front + 0.03, z + 0.03, chrome()); // hinge
+      k.box(0.05, 0.04, 0.025, x + dw[i] / 2 - 0.05, front + 0.035, z + 0.2, chrome()); // latch
+    }
+  }
+  // The chrome rail, on brackets.
+  k.rod({ x: -w / 2 + 0.05, y: front + 0.1, z: body - 0.12 }, { x: w / 2 - 0.05, y: front + 0.1, z: body - 0.12 }, 0.014, chrome());
+  for (const x of [-w / 2 + 0.08, w / 2 - 0.08]) k.box(0.02, 0.1, 0.02, x, front + 0.05, body - 0.13, chrome());
+  // Hotplate lids: chrome domes on the left half of the top.
+  for (const x of [-w * 0.32, -w * 0.06]) {
+    const lid = k.sphere(0.17, x, -0.02, body, chrome());
+    lid.scale.set(1, 0.32, 1);
+    k.cyl(0.035, 0.03, x, 0.12, body + 0.05, dark());
+  }
+  // A flue out of the back to the wall.
+  k.cyl(0.06, 0.25, w * 0.3, -d / 2 + 0.1, body, dark());
+}
+
+/** Kitchen door finishes (as the base units). */
+const unitFinish = (f: Furniture) => plain(UNIT[f.finish ?? 'white'] ?? UNIT.white, 0.5);
+
+/** A floor-to-ceiling cupboard: plinth, a tall door (two side by side if wide) and a top door. */
+function larder(k: Kit, f: Furniture, w: number, d: number, h: number) {
+  const m = unitFinish(f);
+  k.box(w - 0.004, d - 0.08, 0.1, 0, -0.04, 0, dark());
+  const doors = w > 0.75 ? 2 : 1;
+  cabinet(new KitAt(k, 0.1), w - 0.004, d - 0.03, h - 0.1, m, h > 2.3 ? 2 : 1, doors);
+  for (let i = 0; i < doors; i++) {
+    const x = -w / 2 + (w * (i + 0.5)) / doors + (doors === 2 ? (i ? -1 : 1) * (w / doors) * 0.38 : (w / 2) * 0.76);
+    k.box(0.015, 0.025, 0.3, x, d / 2 - 0.005, 1.0, chrome());
+  }
+}
+
+/** A wall cupboard: hung `lift` above the floor, with doors, handles, and lights underneath if on. */
+function wallUnit(k: Kit, f: Furniture, w: number, d: number, h: number) {
+  const z0 = f.lift ?? 1.45;
+  const m = unitFinish(f);
+  const doors = w > 0.65 ? 2 : 1;
+  cabinet(new KitAt(k, z0), w, d, h, m, 1, doors);
+  for (let i = 0; i < doors; i++) {
+    const x = -w / 2 + (w * (i + 0.5)) / doors + (doors === 2 ? (i ? -1 : 1) * (w / 4) * 0.8 : w * 0.38);
+    k.box(0.015, 0.025, 0.2, x, d / 2 + 0.01, z0 + 0.04, chrome());
+  }
+  if (f.open) {
+    // Puck lights under it, towards the front, lighting the worktop.
+    const n = Math.max(1, Math.round(w / 0.45));
+    for (let i = 0; i < n; i++) k.cyl(0.03, 0.008, -w / 2 + (w * (i + 0.5)) / n, d / 2 - 0.08, z0 - 0.009, glow(), 0.03, 16);
+  }
+}
+
+/** Ceiling downlights: a trim ring flush with the ceiling round a glowing lens; a row of them spaced along its length. */
+function downlights(k: Kit, f: Furniture, w: number, h: number) {
+  const trim = f.finish === 'chrome' ? chrome() : f.finish === 'black' ? dark() : plain(0xf6f6f4, 0.4);
+  const n = f.kind === 'downlightrow' ? Math.max(1, Math.round(w / 0.8)) : 1;
+  for (let i = 0; i < n; i++) {
+    const x = n === 1 ? 0 : -w / 2 + (w * (i + 0.5)) / n;
+    k.cyl(0.045, 0.012, x, 0, h - 0.014, trim, 0.045, 24);
+    k.cyl(0.032, 0.004, x, 0, h - 0.018, glow(), 0.032, 24);
+  }
+}
+
+/**
+ * An octagonal pagoda: a raised timber floor, eight posts, a low rail between them on all
+ * but the front, and a two-tier roof with its eaves turning up at the corners and a finial.
+ */
+function pagoda(k: Kit, f: Furniture, w: number, d: number, h: number) {
+  const colours: Record<string, number> = { red: 0x9a2a22, oak: 0xb08350, green: 0x3f5f42, white: 0xf1efe9 };
+  const timber = plain(colours[f.finish ?? 'red'] ?? colours.red, 0.6);
+  const roofM = mat('pagoda-roof', () => new THREE.MeshStandardMaterial({ color: 0x3a4a44, roughness: 0.7, side: THREE.DoubleSide, flatShading: true }));
+  const R = Math.min(w, d) / 2;
+  const sx = w / Math.min(w, d);
+  const sy = d / Math.min(w, d);
+  const oct = (r: number) => Array.from({ length: 8 }, (_, i) => {
+    const a = ((i + 0.5) / 8) * Math.PI * 2;
+    return { x: Math.cos(a) * r * sx, y: Math.sin(a) * r * sy };
+  });
+  // The floor: an octagonal platform.
+  const deck = k.mesh(new THREE.CylinderGeometry(R, R, 0.15, 8), plain(0x9c7a55, 0.8), 0, 0, 0.075);
+  deck.rotation.y = Math.PI / 8;
+  deck.scale.set(sx, 1, sy);
+  const eave = Math.max(2.2, h * 0.62);
+  const posts = oct(R * 0.88);
+  for (const p of posts) k.box(0.1, 0.1, eave - 0.15, p.x, p.y, 0.15, timber);
+  // A low rail on seven sides; the front (facing +y) left open as the way in.
+  posts.forEach((p, i) => {
+    const q = posts[(i + 1) % 8];
+    if (i === 1) return;
+    for (const z of [0.45, 0.9]) k.rod({ ...p, z }, { ...q, z }, 0.03, timber);
+    k.rod({ ...p, z: eave - 0.25 }, { ...q, z: eave - 0.25 }, 0.04, timber); // a beam round the top
+  });
+  // Two roofs, each a shallow octagonal cone, the lower with its corners turned up.
+  const lower = { r0: R * 1.2, r1: R * 0.45, z0: eave, z1: eave + (h - eave) * 0.45 };
+  const upper = { r0: R * 0.62, r1: 0.02, z0: lower.z1 + (h - eave) * 0.12, z1: h - 0.25 };
+  for (const t of [lower, upper]) {
+    const cone = k.mesh(new THREE.CylinderGeometry(t.r1, t.r0, t.z1 - t.z0, 8, 1, true), roofM, 0, 0, (t.z0 + t.z1) / 2);
+    cone.rotation.y = Math.PI / 8;
+    cone.scale.set(sx, 1, sy);
+    // The lower roof's eaves turn up a little at each corner.
+    if (t === lower) {
+      for (const p of oct(t.r0)) k.rod({ x: p.x * 0.97, y: p.y * 0.97, z: t.z0 + 0.01 }, { x: p.x * 1.05, y: p.y * 1.05, z: t.z0 + 0.13 }, 0.03, roofM);
+    }
+  }
+  // The drum between the roofs, and the finial.
+  k.cyl(R * 0.45 * 0.95, upper.z0 - lower.z1, 0, 0, lower.z1, timber, R * 0.45 * 0.95, 8);
+  k.cyl(0.03, 0.3, 0, 0, h - 0.3, plain(0xc9a24a, 0.3, 0.7));
+  k.sphere(0.06, 0, 0, h - 0.02, plain(0xc9a24a, 0.3, 0.7));
+}
+
+/** A jetty: deck boards across it on joists, on posts, with mooring posts at the far end. */
+function jetty(k: Kit, f: Furniture, w: number, d: number, h: number) {
+  const m = plain(f.finish === 'grey' ? 0x8b8a84 : 0xa57b52, 0.85);
+  const post = plain(0x6e5236, 0.9);
+  const top = Math.max(0.08, h);
+  const board = 0.14;
+  const n = Math.floor(d / (board + 0.01));
+  for (let i = 0; i < n; i++) k.box(w, board, 0.035, 0, -d / 2 + (board + 0.01) * (i + 0.5), top - 0.035, m);
+  for (const x of [-w / 2 + 0.06, w / 2 - 0.06]) k.box(0.05, d, 0.12, x, 0, top - 0.155, post);
+  const rows = Math.max(2, Math.ceil(d / 1.5) + 1);
+  for (let i = 0; i < rows; i++) {
+    const y = -d / 2 + 0.08 + ((d - 0.16) * i) / (rows - 1);
+    for (const x of [-w / 2 + 0.06, w / 2 - 0.06]) k.cyl(0.06, top + 0.6, x, y, -0.6, post);
+  }
+  // Mooring posts standing up at the far (+y) end.
+  for (const x of [-w / 2 + 0.06, w / 2 - 0.06]) k.cyl(0.07, 0.75, x, d / 2 - 0.08, top, post);
+}
+
+/**
+ * A flagpole: a white tapering pole on a small base, a gilded ball on top, and the flag
+ * flying out from the top, rippling a little.
+ */
+function flagpole(k: Kit, f: Furniture, _w: number, _d: number, h: number) {
+  k.box(0.35, 0.35, 0.1, 0, 0, 0, plain(0xb3b0a8, 0.9));
+  k.cyl(0.055, h - 0.1, 0, 0, 0.1, plain(0xf4f4f2, 0.4), 0.03, 12);
+  k.sphere(0.06, 0, 0, h + 0.03, plain(0xc9a24a, 0.3, 0.7));
+  if (f.finish === 'none') return;
+  const L = Math.max(0.9, h * 0.3);
+  const H = L / 2;
+  const nx = 16;
+  const ny = 6;
+  const pos: number[] = [];
+  const col: number[] = [];
+  const colour = (u: number, v: number) => {
+    if (f.finish === 'stgeorge') return Math.abs(u - 0.5) < 0.1 || Math.abs(v - 0.5) < 0.1 * (L / H) ? [0.8, 0.1, 0.12] : [0.97, 0.97, 0.97];
+    const c = new THREE.Color({ white: 0xf6f6f6, red: 0xc0241e, blue: 0x1f3f8f, green: 0x2f7d3a }[f.finish ?? 'white'] ?? 0xf6f6f6);
+    return [c.r, c.g, c.b];
+  };
+  const at = (u: number, v: number) => [u * L, h - 0.08 - v * H, Math.sin(u * Math.PI * 2.2) * 0.07 * u];
+  for (let i = 0; i < nx; i++) {
+    for (let j = 0; j < ny; j++) {
+      const [u0, u1, v0, v1] = [i / nx, (i + 1) / nx, j / ny, (j + 1) / ny];
+      const c = colour((u0 + u1) / 2, (v0 + v1) / 2);
+      const quad = [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v0), at(u1, v1), at(u0, v1)];
+      for (const p of quad) {
+        pos.push(...p);
+        col.push(...c);
+      }
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  const cloth = mat('flag', () => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }));
+  k.mesh(geo, cloth, 0, 0, 0);
+}
+
 const BUILDERS: Record<string, Builder> = {
+  aga: (k, f, w, d, h) => rangeCooker(k, f, w, d, h),
+  larder: (k, f, w, d, h) => larder(k, f, w, d, h),
+  wallunit: (k, f, w, d, h) => wallUnit(k, f, w, d, h),
+  downlight: (k, f, w, _d, h) => downlights(k, f, w, h),
+  downlightrow: (k, f, w, _d, h) => downlights(k, f, w, h),
+  pagoda: (k, f, w, d, h) => pagoda(k, f, w, d, h),
+  jetty: (k, f, w, d, h) => jetty(k, f, w, d, h),
+  flagpole: (k, f, w, d, h) => flagpole(k, f, w, d, h),
   vineyard: (k, f, w, d, h, season) => vineyard(k, f, w, d, h, season),
   pond: (k, f) => gardenPond(k, f),
   tennis: (k, f, w, d, h) => tennisCourt(k, f, w, d, h),

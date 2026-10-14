@@ -11,11 +11,11 @@ import { forget, remember, remembered } from './sizes';
 import { MAX_LEAF, gateLeaves, isGate } from '../model/gates';
 import { COURT, COURT_ENCLOSURE } from '../model/tennis';
 import { cordonHeight, rowGap, vineCount, vineGap } from '../model/vineyard';
-import { HEDGE_DEFAULTS, HEDGE_NAMES, hedgeClosed, hedgeLength } from '../model/hedges';
+import { HEDGE_DEFAULTS, HEDGE_NAMES, hedgeClosed, hedgeLength, isFence } from '../model/hedges';
 import { GRAND_MODELS, TANK_STAND, catalogueItem, tankLitres } from '../model/furniture';
 import { stretchSummary } from '../model/stretch';
 import { DEFAULT_INVERT, DEFAULT_TANK, FITTING_NAMES, deleteDrainNode, pipeFall, pipeLength, tankVolume } from '../model/drains';
-import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
+import { PANEL_LONG, PANEL_SHORT, chimneyGeometry, dormerGeometry, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { moveToOwnFloor, putBack, putBackTarget } from '../model/separate';
 import { bankWidth } from '../model/patios';
 import { placedStair, reachesFloorAbove, stairBase, stairRise } from '../model/stairs';
@@ -150,6 +150,7 @@ export class Panel {
     if (sel.kind === 'chimney') return this.renderChimney(sel.id);
     if (sel.kind === 'solar') return this.renderSolar(sel.id);
     if (sel.kind === 'rooflight') return this.renderRooflight(sel.id);
+    if (sel.kind === 'dormer') return this.renderDormer(sel.id);
     if (sel.kind === 'patio') return this.renderPatio(sel.id);
     if (sel.kind === 'tree') return this.renderTree(sel.id);
     if (sel.kind === 'hedge') return this.renderHedge(sel.id);
@@ -688,7 +689,7 @@ export class Panel {
     }
     if (c?.finishes) {
       // For the clothes dryer the "finish" is whether the washing is out.
-      const names: Record<string, string> = f.kind === 'rotary' ? { empty: 'None (empty lines)', washing: 'Hung out' } : {};
+      const names: Record<string, string> = f.kind === 'rotary' ? { empty: 'None (empty lines)', washing: 'Hung out' } : (c.finishNames ?? {});
       this.select(f.kind === 'rotary' ? 'Washing' : (c.finishLabel ?? 'Finish'), f.finish ?? c.finishes[0], c.finishes.map((v): [string, string] => [v, names[v] ?? v[0].toUpperCase() + v.slice(1)]), (v) => {
         f.finish = v;
         keep();
@@ -714,6 +715,12 @@ export class Panel {
         keep();
         this.done();
       }, 'm');
+    }
+    if (f.lift !== undefined) {
+      this.number('Height above floor', f.lift, 0.05, 0, 3, (v) => {
+        f.lift = v;
+        this.done();
+      }, 'm', 'Height of its underside above the floor (1.45 m is usual over a worktop)');
     }
     if (f.kind === 'vineyard') {
       this.number('Row spacing', rowGap(f), 0.05, 0.6, 4, (v) => {
@@ -751,6 +758,12 @@ export class Panel {
               : 'Drag to move; it keeps tight to a wall it is square to. [ and ] turn it; Ctrl/⌘+D puts a copy alongside.',
     );
     const btns: [string, () => void, boolean?][] = [];
+    if (f.kind === 'wallunit') {
+      btns.push([f.open ? 'Lights underneath off' : 'Lights underneath on', () => {
+        f.open = !f.open || undefined;
+        this.done();
+      }]);
+    }
     if (f.kind === 'rotary') {
       btns.push([f.open ? 'Fold it up' : 'Open it out', () => {
         f.open = !f.open || undefined;
@@ -1036,7 +1049,7 @@ export class Panel {
         this.done();
       });
     }
-    if (h.kind !== 'fence') {
+    if (!isFence(h.kind)) {
       this.number(h.kind === 'ditch' ? 'Width at top' : 'Thickness', h.width, 0.05, 0.2, 6, (v) => {
         h.width = v;
         keep();
@@ -1048,6 +1061,7 @@ export class Panel {
       hawthorn: 'In leaf from May to October; twiggy and bare in winter.',
       beech: 'Fresh green in summer, copper in autumn, and it keeps its brown leaves through the winter.',
       fence: 'Timber posts at most 1.8 m apart, a gravel board, and featheredge boards.',
+      palisade: 'Timber posts at most 1.8 m apart, two rails, and upright pales with pointed tops and gaps between them. Low, it makes a picket fence.',
       wall: 'A free-standing wall with a coping along the top, e.g. a boundary wall. Gates can stand in it.',
       ditch: 'An open drainage ditch dug into the ground, with water in the bottom. Run surface-water drains to it with an "Outfall into a ditch" fitting.',
     }[h.kind];
@@ -1302,6 +1316,47 @@ export class Panel {
       this.store.commit();
     }, true]);
     this.buttons(btns);
+  }
+
+  private renderDormer(id: string) {
+    const level = this.store.plan;
+    const d = level.dormers?.[id];
+    if (!d) return;
+    const geo = dormerGeometry(this.store.building, level, d);
+    this.title('Dormer');
+    this.select('Roof', d.roof, [
+      ['gable', 'Gabled'],
+      ['flat', 'Flat'],
+    ], (v) => {
+      d.roof = v as 'gable' | 'flat';
+      this.done();
+    });
+    this.number('Width', d.width, 0.05, 0.8, 6, (v) => {
+      d.width = v;
+      this.done();
+    }, 'm', 'Outside width of the front wall');
+    this.number('Front height', d.height, 0.05, 0.6, 3, (v) => {
+      d.height = v;
+      this.done();
+    }, 'm', 'Height of the front wall from where it rises out of the roof up to the dormer\'s eaves');
+    if (d.roof === 'gable') {
+      this.number('Roof pitch', d.pitch, 1, 15, 60, (v) => {
+        d.pitch = v;
+        this.done();
+      }, '°');
+    }
+    this.note(
+      geo
+        ? 'The thick line is the front wall, with the window in it; the dormer runs back up the slope until its roof meets the main roof. Drag it to move it; a taller front takes it further back.'
+        : 'Not on a sloping roof of this floor any more: drag it back onto one.',
+    );
+    this.buttons([
+      ['Delete', () => {
+        delete level.dormers![id];
+        this.editor.select(null);
+        this.store.commit();
+      }, true],
+    ]);
   }
 
   private renderSolar(id: string) {

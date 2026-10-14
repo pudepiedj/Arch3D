@@ -406,5 +406,6 @@ function dropBroken(l: Level) {
   keep(l.pillars, (q) => okPoint(q) && ok(q.size));
   keep(l.chimneys, okPoint);
   keep(l.rooflights, okPoint);
+  keep(l.dormers, (d) => okPoint(d) && ok(d.width) && ok(d.height));
   keep(l.solar, okPoint);
 }

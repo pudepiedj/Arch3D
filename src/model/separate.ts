@@ -88,7 +88,7 @@ export function moveToOwnFloor(b: Building, source: Level, box: Box, name: strin
   }
 
   type Placed = Vec2 & { id: string };
-  const take = (key: 'stairs' | 'pillars' | 'chimneys' | 'solar' | 'rooflights' | 'furniture') => {
+  const take = (key: 'stairs' | 'pillars' | 'chimneys' | 'solar' | 'rooflights' | 'dormers' | 'furniture') => {
     const src = source as unknown as Record<string, Record<string, Placed> | undefined>;
     const dst = level as unknown as Record<string, Record<string, Placed> | undefined>;
     for (const item of Object.values(src[key] ?? {})) {
@@ -102,6 +102,7 @@ export function moveToOwnFloor(b: Building, source: Level, box: Box, name: strin
   take('chimneys');
   take('solar');
   take('rooflights');
+  take('dormers');
   take('furniture');
   for (const s of Object.values(source.roofSections ?? {})) {
     if (!s.points.every((p) => isIn(p, box))) continue;
@@ -243,7 +244,7 @@ export function putBack(b: Building, part: Level, into: Level): boolean {
     into.openings[copy.id] = copy;
   }
   type Placed = { id: string };
-  for (const key of ['stairs', 'pillars', 'chimneys', 'solar', 'rooflights', 'furniture', 'roofSections'] as const) {
+  for (const key of ['stairs', 'pillars', 'chimneys', 'solar', 'rooflights', 'dormers', 'furniture', 'roofSections'] as const) {
     const src = (part as unknown as Record<string, Record<string, Placed> | undefined>)[key];
     if (!src) continue;
     const dst = ((into as unknown as Record<string, Record<string, Placed> | undefined>)[key] ??= {});

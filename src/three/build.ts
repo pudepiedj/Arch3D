@@ -18,9 +18,11 @@ import { type RailLine, againstWall, buildRails, onSegment } from './rails';
 import { pillarHeight } from '../model/pillars';
 import {
   type ChimneyGeometry,
+  type DormerGeometry,
   type RooflightGeometry,
   type SolarGeometry,
   chimneyGeometry,
+  dormerGeometry,
   rooflightGeometry,
   solarGeometry,
 } from '../model/roofitems';
@@ -402,6 +404,8 @@ export interface LevelOptions {
   chimneys?: ChimneyGeometry[];
   solar?: SolarGeometry[];
   rooflights?: RooflightGeometry[];
+  /** Dormers, each with the covering of the roof it stands on. */
+  dormers?: (DormerGeometry & { covering?: RoofCovering })[];
   /** Free-standing pillars, each with the height it rises to. */
   pillars?: (Pillar & { height: number })[];
   /** Patios, decks and gravel, with their outlines less the house. */
@@ -505,6 +509,14 @@ export function buildBuildingObject(
       chimneys: isCut ? [] : Object.values(level.chimneys ?? {}).map((c) => chimneyGeometry(b, level, c)),
       solar: isCut ? [] : Object.values(level.solar ?? {}).flatMap((sa) => solarGeometry(b, level, sa) ?? []),
       rooflights,
+      dormers: isCut
+        ? []
+        : Object.values(level.dormers ?? {}).flatMap((dm) => {
+            const geo = dormerGeometry(b, level, dm);
+            if (!geo) return [];
+            const on = roofs.find((r) => r.geometry?.faces.some((f) => f.kind === 'slope' && pointInPolygon(dm, f.pts)));
+            return [{ ...geo, covering: on?.roof.covering }];
+          }),
       roofs: roofs.flatMap((r) => (r.geometry ? [{ ...r.geometry, vaulted: !!r.roof.vaulted && r.roof.kind !== 'flat', glazedGables: !!r.roof.glazedGables && r.roof.kind !== 'flat', covering: r.roof.covering }] : [])),
       patios: Object.values(level.patios ?? {}).map((patio) => ({ patio, shapes: patioShapes(level, patio, bankOuters(b, level)) })),
       trees: Object.values(level.trees ?? {}),
@@ -659,9 +671,14 @@ export function buildPlanObject(plan: Plan, mats: Materials, opts: LevelOptions 
   const wells = (opts.rooflights ?? []).filter((r) => r.kind === 'kerb').map((r) => r.footprint);
   // Windows lying in a slope get their openings cut through the roof, so a vaulted room
   // (or the loft) sees the sky through them.
-  const slopeHoles = (opts.rooflights ?? []).filter((r) => r.kind === 'slope').flatMap((r) => r.windows.map((w) => w.frame.map((p) => ({ x: p.x, y: p.y }))));
+  // So do dormers: the roof stops where they stand.
+  const slopeHoles = [
+    ...(opts.rooflights ?? []).filter((r) => r.kind === 'slope').flatMap((r) => r.windows.map((w) => w.frame.map((p) => ({ x: p.x, y: p.y })))),
+    ...(opts.dormers ?? []).map((d) => d.footprint),
+  ];
   for (const r of opts.roofs ?? []) group.add(buildRoofObject(r, mats, wells, slopeHoles, wallMaterial(finishes.outside)));
   if (opts.rooflights?.length) group.add(buildRooflights(opts.rooflights, opts.ceiling ?? 0, mats));
+  if (opts.dormers?.length) group.add(buildDormers(opts.dormers, mats, wallMaterial(finishes.outside)));
   for (const c of opts.chimneys ?? []) group.add(buildChimney(c, mats));
   if (opts.solar?.length) group.add(buildSolar(opts.solar, mats));
   for (const q of opts.pillars ?? []) {
@@ -1799,6 +1816,96 @@ function buildRooflights(list: RooflightGeometry[], ceiling: number, mats: Mater
     [motors, mats.solar],
     [blinds, mats.blind],
   ] as const) {
+    if (!m.pos.length) continue;
+    const mesh = new THREE.Mesh(m.geometry(), mat);
+    mesh.castShadow = mat !== mats.glass;
+    mesh.receiveShadow = true;
+    g.add(mesh);
+  }
+  return g;
+}
+
+/** A flat polygon in 3D (any number of corners) with holes, triangulated in its own plane. */
+function polygonWithHoles(m: Mesher, outer: Point3[], holes: Point3[][] = [], facing: 'both' | 'up' | 'down' = 'both') {
+  // Its plane: the normal by Newell's method, and two directions in it.
+  const n = { x: 0, y: 0, z: 0 };
+  outer.forEach((a, i) => {
+    const b = outer[(i + 1) % outer.length];
+    n.x += (a.y - b.y) * (a.z + b.z);
+    n.y += (a.z - b.z) * (a.x + b.x);
+    n.z += (a.x - b.x) * (a.y + b.y);
+  });
+  const nl = Math.hypot(n.x, n.y, n.z);
+  if (nl < 1e-9) return;
+  const N = { x: n.x / nl, y: n.y / nl, z: n.z / nl };
+  const e = { x: outer[1].x - outer[0].x, y: outer[1].y - outer[0].y, z: outer[1].z - outer[0].z };
+  const el = Math.hypot(e.x, e.y, e.z) || 1;
+  const U = { x: e.x / el, y: e.y / el, z: e.z / el };
+  const V = { x: N.y * U.z - N.z * U.y, y: N.z * U.x - N.x * U.z, z: N.x * U.y - N.y * U.x };
+  const o = outer[0];
+  const local = (p: Point3) => {
+    const d = { x: p.x - o.x, y: p.y - o.y, z: p.z - o.z };
+    return new THREE.Vector2(d.x * U.x + d.y * U.y + d.z * U.z, d.x * V.x + d.y * V.y + d.z * V.z);
+  };
+  const all = [...outer, ...holes.flat()];
+  const v = (p: Point3) => new THREE.Vector3(p.x, p.z, p.y);
+  // Facing up (a roof's covering), down (its lining), or both ways (a wall seen from
+  // outside and from inside, through the window or from the loft).
+  const none = new THREE.Vector3(0, 0, 0);
+  const up = new THREE.Vector3(N.x, N.z, N.y).multiplyScalar(N.z >= 0 ? 1 : -1);
+  for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(outer.map(local), holes.map((h) => h.map(local)))) {
+    if (facing === 'both') {
+      m.tri(v(all[i]), v(all[j]), v(all[k]), none);
+      m.tri(v(all[i]), v(all[k]), v(all[j]), none);
+    } else m.tri(v(all[i]), v(all[j]), v(all[k]), facing === 'up' ? up : up.clone().negate());
+  }
+}
+
+/**
+ * Dormers: the front wall (with its window opening), the cheeks either side, the roof in
+ * the same covering as the roof it stands on (or a flat top), a fascia along its eaves, and
+ * the window's frame and glass.
+ */
+function buildDormers(list: (DormerGeometry & { covering?: RoofCovering })[], mats: Materials, wallMat: THREE.Material): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'dormers';
+  const walls = new Mesher();
+  const frames = new Mesher();
+  const glass = new Mesher();
+  const trim = new Mesher();
+  const coverings = new Map<RoofCovering, Mesher>();
+  const flat = new Mesher();
+  const lining = new Mesher();
+  for (const d of list) {
+    const [front, ...cheeks] = d.walls;
+    polygonWithHoles(walls, front, [d.frame]);
+    for (const c of cheeks) polygonWithHoles(walls, c);
+    const isFlat = d.roof.length === 1;
+    for (const r of d.roof) {
+      let m = flat;
+      if (!isFlat) {
+        const c = d.covering ?? 'tiles';
+        if (!coverings.has(c)) coverings.set(c, new Mesher());
+        m = coverings.get(c)!;
+      }
+      polygonWithHoles(m, r, [], 'up');
+      // Plaster under it, seen from inside through the window.
+      polygonWithHoles(lining, r.map((p) => ({ ...p, z: p.z - 0.04 })), [], 'down');
+    }
+    polygonWithHoles(frames, d.frame, [d.glass]);
+    polygonWithHoles(glass, d.glass);
+    for (const [a, b] of d.eaves) trim.vface(a, b, a.z - 0.15, a.z, new THREE.Vector3(0, 0, 0));
+  }
+  const parts: [Mesher, THREE.Material][] = [
+    [walls, wallMat],
+    [frames, mats.frame],
+    [glass, mats.glass],
+    [trim, mats.frame],
+    [lining, mats.frame],
+    [flat, mats.flatRoof],
+    ...[...coverings].map(([c, m]): [Mesher, THREE.Material] => [m, roofMaterial(c)]),
+  ];
+  for (const [m, mat] of parts) {
     if (!m.pos.length) continue;
     const mesh = new THREE.Mesh(m.geometry(), mat);
     mesh.castShadow = mat !== mats.glass;

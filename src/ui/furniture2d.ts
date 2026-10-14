@@ -255,7 +255,61 @@ function vineyard(ctx: Ctx, f: Furniture, w: number, d: number) {
   ctx.restore();
 }
 
+/** A ceiling light: a small circle with a cross through it (the usual drawing symbol). */
+function lamp(ctx: Ctx, x: number, y: number) {
+  const r = 0.12;
+  circle(ctx, x, y, r, 'rgba(255, 236, 170, 0.7)');
+  line(ctx, x - r * 0.7, y - r * 0.7, x + r * 0.7, y + r * 0.7);
+  line(ctx, x - r * 0.7, y + r * 0.7, x + r * 0.7, y - r * 0.7);
+}
+
 const SYMBOLS: Record<string, Symbol> = {
+  aga: (ctx, _f, w, d, fill) => {
+    rect(ctx, -w / 2, -d / 2, w, d, fill, 0.03);
+    for (const x of [-w * 0.32, -w * 0.06]) circle(ctx, x, -0.02, 0.17);
+  },
+  larder: (ctx, _f, w, d, fill) => {
+    unit(ctx, w, d, fill);
+    line(ctx, -w / 2, -d / 2, w / 2, d / 2 - 0.03);
+    line(ctx, w / 2, -d / 2, -w / 2, d / 2 - 0.03);
+  },
+  // Overhead, so dashed.
+  wallunit: (ctx, _f, w, d, fill) => {
+    ctx.save();
+    ctx.setLineDash([0.06, 0.04]);
+    rect(ctx, -w / 2, -d / 2, w, d, fill);
+    line(ctx, -w / 2, -d / 2, w / 2, d / 2);
+    ctx.restore();
+  },
+  downlight: (ctx) => lamp(ctx, 0, 0),
+  downlightrow: (ctx, _f, w) => {
+    const n = Math.max(1, Math.round(w / 0.8));
+    for (let i = 0; i < n; i++) lamp(ctx, n === 1 ? 0 : -w / 2 + (w * (i + 0.5)) / n, 0);
+  },
+  pagoda: (ctx, _f, w, d, fill) => {
+    const oct = (r: number) => Array.from({ length: 8 }, (_, i) => {
+      const a = ((i + 0.5) / 8) * Math.PI * 2;
+      return { x: (Math.cos(a) * r * w) / 2, y: (Math.sin(a) * r * d) / 2 };
+    });
+    poly(ctx, oct(1), fill);
+    ctx.save();
+    ctx.setLineDash([0.1, 0.07]);
+    poly(ctx, oct(1.2));
+    ctx.restore();
+    for (const p of oct(0.88)) rect(ctx, p.x - 0.05, p.y - 0.05, 0.1, 0.1, '#6f5237');
+  },
+  jetty: (ctx, _f, w, d, fill) => {
+    rect(ctx, -w / 2, -d / 2, w, d, fill);
+    for (let y = -d / 2 + 0.15; y < d / 2; y += 0.15) line(ctx, -w / 2, y, w / 2, y);
+  },
+  flagpole: (ctx, f) => {
+    circle(ctx, 0, 0, 0.06, '#f4f4f2');
+    if (f.finish === 'none') return;
+    ctx.save();
+    ctx.lineWidth *= 2.5;
+    line(ctx, 0, 0, Math.max(0.9, f.height * 0.3), 0);
+    ctx.restore();
+  },
   vineyard: (ctx, f, w, d) => vineyard(ctx, f, w, d),
   pond: (ctx, f) => pond(ctx, f),
   tennis: (ctx, f, w, d) => tennis(ctx, f, w, d),

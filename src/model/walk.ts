@@ -8,6 +8,7 @@
 
 import { levelElevation } from './building';
 import { allStairs, holesAt } from './stairholes';
+import { subtract } from './clip';
 import { Vec2, pointInPolygon } from './geom';
 import { computeFootprints, type Footprint } from './joints';
 import { openingsWithGates } from './openings';
@@ -79,6 +80,11 @@ export class WalkWorld {
       // Furniture is in the way (except rugs); you walk round it.
       for (const f of Object.values(level.furniture ?? {})) {
         const c = catalogueItem(f.kind);
+        // A jetty: you walk out along it, over the water.
+        if (f.kind === 'jetty') {
+          this.surfaces.push({ poly: footprint(f), holes: [], z: elevation + standingHeight(level, f) + f.height });
+          continue;
+        }
         // An open gate lets you through.
         if (c?.flat || c?.walkUnder || (isGate(f.kind) && f.open)) continue;
         const base = elevation + standingHeight(level, f);
@@ -90,7 +96,17 @@ export class WalkWorld {
         }
         // A pond: you don't walk into it.
         if (isPond(f)) {
-          this.blocks.push({ poly: pondOnPlan(f, 24), bottom: base, top: base + 1 });
+          // ...except along a jetty out over it.
+          const jetties = Object.values(level.furniture ?? {}).filter((j) => j.kind === 'jetty').map((j) => [footprint(j)]);
+          let water: Vec2[][] = [pondOnPlan(f, 24)];
+          if (jetties.length) {
+            try {
+              water = subtract(water[0], jetties).map((shape) => shape[0]);
+            } catch {
+              // Keep the whole pond if the clipping fails.
+            }
+          }
+          for (const poly of water) this.blocks.push({ poly, bottom: base, top: base + 1 });
           continue;
         }
         if (isTennis(f)) {
