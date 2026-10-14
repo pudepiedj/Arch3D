@@ -152,13 +152,61 @@ function scotland(ctx: Ctx, W: number, H: number) {
   band(ctx, -W * 0.1, H * 1.1, W * 1.1, -H * 0.1, H * 0.2, '#ffffff');
 }
 
-/** Norfolk's flag (the arms of Bigod): per pale gold and black, a bend white. */
+/**
+ * An ermine spot, centred at the origin, `s` tall: three small dots over a tail that
+ * spreads into three points at the foot.
+ */
+function ermineSpot(ctx: Ctx, s: number) {
+  ctx.beginPath();
+  for (const [x, y] of [[-0.22, -0.36], [0.22, -0.36], [0, -0.5]]) {
+    ctx.moveTo(x * s + 0.08 * s, y * s);
+    ctx.arc(x * s, y * s, 0.08 * s, 0, Math.PI * 2);
+  }
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(0, -0.32 * s);
+  ctx.quadraticCurveTo(0.06 * s, 0.1 * s, 0.24 * s, 0.42 * s);
+  ctx.lineTo(0.09 * s, 0.32 * s);
+  ctx.lineTo(0, 0.5 * s);
+  ctx.lineTo(-0.09 * s, 0.32 * s);
+  ctx.lineTo(-0.24 * s, 0.42 * s);
+  ctx.quadraticCurveTo(-0.06 * s, 0.1 * s, 0, -0.32 * s);
+  ctx.fill();
+}
+
+/**
+ * Norfolk's flag (the arms of Bigod, Earls of Norfolk): per pale gold and black, a bend
+ * ermine: a white band from the top by the pole to the foot of the fly, strewn with ermine
+ * spots two, one, two, one along it, turned to follow it.
+ */
 function norfolk(ctx: Ctx, W: number, H: number) {
   ctx.fillStyle = '#f2c200';
   ctx.fillRect(0, 0, W / 2, H);
   ctx.fillStyle = '#111111';
   ctx.fillRect(W / 2, 0, W / 2, H);
-  band(ctx, -W * 0.05, -H * 0.1, W * 1.05, H * 1.1, H * 0.22, '#ffffff');
+  const [x0, y0, x1, y1] = [-W * 0.05, -H * 0.1, W * 1.05, H * 1.1];
+  const width = H * 0.26;
+  band(ctx, x0, y0, x1, y1, width, '#ffffff');
+  const len = Math.hypot(x1 - x0, y1 - y0);
+  const angle = Math.atan2(y1 - y0, x1 - x0);
+  const spot = width * 0.5;
+  const step = width * 0.62;
+  ctx.save();
+  ctx.translate(x0, y0);
+  ctx.rotate(angle);
+  ctx.fillStyle = '#111111';
+  // Along the band: rows of two, then one, then two...; the band's own "up" is across it.
+  for (let i = 0, t = step * 0.8; t < len; i++, t += step) {
+    const across = i % 2 === 0 ? [-width * 0.22, width * 0.22] : [0];
+    for (const a of across) {
+      ctx.save();
+      ctx.translate(t, a);
+      ctx.rotate(Math.PI / 2);
+      ermineSpot(ctx, spot);
+      ctx.restore();
+    }
+  }
+  ctx.restore();
 }
 
 function stgeorge(ctx: Ctx, W: number, H: number) {
