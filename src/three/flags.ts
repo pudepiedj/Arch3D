@@ -177,7 +177,7 @@ function ermineSpot(ctx: Ctx, s: number) {
 /**
  * Norfolk's flag (the arms of Bigod, Earls of Norfolk): per pale gold and black, a bend
  * ermine: a white band from the top by the pole to the foot of the fly, strewn with ermine
- * spots two, one, two, one along it, turned to follow it.
+ * spots two, one, two, one along it, turned to follow it (heads down the band).
  */
 function norfolk(ctx: Ctx, W: number, H: number) {
   ctx.fillStyle = '#f2c200';
@@ -201,7 +201,8 @@ function norfolk(ctx: Ctx, W: number, H: number) {
     for (const a of across) {
       ctx.save();
       ctx.translate(t, a);
-      ctx.rotate(Math.PI / 2);
+      // Heads towards the foot of the band, tails towards the top by the pole.
+      ctx.rotate(-Math.PI / 2);
       ermineSpot(ctx, spot);
       ctx.restore();
     }
