@@ -252,7 +252,27 @@ export function ceilingHeight(b: Building, level: Level): number {
  * Add a storey on top of the building. With `copyOutline`, the outside walls of the
  * current top floor are copied up so you can start drawing inside them.
  */
-export function addLevelOnTop(b: Building, copyOutline: boolean, onto?: Level): Level {
+/** The rooms of a floor mostly (over half their area) inside a box. */
+export function roomsInBox(level: Plan, box: { x0: number; y0: number; x1: number; y1: number }) {
+  const rect = [
+    { x: box.x0, y: box.y0 },
+    { x: box.x1, y: box.y0 },
+    { x: box.x1, y: box.y1 },
+    { x: box.x0, y: box.y1 },
+  ];
+  return detectRooms(level).filter((r) => {
+    const inside = intersectAll(r.polygon, rect).reduce((s, shape) => s + Math.abs(polygonArea(shape[0])), 0);
+    return inside > Math.abs(polygonArea(r.polygon)) * 0.5;
+  });
+}
+
+/**
+ * A new floor on top of `onto` (the last floor if not given), optionally starting with a
+ * copy of its outside walls: round all of it, or (with `part`) round just the rooms mostly
+ * inside that box, so a single-storey extension drawn before the floor above stays single
+ * storey, with its own roof.
+ */
+export function addLevelOnTop(b: Building, copyOutline: boolean, onto?: Level, part?: { x0: number; y0: number; x1: number; y1: number }): Level {
   const last = b.levels[b.levels.length - 1];
   const top = onto ?? last;
   // Named for the floor it goes on: "First floor" on "Ground floor"; on a building's own
@@ -264,7 +284,7 @@ export function addLevelOnTop(b: Building, copyOutline: boolean, onto?: Level): 
   // after it keep their places.
   if (top && top !== last) level.base = levelElevation(b, top.id) + top.height;
   if (copyOutline && top) {
-    for (const id of outlineWallIds(top)) {
+    for (const id of outlineWallIds(top, part ? roomsInBox(top, part) : undefined)) {
       const w = top.walls[id];
       addWall(level, top.nodes[w.a], top.nodes[w.b], { thickness: w.thickness, height: level.height });
     }

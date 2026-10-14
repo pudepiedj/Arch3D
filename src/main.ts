@@ -1,4 +1,5 @@
-import { addLevelOnTop, getLevel, levelsTopDown, migrate } from './model/building';
+import { addLevelOnTop, getLevel, levelsTopDown } from './model/building';
+import { openDrawing } from './model/outdoors';
 import { demoBuilding } from './model/demo';
 import type { Building } from './model/types';
 import { View3D, type ViewMode } from './three/view3d';
@@ -462,7 +463,7 @@ $('#openShared').addEventListener('click', async () => {
         if (!res.ok) throw new Error(`${res.status}`);
         const record = await res.json();
         dialog.close();
-        load(migrate(record.building));
+        load(openDrawing(record.building));
       } catch (err) {
         alert(`Could not open that drawing: ${(err as Error).message}`);
       }
@@ -547,7 +548,7 @@ $('#importFile').addEventListener('change', async (e) => {
   const f = (e.target as HTMLInputElement).files?.[0];
   if (!f) return;
   try {
-    load(migrate(JSON.parse(await f.text())));
+    load(openDrawing(JSON.parse(await f.text())));
   } catch (err) {
     alert(`Could not import: ${(err as Error).message}`);
   }
@@ -564,6 +565,7 @@ const HINTS: Record<Tool, string> = {
   split: 'Click on a wall to add a joint you can drag',
   paste: 'Click on walls to place exact copies · Esc when done',
   paint: 'Walls: click one side of a wall to paint that face, or inside a room to paint all its walls · Floors: click inside a room · the panel sets the defaults',
+  floorOver: 'Drag a box round the part of this floor to build on (leaving out a single-storey extension): the new floor above gets the outside walls of the rooms mostly inside it · Esc to cancel',
   roomOnTop: 'Drag a box on this floor where the room goes (round the top of a stair, say): it gets walls and a flat roof, on top of this floor, and this floor\'s roof turns flat to walk on · Esc to cancel',
   moveArea: 'Drag a box round one whole building to give it a floor of its own (its own floor level, and its own floors on top); the garden stays · Esc to cancel',
   copyArea: 'Drag a box round what to copy (walls crossing the box are cut off at it) · Esc to cancel',

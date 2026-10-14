@@ -1,4 +1,5 @@
-import { createBuilding, getLevel, migrate } from '../model/building';
+import { createBuilding, getLevel } from '../model/building';
+import { openDrawing } from '../model/outdoors';
 import type { Building, Level } from '../model/types';
 
 const STORAGE_KEY = 'arch3d.plan.v1';
@@ -25,7 +26,7 @@ export class Store {
   static loadSaved(): Building | null {
     try {
       const s = localStorage.getItem(STORAGE_KEY);
-      return s ? migrate(JSON.parse(s)) : null;
+      return s ? openDrawing(JSON.parse(s)) : null;
     } catch {
       return null;
     }
