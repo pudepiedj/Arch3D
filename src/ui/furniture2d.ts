@@ -288,12 +288,17 @@ const SYMBOLS: Record<string, Symbol> = {
     line(ctx, 0, -d / 2, 0, d / 2 + PORCH_OVERHANG);
     ctx.restore();
     for (const b of porchWalls(f)) rect(ctx, b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0, '#a5583f');
-    const door = porchDoor(f).width;
     ctx.save();
     ctx.setLineDash([0.06, 0.05]);
-    ctx.beginPath();
-    ctx.arc(-door / 2, d / 2 - PORCH_WALL / 2, door, -Math.PI / 2, 0);
-    ctx.stroke();
+    if (f.openFront) {
+      // The beam across the open front, overhead.
+      line(ctx, -w / 2, d / 2 - PORCH_WALL / 2, w / 2, d / 2 - PORCH_WALL / 2);
+    } else {
+      const door = porchDoor(f).width;
+      ctx.beginPath();
+      ctx.arc(-door / 2, d / 2 - PORCH_WALL / 2, door, -Math.PI / 2, 0);
+      ctx.stroke();
+    }
     ctx.restore();
   },
   aga: (ctx, _f, w, d, fill) => {

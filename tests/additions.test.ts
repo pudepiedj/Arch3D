@@ -154,3 +154,29 @@ describe('flags, hot tub, sauna and porch', () => {
     expect(new WalkWorld(b).move({ x: 2, y: 0 }, 0, { x: -2, y: 0 }).p.x).toBeGreaterThan(1);
   });
 });
+
+describe('porch with an open front, and costing garden things on any floor', () => {
+  it('open at the front: you walk straight in, and a front door goes in the house wall behind it', async () => {
+    const { wallBehindPorch } = await import('../src/model/porch');
+    const { placeOpening } = await import('../src/model/openings');
+    const b = createBuilding();
+    const g = b.levels[0];
+    addWall(g, { x: -5, y: 0 }, { x: 5, y: 0 }, { thickness: 0.3, height: g.height });
+    // Back against the wall's outside face (y = 0.15), sticking out towards +y.
+    const f = addFurniture(g, 'porch', { x: 1, y: 0.15 + 0.8 }, 0);
+    f.openFront = true;
+    expect(new WalkWorld(b).move({ x: 1, y: 3 }, 0, { x: 0, y: -2 }).p.y).toBeLessThan(1.4);
+    const behind = wallBehindPorch(g, f)!;
+    expect(behind).not.toBeNull();
+    expect(behind.u).toBeCloseTo(6, 1);
+    const door = placeOpening(g, behind.wallId, behind.u, 'door')!;
+    expect(door.offset).toBeCloseTo(6, 1);
+  });
+
+  it('a tennis court is costed even if it ended up on an upper floor', () => {
+    const b = createBuilding();
+    const first = addFurniture(createBuilding().levels[0], 'tennis', { x: 0, y: 0 });
+    b.levels.push({ ...b.levels[0], id: 'L99', name: 'First floor', furniture: { [first.id]: first }, walls: {}, nodes: {}, openings: {}, stairs: {} });
+    expect(estimate(b, null).some((l) => l.price === 'court-tarmac' && l.key)).toBe(true);
+  });
+});

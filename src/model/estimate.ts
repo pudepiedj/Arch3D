@@ -667,6 +667,36 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
         add({ id: `balustrade:${pt.id}`, price: kind[0], group: 'Garden and drains', item: kind[1] + what, qty: guardLength(level, pt), unit: 'm' });
       }
     }
+    // Garden things priced on their own (a court, a pond, a porch...), whichever floor they
+    // were put on.
+    for (const f of Object.values(level.furniture ?? {})) {
+      if (f.kind === 'porch' && inside(f)) {
+        add({ id: `porch:${f.id}`, price: 'porch', group: 'Garden and drains', item: f.openFront ? 'Porch, open-fronted: footings, side walls, oak beam, gabled roof and tiled floor' : 'Porch: footings, walls, gabled roof, door and tiled floor', detail: `${f.width.toFixed(1)} × ${f.depth.toFixed(1)} m`, qty: f.width * f.depth, unit: 'm²', key: true });
+        continue;
+      }
+      if (isVineyard(f) && inside(f)) {
+        const n = vineCount(f);
+        add({ id: `vines:${f.id}`, price: 'vine', group: 'Garden and drains', item: `Vines (${f.finish === 'white' ? 'white' : 'red'} grapes), planted with stakes and guards`, detail: `${n.rows} rows of ${n.perRow}, ${rowGap(f)} m between rows`, qty: n.vines, unit: 'no.' });
+        add({ id: `trellis:${f.id}`, price: 'vine-trellis', group: 'Garden and drains', item: 'Vine trellis: posts, strainers and wires', detail: `${n.rows} rows, ${f.height.toFixed(1)} m high`, qty: n.rowLength, unit: 'm' });
+        continue;
+      }
+      if (isPond(f) && inside(f)) {
+        const area = pondArea(f);
+        add({ id: `pond:${f.id}`, price: 'pond', group: 'Garden and drains', item: 'Pond: dig, underlay, liner, edging and planting', detail: `${area.toFixed(1)} m² of water, ${f.height.toFixed(1)} m deep at the deepest`, qty: area, unit: 'm²' });
+        continue;
+      }
+      if (isTennis(f) && inside(f)) {
+        const surface = f.finish ?? 'tarmac';
+        const name = { tarmac: 'porous tarmac', clay: 'clay', grass: 'grass' }[surface] ?? surface;
+        add({ id: `court:${f.id}`, price: `court-${surface}`, group: 'Garden and drains', item: `Tennis court, ${name}`, detail: `${f.width.toFixed(1)} × ${f.depth.toFixed(1)} m enclosure: dig, base, edging, surface and lines`, qty: f.width * f.depth, unit: 'm²', key: true });
+        const fence = fenceRuns(f).reduce((s2, [a, b]) => s2 + Math.hypot(b.x - a.x, b.y - a.y), 0);
+        if (fence > 0) add({ id: `courtfence:${f.id}`, price: 'court-fence', group: 'Garden and drains', item: 'Tennis court fence, chain-link', detail: `${f.height.toFixed(2)} m high, with gate`, qty: fence, unit: 'm' });
+        add({ id: `courtnet:${f.id}`, price: 'court-net', group: 'Garden and drains', item: 'Tennis net, posts and winder', qty: 1, unit: 'no.' });
+        continue;
+      }
+      if (!isGate(f.kind) || !inside(f)) continue;
+      add({ id: `gate:${f.id}`, price: f.kind === 'gate5' ? 'gate-5bar' : 'gate-path', group: 'Garden and drains', item: f.kind === 'gate5' ? `Five-bar gate, ${f.width.toFixed(1)} m` : `Path gate, ${f.width.toFixed(1)} m`, detail: 'with posts', qty: 1, unit: 'no.' });
+    }
     if (garden) {
       for (const pt of Object.values(level.patios ?? {})) {
         if (pt.surface === 'balcony' || pt.surface === 'landing') continue;
@@ -683,34 +713,6 @@ export function estimate(b: Building, area: Extent | null, a: Assumptions = DEFA
         else if (h.kind === 'palisade') add({ id: `fence:${h.id}`, price: 'palisade', group: 'Garden and drains', item: 'Palisade fence', detail: `${L.toFixed(1)} m, ${h.height} m high`, qty: L, unit: 'm' });
         else if (h.kind === 'fence') add({ id: `fence:${h.id}`, price: 'fence', group: 'Garden and drains', item: 'Close-board fence', detail: `${L.toFixed(1)} m, ${h.height} m high`, qty: L, unit: 'm' });
         else add({ id: `hedge:${h.id}`, price: 'hedge', group: 'Garden and drains', item: `${h.kind[0].toUpperCase()}${h.kind.slice(1)} hedge plants`, detail: `${L.toFixed(1)} m, 5 a metre in a double row`, qty: Math.ceil(L * 5), unit: 'no.' });
-      }
-      for (const f of Object.values(level.furniture ?? {})) {
-        if (f.kind === 'porch' && inside(f)) {
-          add({ id: `porch:${f.id}`, price: 'porch', group: 'Garden and drains', item: 'Porch: footings, walls, gabled roof, door and tiled floor', detail: `${f.width.toFixed(1)} × ${f.depth.toFixed(1)} m`, qty: f.width * f.depth, unit: 'm²', key: true });
-          continue;
-        }
-        if (isVineyard(f) && inside(f)) {
-          const n = vineCount(f);
-          add({ id: `vines:${f.id}`, price: 'vine', group: 'Garden and drains', item: `Vines (${f.finish === 'white' ? 'white' : 'red'} grapes), planted with stakes and guards`, detail: `${n.rows} rows of ${n.perRow}, ${rowGap(f)} m between rows`, qty: n.vines, unit: 'no.' });
-          add({ id: `trellis:${f.id}`, price: 'vine-trellis', group: 'Garden and drains', item: 'Vine trellis: posts, strainers and wires', detail: `${n.rows} rows, ${f.height.toFixed(1)} m high`, qty: n.rowLength, unit: 'm' });
-          continue;
-        }
-        if (isPond(f) && inside(f)) {
-          const area = pondArea(f);
-          add({ id: `pond:${f.id}`, price: 'pond', group: 'Garden and drains', item: 'Pond: dig, underlay, liner, edging and planting', detail: `${area.toFixed(1)} m² of water, ${f.height.toFixed(1)} m deep at the deepest`, qty: area, unit: 'm²' });
-          continue;
-        }
-        if (isTennis(f) && inside(f)) {
-          const surface = f.finish ?? 'tarmac';
-          const name = { tarmac: 'porous tarmac', clay: 'clay', grass: 'grass' }[surface] ?? surface;
-          add({ id: `court:${f.id}`, price: `court-${surface}`, group: 'Garden and drains', item: `Tennis court, ${name}`, detail: `${f.width.toFixed(1)} × ${f.depth.toFixed(1)} m enclosure: dig, base, edging, surface and lines`, qty: f.width * f.depth, unit: 'm²' });
-          const fence = fenceRuns(f).reduce((s2, [a, b]) => s2 + Math.hypot(b.x - a.x, b.y - a.y), 0);
-          if (fence > 0) add({ id: `courtfence:${f.id}`, price: 'court-fence', group: 'Garden and drains', item: 'Tennis court fence, chain-link', detail: `${f.height.toFixed(2)} m high, with gate`, qty: fence, unit: 'm' });
-          add({ id: `courtnet:${f.id}`, price: 'court-net', group: 'Garden and drains', item: 'Tennis net, posts and winder', qty: 1, unit: 'no.' });
-          continue;
-        }
-        if (!isGate(f.kind) || !inside(f)) continue;
-        add({ id: `gate:${f.id}`, price: f.kind === 'gate5' ? 'gate-5bar' : 'gate-path', group: 'Garden and drains', item: f.kind === 'gate5' ? `Five-bar gate, ${f.width.toFixed(1)} m` : `Path gate, ${f.width.toFixed(1)} m`, detail: 'with posts', qty: 1, unit: 'no.' });
       }
       const d = b.drains;
       if (d) {

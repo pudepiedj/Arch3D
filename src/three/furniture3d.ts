@@ -1058,9 +1058,15 @@ function porch(k: Kit, f: Furniture, w: number, d: number, h: number) {
   const walls = wallMaterial((f.finish ?? 'brick') as WallFinish);
   for (const b of porchWalls(f)) k.mesh(meteredBox(b.x1 - b.x0, h, b.y1 - b.y0), walls, (b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, h / 2);
   const door = porchDoor(f);
-  // Over the doorway, a lintel of wall, and a tiled floor inside.
-  k.mesh(meteredBox(door.width, h - door.height, PORCH_WALL), walls, 0, d / 2 - PORCH_WALL / 2, door.height + (h - door.height) / 2);
-  k.box(w - 2 * PORCH_WALL, d - PORCH_WALL, 0.04, 0, -PORCH_WALL / 2, 0, plain(0x9c4a32, 0.8));
+  // A tiled floor inside.
+  k.box(w - 2 * PORCH_WALL, f.openFront ? d : d - PORCH_WALL, 0.04, 0, f.openFront ? 0 : -PORCH_WALL / 2, 0, plain(0x9c4a32, 0.8));
+  if (f.openFront) {
+    // Open all across the front: an oak beam from side wall to side wall carries the gable.
+    k.box(w, PORCH_WALL, 0.25, 0, d / 2 - PORCH_WALL / 2, h - 0.25, plain(0x8a6338, 0.8));
+  } else {
+    // Over the doorway, a lintel of wall.
+    k.mesh(meteredBox(door.width, h - door.height, PORCH_WALL), walls, 0, d / 2 - PORCH_WALL / 2, door.height + (h - door.height) / 2);
+  }
   // The door: a timber leaf, hung on the left, standing shut or opened inwards.
   const leaf = new Kit();
   const tw = door.width - 0.06;
@@ -1070,7 +1076,7 @@ function porch(k: Kit, f: Furniture, w: number, d: number, h: number) {
   leaf.g.position.set(-door.width / 2 + 0.03, 0, d / 2 - PORCH_WALL / 2);
   // Open: swung in, into the porch.
   if (f.open) leaf.g.rotation.y = Math.PI / 2 - 0.2;
-  k.g.add(leaf.g);
+  if (!f.openFront) k.g.add(leaf.g);
   // The roof: two slopes from the side eaves up to a ridge running out from the house.
   const tan = Math.tan((PORCH_PITCH * Math.PI) / 180);
   const o = PORCH_OVERHANG;

@@ -398,6 +398,8 @@ export interface Furniture {
   stool?: boolean;
   /** Mirrored: a gate hung on its right-hand post instead of its left. */
   flip?: boolean;
+  /** A porch open all across the front (no front wall or door). */
+  openFront?: boolean;
   /** Hung on the wall: height of its underside above the floor (a wall cupboard). */
   lift?: number;
   /** A vineyard: distance between rows, and between vines along a row (1 m if unset). */
