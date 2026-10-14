@@ -434,8 +434,13 @@ export class Panel {
           : 'No roof: this floor has no closed outline of walls yet.',
       );
     }
+    this.note('Add floor above copies the outside walls of all of this floor. To build up over only part of it (leaving a single-storey extension with its own roof), use Add floor over part… and drag a box round the part to build on.');
     this.buttons([
       ['Add floor above', () => this.addFloor(true)],
+      ['Add floor over part…', () => {
+        this.editor.select(null);
+        this.editor.setTool('floorOver');
+      }],
       ['Add empty floor', () => this.addFloor(false)],
       ['Add floor below', () => {
         const below = addLevelBelow(b, level);

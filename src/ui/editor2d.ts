@@ -18,7 +18,7 @@ import {
 import { type Clip, copyArea, describeClip, pasteClip } from '../model/copyarea';
 import { moveToOwnFloor, wallsToMove } from '../model/separate';
 import { FLOOR_FINISHES, WALL_FINISHES, clearFloorFinish, faceSides, materialsOf, paintRoomWalls, setFloorFinish } from '../model/materials';
-import { addRoomOnTop, getLevel, levelBelow, levelElevation } from '../model/building';
+import { addLevelOnTop, addRoomOnTop, getLevel, levelBelow, levelElevation, roomsInBox } from '../model/building';
 import { addPillar, pillarAt } from '../model/pillars';
 import { addPatio, patioShapes } from '../model/patios';
 import { addTree, crownCentre, speciesOf, treeAt, trunkRadius } from '../model/trees';
@@ -28,6 +28,7 @@ import { siteOf } from '../model/sun';
 import { type Box, type Picked, boxFrom, inBox, stretch } from '../model/stretch';
 import { addDrainNode, addDrainPipe, deleteDrainNode, drainNodeAt, drainPipeAt, pipeFall, splitPipe } from '../model/drains';
 import { addFurniture, againstWall, catalogueItem, footprint } from '../model/furniture';
+import { gardenLevel } from '../model/outdoors';
 import { drawFurnitureSymbol } from './furniture2d';
 import { addChimney, addRooflight, addSolarArray, chimneyFootprint, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { roofSurfaceAt } from '../model/roof';
@@ -60,7 +61,7 @@ import { remembered } from './sizes';
 import type { DrainKind, FloorFinish, Furniture, Hedge, HedgeKind, Level, Opening, OpeningKind, PatioSurface, Plan, StairShape, TreeKind, WallFinish } from '../model/types';
 import type { Store } from './store';
 
-export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'open' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain' | 'hedge' | 'copyArea' | 'pasteArea' | 'moveArea' | 'roomOnTop' | 'paint';
+export type Tool = 'select' | 'wall' | 'door' | 'window' | 'garage' | 'glazed' | 'open' | 'split' | 'paste' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'stretch' | 'drain' | 'hedge' | 'copyArea' | 'pasteArea' | 'moveArea' | 'roomOnTop' | 'floorOver' | 'paint';
 export type Selection = {
   kind: 'wall' | 'node' | 'opening' | 'level' | 'stair' | 'roof' | 'pillar' | 'chimney' | 'solar' | 'rooflight' | 'patio' | 'tree' | 'furniture' | 'drainNode' | 'drainPipe' | 'hedge';
   id: string;
@@ -145,7 +146,7 @@ export class Editor2D {
   showPrintArea = false;
   private areaPick: ((b: Box | null) => void) | null = null;
   /** What the box being dragged is for, and the box so far. */
-  private areaPurpose: 'print' | 'copy' | 'move' | 'room' = 'print';
+  private areaPurpose: 'print' | 'copy' | 'move' | 'room' | 'floor' = 'print';
   private pickDraft: Box | null = null;
   /** Part of a plan copied with the Copy area tool, to paste (kept on this device). */
   areaClip: Clip | null = loadClip();
@@ -310,7 +311,7 @@ export class Editor2D {
 
   setTool(t: Tool) {
     if (this.tool === 'wall' && t !== 'wall') this.finishChain();
-    if ((this.tool === 'copyArea' || this.tool === 'moveArea' || this.tool === 'roomOnTop') && t !== this.tool && this.areaPick) {
+    if ((this.tool === 'copyArea' || this.tool === 'moveArea' || this.tool === 'roomOnTop' || this.tool === 'floorOver') && t !== this.tool && this.areaPick) {
       this.areaPick = null;
       this.pickDraft = null;
     }
@@ -322,6 +323,7 @@ export class Editor2D {
     if (t === 'copyArea') this.pickArea((b) => this.copyBox(b), 'copy');
     if (t === 'moveArea') this.pickArea((b) => this.moveBox(b), 'move');
     if (t === 'roomOnTop') this.pickArea((b) => this.roomBox(b), 'room');
+    if (t === 'floorOver') this.pickArea((b) => this.floorBox(b), 'floor');
     if (t === 'pasteArea' && !this.areaClip) this.tool = 'select';
     this.onToolChange?.();
     this.requestRender();
@@ -351,6 +353,23 @@ export class Editor2D {
     this.setTool('select');
     if (!b) return;
     const level = addRoomOnTop(this.store.building, this.plan, b);
+    this.store.commit();
+    this.store.setActive(level.id);
+    this.select({ kind: 'level', id: level.id });
+  }
+
+  /**
+   * Add a floor above this one over part of it: the rooms mostly inside the box, so the
+   * rest (a single-storey extension) keeps its own roof.
+   */
+  private floorBox(b: Box | null) {
+    this.setTool('select');
+    if (!b) return;
+    if (!roomsInBox(this.plan, b).length) {
+      this.flash('No rooms mostly inside the box: drag it round the part to build on', { x: b.x0, y: b.y0 });
+      return;
+    }
+    const level = addLevelOnTop(this.store.building, true, this.plan as Level, b);
     this.store.commit();
     this.store.setActive(level.id);
     this.select({ kind: 'level', id: level.id });
@@ -1131,6 +1150,13 @@ export class Editor2D {
     }
   }
 
+  /** After putting something on another floor (the ground, for the garden): go there and say so. */
+  private toGround(level: Level, what: string, w: Vec2) {
+    if (level.id === this.store.activeId) return;
+    this.store.setActive(level.id);
+    this.flash(`${what} is in the garden, so it went on the ${level.name.toLowerCase()} (now showing)`, w);
+  }
+
   /** True if the floor being edited is the ground floor (where the drains are drawn). */
   private get onGround(): boolean {
     return this.store.building.levels[0]?.id === this.store.activeId;
@@ -1343,10 +1369,13 @@ export class Editor2D {
       case 'furniture': {
         const at = this.furniturePlacement(w);
         if (!at) break;
-        const f = addFurniture(plan, this.furnitureKind, at.at, at.angle);
+        // Garden things outside the building go in the garden, on the ground floor.
+        const level = gardenLevel(this.store.building, plan, at.at, this.furnitureKind);
+        const f = addFurniture(level, this.furnitureKind, at.at, at.angle);
         // The size and finish last given to this kind of piece, if changed from the catalogue's.
         Object.assign(f, remembered<Furniture>(`furniture:${f.kind}`) ?? {});
         this.store.commit();
+        this.toGround(level, catalogueItem(f.kind)?.name ?? 'It', w);
         this.select({ kind: 'furniture', id: f.id });
         break;
       }
@@ -1355,9 +1384,12 @@ export class Editor2D {
         break;
       case 'tree': {
         const size = remembered<{ height: number; spread: number }>(`tree:${this.treeKind}`);
-        const t = addTree(plan, this.snap(w).p, this.treeKind);
+        const p = this.snap(w).p;
+        const level = gardenLevel(this.store.building, plan, p);
+        const t = addTree(level, p, this.treeKind);
         Object.assign(t, size ?? {});
         this.store.commit();
+        this.toGround(level, 'The tree', w);
         this.select({ kind: 'tree', id: t.id });
         break;
       }
@@ -2130,7 +2162,7 @@ export class Editor2D {
    * Choose an area to print: the next box dragged on the plan (whatever the tool) is it.
    * `done` gets the box, or null if Esc was pressed.
    */
-  pickArea(done: (b: Box | null) => void, purpose: 'print' | 'copy' | 'move' | 'room' = 'print') {
+  pickArea(done: (b: Box | null) => void, purpose: 'print' | 'copy' | 'move' | 'room' | 'floor' = 'print') {
     this.areaPick = done;
     this.areaPurpose = purpose;
     this.pickDraft = null;
@@ -2956,7 +2988,10 @@ export class Editor2D {
     this.drawToolPreview(C);
     if (this.tool === 'stretch') this.drawStretch(C);
     const picking = this.areaPick ? (this.pickDraft ?? (this.areaPurpose === 'print' ? this.printArea : null)) : null;
-    if (picking) this.drawPrintArea(C, picking, this.areaPurpose === 'copy' ? 'Copy' : this.areaPurpose === 'move' ? `Move to its own floor (${wallsToMove(this.plan as Level, picking).length} walls, in colour):` : this.areaPurpose === 'room' ? 'Room on top' : 'Print area');
+    if (picking) this.drawPrintArea(C, picking, this.areaPurpose === 'copy' ? 'Copy' : this.areaPurpose === 'move' ? `Move to its own floor (${wallsToMove(this.plan as Level, picking).length} walls, in colour):` : this.areaPurpose === 'room' ? 'Room on top' : this.areaPurpose === 'floor' ? (() => {
+            const n = roomsInBox(this.plan, picking).length;
+            return `Floor over part (${n} room${n === 1 ? '' : 's'} mostly inside the box):`;
+          })() : 'Print area');
     else if (this.printArea && this.showPrintArea) this.drawPrintArea(C, this.printArea, 'Print area');
 
     for (const g of this.lastGuides) this.guide(g.from, g.to, C.accent);
