@@ -10,6 +10,7 @@ import { SPECIES, TREE_DEFAULTS, TREE_ORDER, speciesOf } from '../model/trees';
 import { forget, remember, remembered } from './sizes';
 import { MAX_LEAF, gateLeaves, isGate } from '../model/gates';
 import { COURT, COURT_ENCLOSURE } from '../model/tennis';
+import { PORCH_PITCH, porchDoor, wallBehindPorch } from '../model/porch';
 import { cordonHeight, rowGap, vineCount, vineGap } from '../model/vineyard';
 import { HEDGE_DEFAULTS, HEDGE_NAMES, hedgeClosed, hedgeLength, isFence } from '../model/hedges';
 import { GRAND_MODELS, TANK_STAND, catalogueItem, tankLitres } from '../model/furniture';
@@ -21,7 +22,7 @@ import { bankWidth } from '../model/patios';
 import { placedStair, reachesFloorAbove, stairBase, stairRise } from '../model/stairs';
 import { computeFootprints } from '../model/joints';
 import { FLOOR_FINISHES, ROOF_COVERINGS, WALL_FINISHES, faceSides, materialsOf } from '../model/materials';
-import { clamp, freeGaps, moveOpening } from '../model/openings';
+import { clamp, freeGaps, moveOpening, placeOpening } from '../model/openings';
 import { deleteNode, deleteOpening, deleteWall, finishNodeMove, moveNode, normalize, setWallLength, splitWallAt } from '../model/plan';
 import { type AwningColour, DEFAULTS, type OpeningKind, type DrainFitting, type DrainKind, type FloorFinish, type FrameColour, type GlazedStyle, type PatioSurface, type Pillar, type RailStyle, type TreeKind, type HedgeKind, type Roof, type RoofCovering, type RoofKind, type Stair, type StairShape, type StairStyle, type WallFinish } from '../model/types';
 import type { Editor2D } from './editor2d';
@@ -705,6 +706,8 @@ export class Panel {
       f.depth = v;
       // A tank's height is its diameter on its stand.
       if (f.kind === 'oiltank') f.height = v + TANK_STAND;
+      // A barrel sauna stands on its cradles.
+      if (f.kind === 'sauna') f.height = v + 0.15;
       keep();
       this.done();
     }, 'm');
@@ -721,6 +724,15 @@ export class Panel {
         f.lift = v;
         this.done();
       }, 'm', 'Height of its underside above the floor (1.45 m is usual over a worktop)');
+    }
+    if (f.kind === 'porch') {
+      this.select('Front', f.openFront ? 'open' : 'door', [
+        ['door', 'Wall with a front door'],
+        ['open', 'Open all across'],
+      ], (v) => {
+        f.openFront = v === 'open' || undefined;
+        this.done();
+      });
     }
     if (f.kind === 'vineyard') {
       this.number('Row spacing', rowGap(f), 0.05, 0.6, 4, (v) => {
@@ -744,7 +756,13 @@ export class Panel {
           ? `Set on a hedge, fence or garden wall, it sits in its line and makes its own gap; drag it along. ${f.kind === 'gate5' ? `Wider than ${MAX_LEAF + 0.3} m it becomes a pair of gates. ` : ''}Turn 180° to make it open the other way. Open, you can walk through it.`
           : f.kind === 'rotary'
             ? 'Open or folded, with or without washing (Finish): with the Sun study on, see where its shadow falls and when the lines are in sun through the day.'
-            : f.kind === 'vineyard'
+            : f.kind === 'porch'
+              ? `A porch built onto the house: its back goes against the wall it is put by (put it over the front door), with ${f.openFront ? 'side walls, open all across the front under a beam' : `walls on three sides and a doorway ${porchDoor(f).width.toFixed(2)} m wide in the front`}, a tiled floor, and a gabled roof facing out at ${PORCH_PITCH}°. Set its width, depth and eaves height, and the walls' finish. "Front door in the house wall" puts a door in the wall behind it, in the middle. The estimate prices it by its floor area.`
+              : f.kind === 'sauna'
+                ? 'A barrel sauna on its side, on two cradles, with its door under a canopy at one end (turn it to face the way you want) and the stove\'s flue out of the top. Set its length and diameter; its height follows.'
+                : f.kind === 'hottub'
+                  ? 'A hot tub in a timber cabinet with a step at the front. Take the cover off to see the water and seats.'
+                  : f.kind === 'vineyard'
               ? (() => {
                   const n = vineCount(f);
                   return `${n.rows} rows of ${n.perRow} vines: ${n.vines} vines, ${Math.round(n.rowLength)} m of row. Each vine has a trunk up to the fruiting wire at ${cordonHeight(f).toFixed(2)} m, with its shoots trained up between the wires above. The leaves come in May, grapes show from midsummer and ripen in autumn, when the leaves turn (red or gold), and in winter the vines are bare: set the date in Sun to see. Rows usually run north–south for even sun on both sides; 1 m apart suits hand work, 2–2.5 m a tractor.`;
@@ -758,6 +776,28 @@ export class Panel {
               : 'Drag to move; it keeps tight to a wall it is square to. [ and ] turn it; Ctrl/⌘+D puts a copy alongside.',
     );
     const btns: [string, () => void, boolean?][] = [];
+    if (f.kind === 'hottub') {
+      btns.push([f.open ? 'Put the cover on' : 'Take the cover off', () => {
+        f.open = !f.open || undefined;
+        this.done();
+      }]);
+    }
+    if (f.kind === 'porch') {
+      if (!f.openFront) {
+        btns.push([f.open ? 'Shut the door' : 'Open the door', () => {
+          f.open = !f.open || undefined;
+          this.done();
+        }]);
+      }
+      const behind = wallBehindPorch(level, f);
+      if (behind) {
+        btns.push(['Front door in the house wall', () => {
+          const o = placeOpening(level, behind.wallId, behind.u, 'door');
+          if (!o) return alert('There is no room for a door in the wall behind the porch.');
+          this.done();
+        }]);
+      }
+    }
     if (f.kind === 'wallunit') {
       btns.push([f.open ? 'Lights underneath off' : 'Lights underneath on', () => {
         f.open = !f.open || undefined;

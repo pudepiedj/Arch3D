@@ -129,6 +129,8 @@ export class Editor2D {
   hedgeKind: HedgeKind = 'privet';
   /** Catalogue entry the Furniture tool places, and the angle it is placed at. */
   furnitureKind = 'grand';
+  /** The last point clicked on the plan, and on which floor: where walk mode starts. */
+  walkFrom: { p: Vec2; levelId: string } | null = null;
   furnitureAngle = 0;
   /**
    * Stretch tool: the box round what moves, and the one being drawn. After a stretch the box
@@ -680,6 +682,11 @@ export class Editor2D {
     if (this.pointers.size > 2) return;
     this.downAt = s;
     this.dragging = false;
+    // Walk mode starts from the last place clicked on the plan.
+    if (e.button === 0 && !this.areaPick) {
+      this.walkFrom = { p: this.toWorld(s), levelId: this.store.activeId };
+      this.requestRender();
+    }
 
     if (e.button === 1 || (e.button === 2 && this.tool !== 'wall')) {
       this.gesture = { kind: 'pan', last: s };
@@ -2974,6 +2981,28 @@ export class Editor2D {
       ctx.lineWidth = 1;
       this.line(f[0], f[2]);
       this.line(f[1], f[3]);
+    }
+    // Where walk mode will start: a small figure at the last place clicked on this floor.
+    if (this.walkFrom && this.walkFrom.levelId === this.store.activeId && !this.printing) {
+      const q = this.toScreen(this.walkFrom.p);
+      ctx.save();
+      ctx.globalAlpha = 0.75;
+      ctx.fillStyle = C.accent;
+      ctx.strokeStyle = C.bg;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(q.x, q.y - 9, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(q.x - 4, q.y + 3);
+      ctx.lineTo(q.x, q.y - 5);
+      ctx.lineTo(q.x + 4, q.y + 3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.font = '600 10px system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('Walk starts here', q.x + 7, q.y + 3);
+      ctx.restore();
     }
     if (this.flashMsg && performance.now() < this.flashMsg.until && !this.printing) {
       const q = this.toScreen(this.flashMsg.at);

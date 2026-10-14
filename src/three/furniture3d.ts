@@ -7,9 +7,12 @@ import { TANK_STAND, grandOutline } from '../model/furniture';
 import { gateLeaves, gatePost } from '../model/gates';
 import type { Vec2 } from '../model/geom';
 import { CANOPY, cordonHeight, vineGap, vinePosts, vineRows, vinesAlong } from '../model/vineyard';
+import { FLAG_COLOUR, flagTexture } from './flags';
+import { roofMaterial, wallMaterial } from './finishes';
+import { PORCH_OVERHANG, PORCH_PITCH, PORCH_WALL, porchDoor, porchWalls } from '../model/porch';
 import { pondEdgePoint, pondOutline, pondPlanting } from '../model/pond';
 import { COURT, COURT_GATE, courtGate, courtLines, fencePosts, fenceRuns, netTop } from '../model/tennis';
-import type { Furniture } from '../model/types';
+import type { Furniture, WallFinish } from '../model/types';
 
 // ---------------------------------------------------------------- materials
 
@@ -917,38 +920,208 @@ function flagpole(k: Kit, f: Furniture, _w: number, _d: number, h: number) {
   k.cyl(0.055, h - 0.1, 0, 0, 0.1, plain(0xf4f4f2, 0.4), 0.03, 12);
   k.sphere(0.06, 0, 0, h + 0.03, plain(0xc9a24a, 0.3, 0.7));
   if (f.finish === 'none') return;
+  // The flag: a sheet 2:1 flying out from the top, rippling more towards the fly, painted
+  // with its design.
   const L = Math.max(0.9, h * 0.3);
   const H = L / 2;
-  const nx = 16;
-  const ny = 6;
+  const nx = 24;
+  const ny = 8;
   const pos: number[] = [];
-  const col: number[] = [];
-  const colour = (u: number, v: number) => {
-    if (f.finish === 'stgeorge') return Math.abs(u - 0.5) < 0.1 || Math.abs(v - 0.5) < 0.1 * (L / H) ? [0.8, 0.1, 0.12] : [0.97, 0.97, 0.97];
-    const c = new THREE.Color({ white: 0xf6f6f6, red: 0xc0241e, blue: 0x1f3f8f, green: 0x2f7d3a }[f.finish ?? 'white'] ?? 0xf6f6f6);
-    return [c.r, c.g, c.b];
-  };
+  const uv: number[] = [];
   const at = (u: number, v: number) => [u * L, h - 0.08 - v * H, Math.sin(u * Math.PI * 2.2) * 0.07 * u];
   for (let i = 0; i < nx; i++) {
     for (let j = 0; j < ny; j++) {
       const [u0, u1, v0, v1] = [i / nx, (i + 1) / nx, j / ny, (j + 1) / ny];
-      const c = colour((u0 + u1) / 2, (v0 + v1) / 2);
-      const quad = [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v0), at(u1, v1), at(u0, v1)];
-      for (const p of quad) {
-        pos.push(...p);
-        col.push(...c);
+      for (const [u, v] of [[u0, v0], [u1, v0], [u1, v1], [u0, v0], [u1, v1], [u0, v1]]) {
+        pos.push(...at(u, v));
+        uv.push(u, 1 - v);
       }
     }
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   geo.computeVertexNormals();
-  const cloth = mat('flag', () => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }));
+  const kind = f.finish ?? 'union';
+  const cloth = mat(`flag-${kind}`, () => {
+    const map = flagTexture(kind);
+    return new THREE.MeshStandardMaterial({ map, color: map ? 0xffffff : (FLAG_COLOUR[kind] ?? 0xf6f6f6), roughness: 0.9, side: THREE.DoubleSide });
+  });
   k.mesh(geo, cloth, 0, 0, 0);
 }
 
+/** A box whose texture coordinates are in metres, so a brick or stone texture keeps its scale. */
+function meteredBox(w: number, h: number, d: number): THREE.BoxGeometry {
+  const g = new THREE.BoxGeometry(w, h, d);
+  const uv = g.getAttribute('uv') as THREE.BufferAttribute;
+  // Faces in order +x, -x, +y, -y, +z, -z, four corners each.
+  const size: [number, number][] = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+  for (let i = 0; i < uv.count; i++) {
+    const [su, sv] = size[Math.floor(i / 4)];
+    uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
+  }
+  return g;
+}
+
+const CEDAR: Record<string, number> = { cedar: 0x9a5f3c, grey: 0x7d7f80, black: 0x232426, spruce: 0xd2b386, thermowood: 0x7a5236 };
+
+/**
+ * A hot tub: a square cabinet clad in vertical boards, a moulded shell with water in it,
+ * seats round the inside, and a step at the front; with its cover on, or off.
+ */
+function hotTub(k: Kit, f: Furniture, w: number, d: number, h: number) {
+  const clad = plain(CEDAR[f.finish ?? 'cedar'] ?? CEDAR.cedar, 0.85);
+  const shell = plain(0xe9ecee, 0.25);
+  // The cabinet: four clad sides (hollow, for the shell inside).
+  const t = 0.08;
+  for (const sgn of [-1, 1]) {
+    k.box(w, t, h - 0.2, 0, sgn * (d / 2 - t / 2), 0, clad);
+    k.box(t, d - 2 * t, h - 0.2, sgn * (w / 2 - t / 2), 0, 0, clad);
+  }
+  // Board joints round the sides.
+  const joint = plain(0x000000, 1);
+  for (let x = -w / 2 + 0.12; x < w / 2; x += 0.12) {
+    for (const s of [-1, 1]) k.box(0.006, 0.004, h - 0.07, x, s * (d / 2 + 0.001), 0.01, joint);
+  }
+  // The rim round the top, and the moulded shell inside it down to the water.
+  const rim = 0.25;
+  for (const sgn of [-1, 1]) {
+    k.box(w, rim, 0.2, 0, sgn * (d / 2 - rim / 2), h - 0.2, shell);
+    k.box(rim, d - 2 * rim, 0.2, sgn * (w / 2 - rim / 2), 0, h - 0.2, shell);
+  }
+  // The shell's sides, from the rim down to its floor.
+  for (const sgn of [-1, 1]) {
+    k.box(w - 2 * rim, 0.03, 0.6, 0, sgn * (d / 2 - rim), h - 0.8, shell);
+    k.box(0.03, d - 2 * rim, 0.6, sgn * (w / 2 - rim), 0, h - 0.8, shell);
+  }
+  k.box(w - 2 * rim, d - 2 * rim, 0.05, 0, 0, h - 0.85, shell);
+  if (f.open) {
+    const water = mat('hottub-water', () => new THREE.MeshStandardMaterial({ color: 0x5fb7d6, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.7 }));
+    // The seats, seen through the water.
+    for (const sgn of [-1, 1]) k.box(w - 2 * rim, 0.4, 0.4, 0, sgn * (d / 2 - rim - 0.2), h - 0.75, shell);
+    k.box(w - 2 * rim, d - 2 * rim, 0.01, 0, 0, h - 0.14, water).castShadow = false;
+  } else {
+    // The cover: a thick padded lid, folded across the middle.
+    const cover = plain(0x4b4f52, 0.9);
+    k.box(w - 0.04, d / 2 - 0.02, 0.1, 0, -d / 4, h, cover);
+    k.box(w - 0.04, d / 2 - 0.02, 0.1, 0, d / 4, h, cover);
+  }
+  // A step at the front.
+  k.box(w * 0.5, 0.4, 0.25, 0, d / 2 + 0.2, 0, clad);
+}
+
+/**
+ * A barrel sauna lying on its side: a cylinder of staves held by steel bands, on cradles,
+ * the front end carried out a little as a canopy over the door (which has a glass panel),
+ * a small window in the back end, and the stove's flue out of the top.
+ */
+function sauna(k: Kit, f: Furniture, w: number, d: number) {
+  const wood = plain(CEDAR[f.finish ?? 'spruce'] ?? CEDAR.spruce, 0.8);
+  const end = plain(new THREE.Color(CEDAR[f.finish ?? 'spruce'] ?? CEDAR.spruce).multiplyScalar(0.85).getHex(), 0.8);
+  const r = d / 2;
+  const lift = 0.15;
+  const cy = lift + r;
+  // The barrel: staves (many flat sides) along x, open at the ends.
+  const barrel = k.mesh(new THREE.CylinderGeometry(r, r, w, 28, 1, true), mat(`sauna-${f.finish}`, () => new THREE.MeshStandardMaterial({ color: CEDAR[f.finish ?? 'spruce'] ?? CEDAR.spruce, roughness: 0.8, side: THREE.DoubleSide, flatShading: true })), 0, 0, cy);
+  barrel.rotation.z = Math.PI / 2;
+  // End walls, set in from the ends: the front (+x) under a canopy, the back flush.
+  const canopy = Math.min(0.35, w * 0.15);
+  for (const [x, inset] of [[w / 2 - canopy, true], [-w / 2 + 0.03, false]] as const) {
+    const disc = k.mesh(new THREE.CircleGeometry(r - 0.01, 28), end, x, 0, cy);
+    disc.rotation.y = Math.PI / 2;
+    if (inset) {
+      // The door, with a tall glass panel, and its handle.
+      k.box(0.05, 0.7, 1.8, x + 0.03, 0, lift + 0.1, wood);
+      k.box(0.06, 0.4, 1.0, x + 0.035, 0, lift + 0.6, glass());
+      k.box(0.06, 0.03, 0.25, x + 0.06, 0.28, lift + 0.9, chrome());
+    } else {
+      k.box(0.06, 0.45, 0.35, x - 0.02, 0, cy + 0.15, glass());
+    }
+  }
+  // Steel bands and the cradles it lies in.
+  const steel = dark();
+  for (const t of [-0.35, 0.35]) {
+    const band = k.mesh(new THREE.TorusGeometry(r + 0.01, 0.012, 6, 32), steel, t * w, 0, cy);
+    band.rotation.y = Math.PI / 2;
+    k.box(0.12, d * 0.85, lift + r * 0.45, t * w, 0, 0, wood);
+  }
+  // The stove's flue.
+  k.cyl(0.06, 0.7, -w * 0.25, r * 0.35, cy + r * 0.9, steel);
+}
+
+/**
+ * A porch: brick (or rendered) walls on three sides, open to the house at the back, with
+ * a doorway in the front (a door in it, shut or open), a tiled floor, and a gabled roof
+ * whose gable faces out, overhanging the front and sides.
+ */
+function porch(k: Kit, f: Furniture, w: number, d: number, h: number) {
+  const walls = wallMaterial((f.finish ?? 'brick') as WallFinish);
+  for (const b of porchWalls(f)) k.mesh(meteredBox(b.x1 - b.x0, h, b.y1 - b.y0), walls, (b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, h / 2);
+  const door = porchDoor(f);
+  // A tiled floor inside.
+  k.box(w - 2 * PORCH_WALL, f.openFront ? d : d - PORCH_WALL, 0.04, 0, f.openFront ? 0 : -PORCH_WALL / 2, 0, plain(0x9c4a32, 0.8));
+  if (f.openFront) {
+    // Open all across the front: an oak beam from side wall to side wall carries the gable.
+    k.box(w, PORCH_WALL, 0.25, 0, d / 2 - PORCH_WALL / 2, h - 0.25, plain(0x8a6338, 0.8));
+  } else {
+    // Over the doorway, a lintel of wall.
+    k.mesh(meteredBox(door.width, h - door.height, PORCH_WALL), walls, 0, d / 2 - PORCH_WALL / 2, door.height + (h - door.height) / 2);
+  }
+  // The door: a timber leaf, hung on the left, standing shut or opened inwards.
+  const leaf = new Kit();
+  const tw = door.width - 0.06;
+  leaf.box(tw, 0.05, door.height - 0.04, tw / 2, 0, 0.02, plain(0x2f4a3a, 0.5));
+  leaf.box(tw * 0.5, 0.06, door.height * 0.3, tw / 2, 0, door.height * 0.55, glass());
+  leaf.box(0.12, 0.08, 0.03, tw - 0.1, 0.03, door.height * 0.45, plain(0xc9a24a, 0.3, 0.7));
+  leaf.g.position.set(-door.width / 2 + 0.03, 0, d / 2 - PORCH_WALL / 2);
+  // Open: swung in, into the porch.
+  if (f.open) leaf.g.rotation.y = Math.PI / 2 - 0.2;
+  if (!f.openFront) k.g.add(leaf.g);
+  // The roof: two slopes from the side eaves up to a ridge running out from the house.
+  const tan = Math.tan((PORCH_PITCH * Math.PI) / 180);
+  const o = PORCH_OVERHANG;
+  const ridge = h + (w / 2) * tan;
+  const eave = h - o * tan;
+  const y0 = -d / 2;
+  const y1 = d / 2 + o;
+  const tiles = mat('porch-tiles', () => {
+    const m = (roofMaterial('tiles') as THREE.MeshStandardMaterial).clone();
+    m.side = THREE.DoubleSide;
+    return m;
+  });
+  const slopeW = (w / 2 + o) / Math.cos((PORCH_PITCH * Math.PI) / 180);
+  for (const s of [-1, 1]) {
+    const pos = [s * (w / 2 + o), eave, y0, 0, ridge, y0, 0, ridge, y1, s * (w / 2 + o), eave, y0, 0, ridge, y1, s * (w / 2 + o), eave, y1];
+    const uv = [0, 0, slopeW, 0, slopeW, y1 - y0, 0, 0, slopeW, y1 - y0, 0, y1 - y0];
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, tiles);
+    m.castShadow = m.receiveShadow = true;
+    k.g.add(m);
+    // Fascia along the eaves.
+    k.box(0.03, y1 - y0, 0.16, s * (w / 2 + o), (y0 + y1) / 2, eave - 0.14, plain(0xf4f4f2, 0.5));
+  }
+  // The gable over the front wall, in the walls' finish, and a barge board along the verge.
+  const gable = new THREE.BufferGeometry();
+  gable.setAttribute('position', new THREE.Float32BufferAttribute([-w / 2, h, d / 2, w / 2, h, d / 2, 0, ridge, d / 2], 3));
+  gable.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, w, 0, w / 2, ridge - h], 2));
+  gable.computeVertexNormals();
+  const gm = new THREE.Mesh(gable, mat(`porch-gable-${f.finish}`, () => {
+    const m = (walls as THREE.MeshStandardMaterial).clone();
+    m.side = THREE.DoubleSide;
+    return m;
+  }));
+  gm.castShadow = true;
+  k.g.add(gm);
+  for (const s of [-1, 1]) k.rod({ x: s * (w / 2 + o), y: y1, z: eave }, { x: 0, y: y1, z: ridge + 0.02 }, 0.03, plain(0xf4f4f2, 0.5));
+}
+
 const BUILDERS: Record<string, Builder> = {
+  hottub: (k, f, w, d, h) => hotTub(k, f, w, d, h),
+  sauna: (k, f, w, d) => sauna(k, f, w, d),
+  porch: (k, f, w, d, h) => porch(k, f, w, d, h),
   aga: (k, f, w, d, h) => rangeCooker(k, f, w, d, h),
   larder: (k, f, w, d, h) => larder(k, f, w, d, h),
   wallunit: (k, f, w, d, h) => wallUnit(k, f, w, d, h),

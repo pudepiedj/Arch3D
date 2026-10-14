@@ -5,6 +5,7 @@ import { grandOutline } from '../model/furniture';
 import { gateLeaves, gatePost } from '../model/gates';
 import type { Vec2 } from '../model/geom';
 import { CANOPY, vinePosts, vineRows, vinesAlong } from '../model/vineyard';
+import { PORCH_OVERHANG, PORCH_WALL, porchDoor, porchWalls } from '../model/porch';
 import { pondEdgePoint, pondOutline, pondPlanting } from '../model/pond';
 import { COURT, COURT_GATE, courtGate, courtLines, fencePosts, fenceRuns } from '../model/tennis';
 import type { Furniture } from '../model/types';
@@ -264,6 +265,42 @@ function lamp(ctx: Ctx, x: number, y: number) {
 }
 
 const SYMBOLS: Record<string, Symbol> = {
+  hottub: (ctx, f, w, d, fill) => {
+    rect(ctx, -w / 2, -d / 2, w, d, fill, 0.15);
+    circle(ctx, 0, 0, Math.min(w, d) * 0.4, f.open ? '#9fd3e6' : undefined);
+    rect(ctx, -w * 0.25, d / 2, w * 0.5, 0.4);
+  },
+  sauna: (ctx, _f, w, d, fill) => {
+    rect(ctx, -w / 2, -d / 2, w, d, fill, d * 0.15);
+    for (const t of [-0.35, 0.35]) line(ctx, t * w, -d / 2, t * w, d / 2);
+    // The door end, under its canopy.
+    const x = w / 2 - Math.min(0.35, w * 0.15);
+    ctx.save();
+    ctx.lineWidth *= 3;
+    line(ctx, x, -0.35, x, 0.35);
+    ctx.restore();
+  },
+  porch: (ctx, f, w, d) => {
+    // The roof's outline dashed, with its ridge; the walls solid; the door's swing.
+    ctx.save();
+    ctx.setLineDash([0.12, 0.08]);
+    rect(ctx, -w / 2 - PORCH_OVERHANG, -d / 2, w + 2 * PORCH_OVERHANG, d + PORCH_OVERHANG);
+    line(ctx, 0, -d / 2, 0, d / 2 + PORCH_OVERHANG);
+    ctx.restore();
+    for (const b of porchWalls(f)) rect(ctx, b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0, '#a5583f');
+    ctx.save();
+    ctx.setLineDash([0.06, 0.05]);
+    if (f.openFront) {
+      // The beam across the open front, overhead.
+      line(ctx, -w / 2, d / 2 - PORCH_WALL / 2, w / 2, d / 2 - PORCH_WALL / 2);
+    } else {
+      const door = porchDoor(f).width;
+      ctx.beginPath();
+      ctx.arc(-door / 2, d / 2 - PORCH_WALL / 2, door, -Math.PI / 2, 0);
+      ctx.stroke();
+    }
+    ctx.restore();
+  },
   aga: (ctx, _f, w, d, fill) => {
     rect(ctx, -w / 2, -d / 2, w, d, fill, 0.03);
     for (const x of [-w * 0.32, -w * 0.06]) circle(ctx, x, -0.02, 0.17);
