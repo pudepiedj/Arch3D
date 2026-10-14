@@ -5,7 +5,7 @@
 
 import { levelBelow, migrate } from './building';
 import { catalogueItem } from './furniture';
-import { type Vec2, pointInPolygon } from './geom';
+import { type Vec2, pointInPolygon, projectOnSegment } from './geom';
 import { patioAt } from './patios';
 import { outerFaces } from './roof';
 import type { Building, Level } from './types';
@@ -54,4 +54,34 @@ export function openDrawing(data: unknown): Building {
   const b = migrate(data);
   groundGardenOnly(b);
   return b;
+}
+
+/** How far clear of the building something must be to count as in the garden. */
+const CLEAR = 0.5;
+
+/**
+ * Whether a line drawn on an upper floor (a wall, a hedge or fence, the outline of a patio)
+ * is out in the garden: every part of it clear of the building, meaning not over any floor
+ * of it, not near any wall above the ground floor, and not on one of this floor's patios.
+ * A wall or balcony on or against the building stays on the floor it is drawn on.
+ */
+export function inGarden(b: Building, level: Level, pts: Vec2[], closed = false): boolean {
+  const ground = b.levels[0];
+  if (!ground || level.id === ground.id || pts.length < 1) return false;
+  const faces = b.levels.flatMap((l) => outerFaces(l));
+  const walls = b.levels.slice(1).flatMap((l) =>
+    Object.values(l.walls).map((w) => ({ a: l.nodes[w.a], b: l.nodes[w.b], r: w.thickness / 2 + CLEAR })),
+  );
+  const near = (p: Vec2) =>
+    faces.some((f) => pointInPolygon(p, f) || f.some((q, i) => projectOnSegment(p, q, f[(i + 1) % f.length]).dist < CLEAR)) ||
+    walls.some((w) => w.a && w.b && projectOnSegment(p, w.a, w.b).dist < w.r) ||
+    !!patioAt(level, p);
+  // Every 25 cm along the line.
+  const runs = closed ? pts.map((p, i) => [p, pts[(i + 1) % pts.length]]) : pts.slice(1).map((p, i) => [pts[i], p]);
+  if (!runs.length) return !near(pts[0]);
+  for (const [a, c] of runs) {
+    const n = Math.max(1, Math.ceil(Math.hypot(c.x - a.x, c.y - a.y) / 0.25));
+    for (let i = 0; i <= n; i++) if (near({ x: a.x + ((c.x - a.x) * i) / n, y: a.y + ((c.y - a.y) * i) / n })) return false;
+  }
+  return true;
 }

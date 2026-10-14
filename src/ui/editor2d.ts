@@ -28,7 +28,7 @@ import { siteOf } from '../model/sun';
 import { type Box, type Picked, boxFrom, inBox, stretch } from '../model/stretch';
 import { addDrainNode, addDrainPipe, deleteDrainNode, drainNodeAt, drainPipeAt, pipeFall, splitPipe } from '../model/drains';
 import { addFurniture, againstWall, catalogueItem, footprint } from '../model/furniture';
-import { gardenLevel } from '../model/outdoors';
+import { gardenLevel, inGarden } from '../model/outdoors';
 import { drawFurnitureSymbol } from './furniture2d';
 import { addChimney, addRooflight, addSolarArray, chimneyFootprint, rooflightGeometry, solarGeometry } from '../model/roofitems';
 import { roofSurfaceAt } from '../model/roof';
@@ -1435,8 +1435,12 @@ export class Editor2D {
       this.finishChain();
       return;
     }
-    const res = addWall(this.plan, this.drawStart, p, { thickness: this.wallProps.thickness, height: this.plan.height });
+    // A wall out in the garden, clear of the building, goes on the ground floor.
+    const b = this.store.building;
+    const level = inGarden(b, this.plan as Level, [this.drawStart, p]) ? b.levels[0] : this.plan;
+    const res = addWall(level, this.drawStart, p, { thickness: this.wallProps.thickness, height: level.height });
     this.store.commit();
+    this.toGround(level as Level, 'The wall', p);
     if (res && this.chainStart && dist(p, this.chainStart) < 1e-6) {
       this.finishChain(); // closed the loop
       return;
@@ -1832,9 +1836,12 @@ export class Editor2D {
     const pts = this.sectionPts;
     this.sectionPts = [];
     if (pts.length < 2) return this.requestRender();
-    const h = addHedge(this.plan, pts, this.hedgeKind);
+    const b = this.store.building;
+    const level = inGarden(b, this.plan as Level, pts) ? b.levels[0] : (this.plan as Level);
+    const h = addHedge(level, pts, this.hedgeKind);
     Object.assign(h, remembered<Hedge>(`hedge:${h.kind}`) ?? {});
     this.store.commit();
+    this.toGround(level, h.kind === 'fence' ? 'The fence' : h.kind === 'wall' ? 'The wall' : h.kind === 'ditch' ? 'The ditch' : 'The hedge', pts[0]);
     this.select({ kind: 'hedge', id: h.id });
   }
 
@@ -1842,8 +1849,11 @@ export class Editor2D {
     const pts = this.sectionPts;
     this.sectionPts = [];
     if (pts.length < 3) return this.requestRender();
-    const pt = addPatio(this.plan, pts, this.patioSurface);
+    const b = this.store.building;
+    const level = inGarden(b, this.plan as Level, pts, true) ? b.levels[0] : (this.plan as Level);
+    const pt = addPatio(level, pts, this.patioSurface);
     this.store.commit();
+    this.toGround(level, 'The patio', pts[0]);
     this.select({ kind: 'patio', id: pt.id });
   }
 
